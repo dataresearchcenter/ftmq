@@ -31,13 +31,13 @@ repos:
     - id: absolufy-imports
 
   - repo: https://github.com/pycqa/isort
-    rev: 5.13.2
+    rev: 6.0.1
     hooks:
       - id: isort
         args: ["--profile", "black"]
 
   - repo: https://github.com/psf/black
-    rev: 24.10.0
+    rev: 25.1.0
     hooks:
       - id: black
 
@@ -50,7 +50,7 @@ repos:
         exclude: (test_[\w]+\.py|\.csv|\.json|\.lock)$
 
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.3.0
+    rev: v2.4.1
     hooks:
       - id: codespell
         exclude: (test_[\w]+\.py|\.csv|\.i?json|\.lock)$
@@ -68,7 +68,7 @@ repos:
       - id: rst-inline-touching-normal
 
   - repo: https://github.com/python-poetry/poetry
-    rev: 2.0.1
+    rev: 2.1.2
     hooks:
       - id: poetry-check
       - id: poetry-lock
