@@ -59,14 +59,12 @@ mkdocs-autorefs = "^1.2.0"
 mkdocs-material = "^9.5.47"
 mkdocs-click = "^0.8.1"
 
-
-[tool.poetry.dependencies]
-anystore = {develop = true}
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.pytest_env]
 NOMENKLATURA_STATEMENT_TABLE = "test_table"
+NOMENKLATURA_DB_URL = "sqlite:///:memory:"
 DEBUG = 1
 MAX_SQL_AGG_GROUPS = 11

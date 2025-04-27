@@ -22,7 +22,7 @@ def test_sql():
     AND test_table.value >= :value_1"""
     fields = """test_table.id, test_table.entity_id, test_table.canonical_id, test_table.prop,
     test_table.prop_type, test_table.schema, test_table.value, test_table.original_value,
-    test_table.dataset, test_table.lang, test_table.target, test_table.external,
+    test_table.dataset, test_table.lang, test_table.external,
     test_table.first_seen, test_table.last_seen"""
     assert isinstance(q.sql.canonical_ids, Select)
     assert _compare_str(
@@ -343,7 +343,7 @@ def test_sql():
         SELECT test_table.id, test_table.entity_id, test_table.canonical_id,
         test_table.prop, test_table.prop_type, test_table.schema, test_table.value,
         test_table.original_value, test_table.dataset, test_table.lang,
-        test_table.target, test_table.external, test_table.first_seen,
+        test_table.external, test_table.first_seen,
         test_table.last_seen FROM test_table ORDER BY test_table.canonical_id
         """,
     )
@@ -354,7 +354,7 @@ def test_sql():
         SELECT test_table.id, test_table.entity_id, test_table.canonical_id,
         test_table.prop, test_table.prop_type, test_table.schema,
         test_table.value, test_table.original_value, test_table.dataset,
-        test_table.lang, test_table.target, test_table.external,
+        test_table.lang, test_table.external,
         test_table.first_seen, test_table.last_seen FROM test_table WHERE
         test_table.dataset = :dataset_1 AND test_table.schema = :schema_1 ORDER
         BY test_table.canonical_id

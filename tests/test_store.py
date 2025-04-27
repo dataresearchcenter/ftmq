@@ -1,4 +1,5 @@
 from nomenklatura.entity import CompositeEntity
+from nomenklatura.resolver.resolver import Resolver
 
 from ftmq.model import Catalog, Dataset
 from ftmq.query import Query
@@ -11,7 +12,7 @@ from ftmq.util import make_dataset
 
 def _run_store_test_implicit(cls: Store, proxies, **kwargs):
     # implicit catalog from store content
-    store = cls(**kwargs)
+    store = cls(linker=Resolver.make_default(), **kwargs)
     assert not store.get_catalog().names
 
     datasets_seen = set()
@@ -30,7 +31,7 @@ def _run_store_test(cls: Store, proxies, **kwargs):
     catalog = Catalog(
         datasets=[Dataset(name="eu_authorities"), Dataset(name="donations")]
     )
-    store = cls(catalog=catalog, **kwargs)
+    store = cls(catalog=catalog, linker=Resolver.make_default(), **kwargs)
     with store.writer() as bulk:
         for proxy in proxies:
             bulk.add_entity(proxy)

@@ -58,6 +58,8 @@ def get_store(
         dataset = Dataset(name=dataset)
     if isinstance(linker, (str, Path)):
         linker = get_resolver(linker)
+    elif linker is None:
+        linker = Resolver.make_default()
     uri = str(uri)
     parsed = urlparse(uri)
     if parsed.scheme == "memory":
