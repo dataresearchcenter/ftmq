@@ -3,8 +3,8 @@ from pathlib import Path
 from typing import TypeVar
 from urllib.parse import urlparse
 
-from nomenklatura import CompositeEntity, Resolver
-from nomenklatura.db import get_engine, get_metadata
+from nomenklatura import Resolver
+from nomenklatura.db import get_metadata
 
 from ftmq.model.dataset import Catalog, Dataset
 from ftmq.store.aleph import AlephStore
@@ -17,16 +17,11 @@ S = TypeVar("S", bound=Store)
 
 
 @cache
-def get_resolver() -> Resolver[CompositeEntity]:
-    return Resolver.make_default(get_engine())
-
-
-@cache
 def get_store(
     uri: PathLike | None = "memory:///",
     catalog: Catalog | None = None,
     dataset: Dataset | str | None = None,
-    linker: Resolver | str | None = None,
+    linker: Resolver | None = None,
 ) -> Store:
     """
     Get an initialized [Store][ftmq.store.base.Store]. The backend is inferred
@@ -60,10 +55,6 @@ def get_store(
     """
     if isinstance(dataset, str):
         dataset = Dataset(name=dataset)
-    if isinstance(linker, (str, Path)):
-        linker = get_resolver(linker)
-    elif linker is None:
-        linker = Resolver.make_default()
     uri = str(uri)
     parsed = urlparse(uri)
     if parsed.scheme == "memory":
@@ -81,7 +72,7 @@ def get_store(
         try:
             from ftmq.store.redis import RedisStore
 
-            return RedisStore(catalog, dataset, path=path, linker=linker)
+            return RedisStore(catalog, dataset, linker=linker)
         except ImportError:
             raise ImportError("Can not load RedisStore. Install `redis`")
     if parsed.scheme == "clickhouse":

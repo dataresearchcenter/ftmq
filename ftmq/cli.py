@@ -294,20 +294,8 @@ def store_list_datasets(
 @click.option(
     "-i", "--input-uri", default="-", show_default=True, help="store input uri"
 )
-@click.option(
-    "-o", "--output-uri", default=None, show_default=True, help="output file or uri"
-)
-@click.option(
-    "-r",
-    "--resolver-uri",
-    default=None,
-    show_default=True,
-    help="resolver uri",
-    required=True,
-)
 def store_resolve(
     input_uri: str | None = "-",
-    output_uri: str | None = None,
     resolver_uri: str | None = None,
 ):
     """
@@ -315,8 +303,6 @@ def store_resolve(
     """
     store = get_store(input_uri, resolver=resolver_uri)
     store.resolve()
-    if output_uri:
-        smart_write_proxies(output_uri, store.iterate())
 
 
 @store.command("iterate")

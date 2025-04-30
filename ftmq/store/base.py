@@ -1,6 +1,9 @@
+from functools import cache
 from typing import Iterable
 
+from nomenklatura import CompositeEntity
 from nomenklatura import store as nk
+from nomenklatura.db import get_engine
 from nomenklatura.resolver import Resolver
 
 from ftmq.aggregations import AggregatorResult
@@ -12,6 +15,11 @@ from ftmq.types import CE, CEGenerator
 from ftmq.util import DefaultDataset, ensure_dataset, make_dataset
 
 log = get_logger(__name__)
+
+
+@cache
+def get_resolver() -> Resolver[CompositeEntity]:
+    return Resolver.make_default(get_engine())
 
 
 class Store(nk.Store):
@@ -43,7 +51,8 @@ class Store(nk.Store):
             dataset = catalog.get_scope()
         else:
             dataset = DefaultDataset
-        super().__init__(dataset=dataset, linker=linker or Resolver(), **kwargs)
+        linker = linker or get_resolver()
+        super().__init__(dataset=dataset, linker=linker, **kwargs)
         # implicit set all datasets as default store scope:
         if dataset == DefaultDataset:
             self.dataset = self.get_catalog().get_scope()
@@ -71,24 +80,6 @@ class Store(nk.Store):
             catalog = self.get_catalog()
             view = self.view(catalog.get_scope())
         yield from view.entities()
-
-    def resolve(self, dataset: str | Dataset | None = None) -> None:
-        if not self.linker.edges:
-            return
-        if dataset is not None:
-            if isinstance(dataset, str):
-                dataset = make_dataset(dataset)
-            elif isinstance(dataset, Dataset):
-                dataset = make_dataset(dataset.name)
-            view = self.view(scope=dataset)
-            entities = view.entities()
-        else:
-            entities = self.iterate()
-        for ix, entity in enumerate(entities):
-            if entity.id in self.linker.nodes:
-                self.update(self.linker.get_canonical(entity.id))
-            if ix and ix % 10_000 == 0:
-                log.info("Resolving entity %d ..." % ix)
 
 
 class View(nk.base.View):
