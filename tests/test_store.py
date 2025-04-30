@@ -78,6 +78,20 @@ def _run_store_test(cls: Store, proxies, **kwargs):
     assert all(r.schema.name == "Payment" for r in res)
     assert len(res) == 21
 
+    # schemata filters
+    q = Query().where(schema="Organization", schema_include_matchable=True)
+    res = [e for e in view.entities(q)]
+    assert len(res) == 224
+    q = Query().where(schema="LegalEntity")
+    res = [e for e in view.entities(q)]
+    assert len(res) == 0
+    q = Query().where(schema="LegalEntity", schema_include_matchable=True)
+    res = [e for e in view.entities(q)]
+    assert len(res) == 246
+    q = Query().where(schema="LegalEntity", schema_include_descendants=True)
+    res = [e for e in view.entities(q)]
+    assert len(res) == 246
+
     # stats
     q = Query().where(dataset="eu_authorities")
     stats = view.stats(q)

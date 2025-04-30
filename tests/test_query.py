@@ -200,3 +200,11 @@ def test_query_shorthands():
     assert q.schemata_names == {"Company", "Person"}
     assert q.dataset_names == {"foo", "bar"}
     assert q.countries == {"de", "fr"}
+
+
+def test_query_schema():
+    q = Query().where(schema="LegalEntity", schema_include_descendants=True)
+    assert len(q.schemata_names) == 5
+
+    q = Query().where(schema="Person", schema_include_matchable=True)
+    assert len(q.schemata_names) == 2

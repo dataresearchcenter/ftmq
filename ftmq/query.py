@@ -216,7 +216,7 @@ class Query:
         """
         names = set()
         for f in self.schemata:
-            names.update(ensure_list(f.value))
+            names.update(ensure_list([s.name for s in f.schemata]))
         return names
 
     @property
@@ -291,9 +291,9 @@ class Query:
         Args:
             **lookup: A dataset lookup `dataset="my_dataset"`
             **lookup: A schema lookup `schema="Person"`
-            **lookup: `include_descendants=True`: Include schema descendants for
+            **lookup: `schema_include_descendants=True`: Include schema descendants for
                 given schema lookup
-            **lookup: `include_matchable=True`: Include matchable schema for
+            **lookup: `schema_include_matchable=True`: Include matchable schema for
                 given schema lookup
             **lookup: A property=value lookup (with optional comparators):
                 `name__startswith="Ja"`
@@ -301,8 +301,8 @@ class Query:
         Returns:
             The updated `Query` instance
         """
-        include_descendants = lookup.pop("include_descendants", False)
-        include_matchable = lookup.pop("include_matchable", False)
+        schema_include_descendants = lookup.pop("schema_include_descendants", False)
+        schema_include_matchable = lookup.pop("schema_include_matchable", False)
         prop = lookup.pop("prop", None)
         value = lookup.pop("value", None)
         comparator = lookup.pop("comparator", None)
@@ -325,8 +325,8 @@ class Query:
                         kwargs = {}
                         if key == "schema":
                             kwargs = {
-                                "include_matchable": include_matchable,
-                                "include_descendants": include_descendants,
+                                "schema_include_matchable": schema_include_matchable,
+                                "schema_include_descendants": schema_include_descendants,
                             }
                         self.filters.add(f(value, comparator, **kwargs))
                     meta = True

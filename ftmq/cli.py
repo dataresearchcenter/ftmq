@@ -104,8 +104,8 @@ def q(
     for value in schema:
         q = q.where(
             schema=value,
-            include_descendants=schema_include_descendants,
-            include_matchable=schema_include_matchable,
+            schema_include_descendants=schema_include_descendants,
+            schema_include_matchable=schema_include_matchable,
         )
     for prop, value, op in parse_unknown_filters(properties):
         q = q.where(**{f"{prop}__{op}": value})
