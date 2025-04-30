@@ -1,10 +1,12 @@
-from ftmq.dedupe import get_resolver
-from ftmq.store import get_store
+from ftmq.store import get_resolver, get_store
 from ftmq.util import make_proxy
 
 
 def test_resolve(fixtures_path):
-    resolver = get_resolver(fixtures_path / "resolver.ijson")
+    resolver = get_resolver()
+    resolver.begin()
+    resolver.load(fixtures_path / "resolver.ijson")
+    resolver.commit()
 
     entities = [
         {

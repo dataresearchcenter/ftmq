@@ -3,10 +3,9 @@ from pathlib import Path
 from typing import TypeVar
 from urllib.parse import urlparse
 
-from nomenklatura import Resolver
-from nomenklatura.db import get_metadata
+from nomenklatura import CompositeEntity, Resolver
+from nomenklatura.db import get_engine, get_metadata
 
-from ftmq.dedupe import get_resolver
 from ftmq.model.dataset import Catalog, Dataset
 from ftmq.store.aleph import AlephStore
 from ftmq.store.base import Store, View
@@ -15,6 +14,11 @@ from ftmq.store.sql import SQLStore
 from ftmq.types import PathLike
 
 S = TypeVar("S", bound=Store)
+
+
+@cache
+def get_resolver() -> Resolver[CompositeEntity]:
+    return Resolver.make_default(get_engine())
 
 
 @cache
