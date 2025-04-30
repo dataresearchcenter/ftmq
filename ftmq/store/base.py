@@ -1,5 +1,5 @@
 from functools import cache
-from typing import Iterable
+from typing import Generator, Iterable
 
 from nomenklatura import CompositeEntity
 from nomenklatura import store as nk
@@ -11,6 +11,7 @@ from ftmq.logging import get_logger
 from ftmq.model.coverage import Collector, DatasetStats
 from ftmq.model.dataset import C, Dataset
 from ftmq.query import Q
+from ftmq.similar import get_similar
 from ftmq.types import CE, CEGenerator
 from ftmq.util import DefaultDataset, ensure_dataset, make_dataset
 
@@ -18,8 +19,8 @@ log = get_logger(__name__)
 
 
 @cache
-def get_resolver() -> Resolver[CompositeEntity]:
-    return Resolver.make_default(get_engine())
+def get_resolver(uri: str | None = None) -> Resolver[CompositeEntity]:
+    return Resolver.make_default(get_engine(uri))
 
 
 class Store(nk.Store):
@@ -137,3 +138,9 @@ class View(nk.base.View):
         res = dict(query.aggregator.result)
         self._cache[key] = res
         return res
+
+    def similar(
+        self, entity_id: str, limit: int | None = None
+    ) -> Generator[tuple[CE, float]]:
+        for candidate_id, score in get_similar(entity_id, self.store.linker, limit):
+            yield self.get_entity(candidate_id), score

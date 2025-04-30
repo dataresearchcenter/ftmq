@@ -1,9 +1,9 @@
 from nomenklatura.entity import CompositeEntity
-from nomenklatura.resolver.resolver import Resolver
 
 from ftmq.model import Catalog, Dataset
 from ftmq.query import Query
 from ftmq.store import AlephStore, MemoryStore, SQLStore, Store, get_store
+from ftmq.store.base import get_resolver
 from ftmq.store.level import LevelDBStore
 from ftmq.util import make_dataset
 
@@ -12,7 +12,7 @@ from ftmq.util import make_dataset
 
 def _run_store_test_implicit(cls: Store, proxies, **kwargs):
     # implicit catalog from store content
-    store = cls(linker=Resolver.make_default(), **kwargs)
+    store = cls(linker=get_resolver(), **kwargs)
     assert not store.get_catalog().names
 
     datasets_seen = set()
@@ -31,7 +31,7 @@ def _run_store_test(cls: Store, proxies, **kwargs):
     catalog = Catalog(
         datasets=[Dataset(name="eu_authorities"), Dataset(name="donations")]
     )
-    store = cls(catalog=catalog, linker=Resolver.make_default(), **kwargs)
+    store = cls(catalog=catalog, linker=get_resolver(), **kwargs)
     with store.writer() as bulk:
         for proxy in proxies:
             bulk.add_entity(proxy)
