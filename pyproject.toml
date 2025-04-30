@@ -15,7 +15,7 @@ classifiers = [
 ]
 requires-python = ">=3.11,<4"
 dependencies = [
-    "anystore (>=0.3.0,<0.4.0)",
+    "anystore (>=0.3.1,<0.4.0)",
     "nomenklatura (>=3.17.3,<4.0.0)",
     "click (>=8.1.8,<9.0.0)",
     "click-default-group (>=1.2.4,<2.0.0)",
@@ -37,8 +37,8 @@ ftmq = "ftmq.cli:cli"
 [project.urls]
 Homepage = "https://docs.investigraph.dev/lib/ftmq"
 Documentation = "https://docs.investigraph.dev/lib/ftmq"
-Repository = "https://github.com/investigativedata/ftmq"
-Issues = "https://github.com/investigativedata/ftmq/issues"
+Repository = "https://github.com/dataresearchcenter/ftmq"
+Issues = "https://github.com/dataresearchcenter/ftmq/issues"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=7.4.3,<9.0.0"

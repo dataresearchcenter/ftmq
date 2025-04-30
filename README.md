@@ -1,7 +1,7 @@
 [![ftmq on pypi](https://img.shields.io/pypi/v/ftmq)](https://pypi.org/project/ftmq/)
-[![Python test and package](https://github.com/investigativedata/ftmq/actions/workflows/python.yml/badge.svg)](https://github.com/investigativedata/ftmq/actions/workflows/python.yml)
+[![Python test and package](https://github.com/dataresearchcenter/ftmq/actions/workflows/python.yml/badge.svg)](https://github.com/dataresearchcenter/ftmq/actions/workflows/python.yml)
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://github.com/pre-commit/pre-commit)
-[![Coverage Status](https://coveralls.io/repos/github/investigativedata/ftmq/badge.svg?branch=main)](https://coveralls.io/github/investigativedata/ftmq?branch=main)
+[![Coverage Status](https://coveralls.io/repos/github/dataresearchcenter/ftmq/badge.svg?branch=main)](https://coveralls.io/github/dataresearchcenter/ftmq?branch=main)
 [![AGPLv3+ License](https://img.shields.io/pypi/l/ftmq)](./LICENSE)
 
 # ftmq
