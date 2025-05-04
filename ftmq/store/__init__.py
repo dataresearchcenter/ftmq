@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import TypeVar
 from urllib.parse import urlparse
 
-from nomenklatura import Resolver
+from nomenklatura import Resolver, settings
 from nomenklatura.db import get_metadata
 
 from ftmq.model.dataset import Catalog, Dataset
@@ -18,7 +18,7 @@ S = TypeVar("S", bound=Store)
 
 @cache
 def get_store(
-    uri: PathLike | None = "memory:///",
+    uri: PathLike | None = settings.DB_URL,
     catalog: Catalog | None = None,
     dataset: Dataset | str | None = None,
     linker: Resolver | None = None,

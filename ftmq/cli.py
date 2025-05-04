@@ -3,6 +3,7 @@ import orjson
 from anystore.io import smart_write
 from anystore.util import clean_dict
 from click_default_group import DefaultGroup
+from nomenklatura import settings
 
 from ftmq.aggregate import aggregate
 from ftmq.io import apply_datasets, smart_read_proxies, smart_write_proxies
@@ -272,13 +273,17 @@ def store():
 
 @store.command("list-datasets")
 @click.option(
-    "-i", "--input-uri", default="-", show_default=True, help="input file or uri"
+    "-i",
+    "--input-uri",
+    default=settings.DB_URL,
+    show_default=True,
+    help="input file or uri",
 )
 @click.option(
     "-o", "--output-uri", default="-", show_default=True, help="output file or uri"
 )
 def store_list_datasets(
-    input_uri: str | None = "-",
+    input_uri: str | None = settings.DB_URL,
     output_uri: str | None = "-",
 ):
     """
@@ -290,30 +295,19 @@ def store_list_datasets(
     smart_write(output_uri, "\n".join(datasets).encode() + b"\n")
 
 
-@store.command("resolve")
-@click.option(
-    "-i", "--input-uri", default="-", show_default=True, help="store input uri"
-)
-def store_resolve(
-    input_uri: str | None = "-",
-    resolver_uri: str | None = None,
-):
-    """
-    Apply nk resolver to a store
-    """
-    store = get_store(input_uri, resolver=resolver_uri)
-    store.resolve()
-
-
 @store.command("iterate")
 @click.option(
-    "-i", "--input-uri", default="-", show_default=True, help="store input uri"
+    "-i",
+    "--input-uri",
+    default=settings.DB_URL,
+    show_default=True,
+    help="store input uri",
 )
 @click.option(
     "-o", "--output-uri", default=None, show_default=True, help="output file or uri"
 )
 def store_iterate(
-    input_uri: str | None = "-",
+    input_uri: str | None = settings.DB_URL,
     output_uri: str | None = "-",
 ):
     """
