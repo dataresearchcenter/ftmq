@@ -141,6 +141,6 @@ class View(nk.base.View):
 
     def similar(
         self, entity_id: str, limit: int | None = None
-    ) -> Generator[tuple[CE, float]]:
+    ) -> Generator[tuple[CE, float], None, None]:
         for candidate_id, score in get_similar(entity_id, self.store.linker, limit):
             yield self.get_entity(candidate_id), score
