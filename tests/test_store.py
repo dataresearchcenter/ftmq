@@ -252,7 +252,7 @@ def test_store_memory(proxies):
 
 def test_store_leveldb(tmp_path, proxies):
     path = tmp_path / "level.db"
-    assert _run_store_test_implicit(MemoryStore, proxies)
+    assert _run_store_test_implicit(LevelDBStore, proxies, path=path)
     path = tmp_path / "level2.db"
     assert _run_store_test(LevelDBStore, proxies, path=path)
 
@@ -269,7 +269,7 @@ def test_store_sql_sqlite(tmp_path, proxies):
 
 def test_store_init(tmp_path):
     store = get_store()
-    assert isinstance(store, MemoryStore)
+    assert isinstance(store, SQLStore)
     store = get_store("memory:///")
     assert isinstance(store, MemoryStore)
     path = tmp_path / "level.db"
