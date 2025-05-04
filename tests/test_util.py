@@ -20,6 +20,7 @@ def test_util_make_dataset():
     assert ds.to_dict() == {
         "name": "Test",
         "title": "Test",
+        "tags": [],
         "resources": [],
     }
 

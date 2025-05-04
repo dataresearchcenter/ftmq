@@ -134,8 +134,8 @@ class SchemaFilter(BaseFilter):
         self,
         value: Value | Schema | Iterable[Schema],
         comparator: Comparators | None = None,
-        include_descendants: bool = False,
-        include_matchable: bool = False,
+        schema_include_descendants: bool = False,
+        schema_include_matchable: bool = False,
     ):
         super().__init__(value, comparator)
         self.schemata: set[Schema] = set()
@@ -143,15 +143,22 @@ class SchemaFilter(BaseFilter):
             schema = model.get(schema)
             if schema is not None:
                 self.schemata.add(schema)
-                if include_descendants:
+                if schema_include_descendants:
                     self.schemata.update(schema.descendants)
-                if include_matchable:
+                if schema_include_matchable:
                     self.schemata.update(schema.matchable_schemata)
-        if len(self.schemata) == 1:
-            self.value = [s.name for s in self.schemata][0]
-        elif self.comparator == Lookup.EQUALS:
-            if model.get(self.value) is None:
-                raise ValidationError(f"Invalid schema: `{self.value}`")
+        if not self.schemata and self.comparator in ("eq", "in", "not", "not_in"):
+            raise ValidationError(f"Invalid schema: `{self.value}`")
+        if len(self.schemata) > 1:
+            if self.comparator not in ("eq", "in", "not", "not_in"):
+                raise ValidationError(
+                    f"Invalid schema lookup: `{self.comparator}` with multiple schemata"
+                )
+            self.value = {s.name for s in self.schemata}
+            if self.comparator == Comparators["eq"]:
+                self.comparator = Comparators["in"]
+            elif self.comparator == Comparators["not"]:
+                self.comparator = Comparators["not_in"]
 
     def apply(self, proxy: CE) -> bool:
         if len(self.schemata) > 1:

@@ -5,6 +5,7 @@ schemata.
 
 from typing import Iterable
 
+from anystore.io import logged_items
 from followthemoney import model
 from followthemoney.exc import InvalidData
 from followthemoney.schema import Schema
@@ -56,7 +57,7 @@ def merge(p1: Proxy, p2: Proxy, downgrade: bool | None = False) -> Proxy:
 
 def aggregate(proxies: Iterable[Proxy], downgrade: bool | None = False) -> CEGenerator:
     buffer: dict[str, Proxy] = {}
-    for proxy in proxies:
+    for proxy in logged_items(proxies, "Aggregate", item_name="Proxy"):
         if proxy.id in buffer:
             buffer[proxy.id] = merge(buffer[proxy.id], proxy, downgrade)
         else:

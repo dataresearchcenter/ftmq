@@ -3,6 +3,7 @@ from nomenklatura.entity import CompositeEntity
 from ftmq.model import Catalog, Dataset
 from ftmq.query import Query
 from ftmq.store import AlephStore, MemoryStore, SQLStore, Store, get_store
+from ftmq.store.base import get_resolver
 from ftmq.store.level import LevelDBStore
 from ftmq.util import make_dataset
 
@@ -11,7 +12,7 @@ from ftmq.util import make_dataset
 
 def _run_store_test_implicit(cls: Store, proxies, **kwargs):
     # implicit catalog from store content
-    store = cls(**kwargs)
+    store = cls(linker=get_resolver(), **kwargs)
     assert not store.get_catalog().names
 
     datasets_seen = set()
@@ -30,7 +31,7 @@ def _run_store_test(cls: Store, proxies, **kwargs):
     catalog = Catalog(
         datasets=[Dataset(name="eu_authorities"), Dataset(name="donations")]
     )
-    store = cls(catalog=catalog, **kwargs)
+    store = cls(catalog=catalog, linker=get_resolver(), **kwargs)
     with store.writer() as bulk:
         for proxy in proxies:
             bulk.add_entity(proxy)
@@ -76,6 +77,20 @@ def _run_store_test(cls: Store, proxies, **kwargs):
     res = [e for e in view.entities(q)]
     assert all(r.schema.name == "Payment" for r in res)
     assert len(res) == 21
+
+    # schemata filters
+    q = Query().where(schema="Organization", schema_include_matchable=True)
+    res = [e for e in view.entities(q)]
+    assert len(res) == 224
+    q = Query().where(schema="LegalEntity")
+    res = [e for e in view.entities(q)]
+    assert len(res) == 0
+    q = Query().where(schema="LegalEntity", schema_include_matchable=True)
+    res = [e for e in view.entities(q)]
+    assert len(res) == 246
+    q = Query().where(schema="LegalEntity", schema_include_descendants=True)
+    res = [e for e in view.entities(q)]
+    assert len(res) == 246
 
     # stats
     q = Query().where(dataset="eu_authorities")
@@ -237,7 +252,7 @@ def test_store_memory(proxies):
 
 def test_store_leveldb(tmp_path, proxies):
     path = tmp_path / "level.db"
-    assert _run_store_test_implicit(MemoryStore, proxies)
+    assert _run_store_test_implicit(LevelDBStore, proxies, path=path)
     path = tmp_path / "level2.db"
     assert _run_store_test(LevelDBStore, proxies, path=path)
 
@@ -254,7 +269,7 @@ def test_store_sql_sqlite(tmp_path, proxies):
 
 def test_store_init(tmp_path):
     store = get_store()
-    assert isinstance(store, MemoryStore)
+    assert isinstance(store, SQLStore)
     store = get_store("memory:///")
     assert isinstance(store, MemoryStore)
     path = tmp_path / "level.db"

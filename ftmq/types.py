@@ -5,7 +5,7 @@ from typing import Literal, TypeAlias, TypeVar
 
 from anystore.types import SDict
 from nomenklatura.entity import CE
-from nomenklatura.statement.statement import S
+from nomenklatura.statement.statement import Statement
 from nomenklatura.stream import StreamEntity
 
 from ftmq import enums
@@ -22,7 +22,7 @@ SEGenerator: TypeAlias = Generator[SE, None, None]
 ProxyGenerator: TypeAlias = Generator[Proxy, None, None]
 
 # statement generator
-SGenerator: TypeAlias = Generator[S, None, None]
+SGenerator: TypeAlias = Generator[Statement, None, None]
 
 StrGenerator: TypeAlias = Generator[str, None, None]
 BytesGenerator: TypeAlias = Generator[bytes, None, None]

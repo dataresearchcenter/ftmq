@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Iterable, Literal, Self, TypeVar
 
+from anystore.io import logged_items
 from nomenklatura.dataset.dataset import Dataset as NKDataset
 from normality import slugify
 from pydantic import AnyUrl, HttpUrl
@@ -102,7 +103,14 @@ class Dataset(BaseModel):
 
         for resource in self.resources:
             if resource.mime_type == FTM:
-                yield from smart_read_proxies(resource.url)
+                yield from logged_items(
+                    smart_read_proxies(resource.url),
+                    "Read",
+                    1_000,
+                    uri=resource.url,
+                    item_name="Proxy",
+                    dataset=self.name,
+                )
 
     def apply_stats(self, stats: DatasetStats) -> None:
         self.entity_count = stats.entity_count

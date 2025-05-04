@@ -1,6 +1,6 @@
 [project]
 name = "ftmq"
-version = "0.8.0"
+version = "0.8.2"
 description = "followthemoney query dsl and io helpers"
 authors = [{ name = "Simon Wörpel", email = "simon.woerpel@pm.me" }]
 license = "AGPLv3+"
@@ -15,13 +15,13 @@ classifiers = [
 ]
 requires-python = ">=3.11,<4"
 dependencies = [
-    "anystore (>=0.3.0,<0.4.0)",
-    "nomenklatura (>=3.14.0,<4.0.0)",
+    "anystore (>=0.3.2,<0.4.0)",
+    "nomenklatura (>=3.17.3,<4.0.0)",
     "click (>=8.1.8,<9.0.0)",
     "click-default-group (>=1.2.4,<2.0.0)",
-    "orjson (>=3.10.14,<4.0.0)",
-    "pyicu (>=2.14,<3.0)",
-    "pydantic (>=2.10.4,<3.0.0)",
+    "orjson (>=3.10.16,<4.0.0)",
+    "pyicu (>=2.15.2,<3.0.0)",
+    "pydantic (>=2.11.3,<3.0.0)",
     "alephclient (>=2.6.0,<3.0.0)",
     "pycountry (>=24.6.1,<25.0.0)",
 ]
@@ -37,8 +37,8 @@ ftmq = "ftmq.cli:cli"
 [project.urls]
 Homepage = "https://docs.investigraph.dev/lib/ftmq"
 Documentation = "https://docs.investigraph.dev/lib/ftmq"
-Repository = "https://github.com/investigativedata/ftmq"
-Issues = "https://github.com/investigativedata/ftmq/issues"
+Repository = "https://github.com/dataresearchcenter/ftmq"
+Issues = "https://github.com/dataresearchcenter/ftmq/issues"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=7.4.3,<9.0.0"
@@ -54,19 +54,17 @@ cloudpickle = ">=2.2.1,<4.0.0"
 pytest-env = "^1.1.1"
 bump-pydantic = ">=0.7,<0.9"
 mkdocs = "^1.6.1"
-mkdocstrings-python = "^1.12.2"
-mkdocs-autorefs = "^1.2.0"
-mkdocs-material = "^9.5.47"
-mkdocs-click = "^0.8.1"
+mkdocstrings-python = "^1.16.10"
+mkdocs-autorefs = "^1.4.1"
+mkdocs-material = "^9.6.12"
+mkdocs-click = "^0.9.0"
 
-
-[tool.poetry.dependencies]
-anystore = {develop = true}
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.pytest_env]
 NOMENKLATURA_STATEMENT_TABLE = "test_table"
+NOMENKLATURA_DB_URL = "sqlite:///:memory:"
 DEBUG = 1
 MAX_SQL_AGG_GROUPS = 11

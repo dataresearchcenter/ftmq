@@ -59,19 +59,24 @@ def test_proxy_filter_schema(proxies):
     result = list(filter(q.apply, proxies))
     assert len(result) == 290 + 17
 
-    q = Query().where(schema="Organization", include_matchable=True)
+    q = Query().where(schema="Organization", schema_include_matchable=True)
     result = list(filter(q.apply, proxies))
     assert len(result) == 224
+
+    # FIXME
+    # q = Query().where(schema__not="Organization", schema_include_matchable=True)
+    # result = list(filter(q.apply, proxies))
+    # assert len(result) == len(proxies) - 224
 
     q = Query().where(schema="LegalEntity")
     result = list(filter(q.apply, proxies))
     assert len(result) == 0
 
-    q = Query().where(schema="LegalEntity", include_matchable=True)
+    q = Query().where(schema="LegalEntity", schema_include_matchable=True)
     result = list(filter(q.apply, proxies))
     assert len(result) == 246
 
-    q = Query().where(schema="LegalEntity", include_descendants=True)
+    q = Query().where(schema="LegalEntity", schema_include_descendants=True)
     result = list(filter(q.apply, proxies))
     assert len(result) == 246
 
