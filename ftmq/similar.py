@@ -7,7 +7,7 @@ from sqlalchemy import desc, or_, select
 
 def get_similar(
     entity_id: str, resolver: Resolver, limit: int | None = None
-) -> Generator[tuple[str, float]]:
+) -> Generator[tuple[str, float], None, None]:
     """
     Get similar entity ids for given id with NO_JUDGEMENT from resolver
     """
