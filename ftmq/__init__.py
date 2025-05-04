@@ -2,7 +2,7 @@ from ftmq.io import smart_read_proxies, smart_stream_proxies, smart_write_proxie
 from ftmq.query import Query
 from ftmq.util import make_proxy
 
-__version__ = "0.8.1"
+__version__ = "0.8.2"
 __all__ = [
     "smart_read_proxies",
     "smart_stream_proxies",
