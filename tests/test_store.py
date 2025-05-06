@@ -107,6 +107,7 @@ def _run_store_test(cls: Store, proxies, **kwargs):
             "count": 151,
         }
     ]
+    assert view.count(q) == 151
 
     # ordering
     q = Query().where(schema="Payment", prop="date", value=2011, comparator="gte")
