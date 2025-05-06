@@ -15,7 +15,7 @@ classifiers = [
 ]
 requires-python = ">=3.11,<4"
 dependencies = [
-    "anystore (>=0.3.2,<0.4.0)",
+    "anystore (>=0.3.3,<0.4.0)",
     "nomenklatura (>=3.17.3,<4.0.0)",
     "click (>=8.1.8,<9.0.0)",
     "click-default-group (>=1.2.4,<2.0.0)",

@@ -207,14 +207,14 @@ files = [
 
 [[package]]
 name = "anystore"
-version = "0.3.2"
+version = "0.3.3"
 description = "Store and cache things anywhere"
 optional = false
 python-versions = "<4,>=3.11"
 groups = ["main"]
 files = [
-    {file = "anystore-0.3.2-py3-none-any.whl", hash = "sha256:ecc99cd1aa0e0a6c08deb8eb89f56ea7733a13ac3bb2d52261a22c76a679dafe"},
-    {file = "anystore-0.3.2.tar.gz", hash = "sha256:9b0a914e088130003f7cf715d9e226ada9785ff4940b240426a2e1d7fface289"},
+    {file = "anystore-0.3.3-py3-none-any.whl", hash = "sha256:c516e2f3eb4e8babca3b5c07a4cc2dce918a6f4d087d84c30f4035c5363c041b"},
+    {file = "anystore-0.3.3.tar.gz", hash = "sha256:589ca01c46d044de438e7c96934d99ed08a87b39f85d5894a6e3cec867ddf367"},
 ]
 
 [package.dependencies]
@@ -4222,4 +4222,4 @@ sql = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<4"
-content-hash = "25c3e6010079dfd79adae66192c7978debc1adc14c22771aaf1d72bcfe5d7240"
+content-hash = "57e2dfbc25653ea542b559c54183a41c8ffea39bb79f43f7ea3ffdb2b9b54c6e"
