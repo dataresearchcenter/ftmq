@@ -16,7 +16,7 @@ export function getProxy(raw: TEntity): Entity {
 }
 
 export function getSchema(
-  schemaName: string | null | undefined | TSchema
+  schemaName: string | null | undefined | TSchema,
 ): TSchema {
   return model.getSchema(schemaName);
 }
@@ -31,7 +31,7 @@ type EntityDict = {
 
 export function createEntityDict(
   entities: IEntityDatum[],
-  lookups?: string[]
+  lookups?: string[],
 ): EntityDict {
   const data: EntityDict = {};
   for (const entity of entities.map(getProxy)) {
@@ -54,6 +54,6 @@ export function pickStringValues(values: Values): string[] {
 export function pickLongestString(values: Values): string {
   return pickStringValues(values).reduce(
     (res, value) => (value.length > res.length ? value : res),
-    ""
+    "",
   );
 }
