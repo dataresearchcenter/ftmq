@@ -23,22 +23,22 @@ export default class Api {
   }
 
   async getCatalog(opts: RequestInit = {}): Promise<ICatalog> {
-    return await this.api("catalog", (opts = opts));
+    return await this.api("catalog", {}, opts);
   }
 
   async getDataset(dataset: string, opts: RequestInit = {}): Promise<IDataset> {
-    return await this.api(`catalog/${dataset}`, (opts = opts));
+    return await this.api(`catalog/${dataset}`, {}, opts);
   }
 
   async getEntity(id: string, opts: RequestInit = {}): Promise<IEntityDatum> {
-    return await this.api(`entities/${id}`, { nested: true }, (opts = opts));
+    return await this.api(`entities/${id}`, { nested: true }, opts);
   }
 
   async getEntities(
     query: IApiQuery = {},
     opts: RequestInit = {},
   ): Promise<IEntitiesResult> {
-    return await this.api(`entities`, query, (opts = opts));
+    return await this.api(`entities`, query, opts);
   }
 
   async getEntitiesAll(q: IApiQuery = {}): Promise<IEntityDatum[]> {
@@ -57,7 +57,7 @@ export default class Api {
     query: IApiQuery = {},
     opts: RequestInit,
   ): Promise<IAggregationResult> {
-    return await this.api("aggregate", query, (opts = opts));
+    return await this.api("aggregate", query, opts);
   }
 
   async search(q: string, query: IApiQuery = {}): Promise<IEntitiesResult> {
