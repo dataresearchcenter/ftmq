@@ -23,6 +23,7 @@
   },
   "homepage": "https://github.com/dataresearchcenter/ftmq#readme",
   "devDependencies": {
+    "@trivago/prettier-plugin-sort-imports": "^5.2.2",
     "@types/node": "^22.15.14",
     "babel-core": "^6.26.3",
     "babel-runtime": "^6.26.0",
