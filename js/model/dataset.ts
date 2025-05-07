@@ -1,37 +1,33 @@
 export type TDatasetCategory =
-  | (
-      | "news"
-      | "leak"
-      | "land"
-      | "gazette"
-      | "court"
-      | "company"
-      | "sanctions"
-      | "procurement"
-      | "finance"
-      | "grey"
-      | "library"
-      | "license"
-      | "regulatory"
-      | "poi"
-      | "customs"
-      | "census"
-      | "transport"
-      | "casefile"
-      | "other"
-    )
+  | "news"
+  | "leak"
+  | "land"
+  | "gazette"
+  | "court"
+  | "company"
+  | "sanctions"
+  | "procurement"
+  | "finance"
+  | "grey"
+  | "library"
+  | "license"
+  | "regulatory"
+  | "poi"
+  | "customs"
+  | "census"
+  | "transport"
+  | "casefile"
+  | "other"
   | null;
 
 export type TDatasetFrequency =
-  | (
-      | "unknown"
-      | "never"
-      | "hourly"
-      | "daily"
-      | "weekly"
-      | "monthly"
-      | "annually"
-    )
+  | "unknown"
+  | "never"
+  | "hourly"
+  | "daily"
+  | "weekly"
+  | "monthly"
+  | "annually"
   | null;
 
 export type TContentType = "documents" | "structured" | "mixed";
@@ -125,7 +121,7 @@ export interface IDataset {
 export interface ICatalog {
   readonly name: string;
   readonly title?: string | null;
-  readonly datasets: IDataset[] | null;
+  readonly datasets: IDataset[];
   readonly description?: string | null;
   readonly url?: string | null;
   readonly updated_at?: string | null;

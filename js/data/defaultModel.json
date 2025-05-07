@@ -1,22 +1,10 @@
 {
   "schemata": {
     "Address": {
-      "caption": [
-        "full",
-        "summary",
-        "city",
-        "remarks"
-      ],
+      "caption": ["full", "summary", "city", "remarks"],
       "description": "A location associated with an entity.\n",
-      "extends": [
-        "Thing"
-      ],
-      "featured": [
-        "full",
-        "city",
-        "street",
-        "country"
-      ],
+      "extends": ["Thing"],
+      "featured": ["full", "city", "street", "country"],
       "label": "Address",
       "matchable": true,
       "plural": "Addresses",
@@ -146,20 +134,12 @@
           "type": "entity"
         }
       },
-      "schemata": [
-        "Address",
-        "Thing"
-      ]
+      "schemata": ["Address", "Thing"]
     },
     "Airplane": {
-      "caption": [
-        "name",
-        "registrationNumber"
-      ],
+      "caption": ["name", "registrationNumber"],
       "description": "An airplane, helicopter or other flying vehicle.\n",
-      "extends": [
-        "Vehicle"
-      ],
+      "extends": ["Vehicle"],
       "featured": [
         "type",
         "registrationNumber",
@@ -191,13 +171,7 @@
           "type": "identifier"
         }
       },
-      "schemata": [
-        "Airplane",
-        "Asset",
-        "Thing",
-        "Value",
-        "Vehicle"
-      ]
+      "schemata": ["Airplane", "Asset", "Thing", "Value", "Vehicle"]
     },
     "Analyzable": {
       "abstract": true,
@@ -285,47 +259,23 @@
           "type": "phone"
         }
       },
-      "schemata": [
-        "Analyzable"
-      ]
+      "schemata": ["Analyzable"]
     },
     "Article": {
-      "caption": [
-        "title",
-        "fileName"
-      ],
+      "caption": ["title", "fileName"],
       "description": "A piece of media reporting about a subject.\n",
-      "extends": [
-        "Document"
-      ],
-      "featured": [
-        "title",
-        "author",
-        "publishedAt"
-      ],
+      "extends": ["Document"],
+      "featured": ["title", "author", "publishedAt"],
       "generated": true,
       "label": "Article",
       "plural": "Articles",
       "properties": {},
-      "schemata": [
-        "Analyzable",
-        "Article",
-        "Document",
-        "Thing"
-      ]
+      "schemata": ["Analyzable", "Article", "Document", "Thing"]
     },
     "Assessment": {
-      "caption": [
-        "name"
-      ],
-      "extends": [
-        "Thing"
-      ],
-      "featured": [
-        "name",
-        "publishDate",
-        "author"
-      ],
+      "caption": ["name"],
+      "extends": ["Thing"],
+      "featured": ["name", "publishDate", "author"],
       "label": "Assessment",
       "plural": "Assessments",
       "properties": {
@@ -352,33 +302,18 @@
           "type": "date"
         }
       },
-      "required": [
-        "name"
-      ],
-      "schemata": [
-        "Assessment",
-        "Thing"
-      ],
+      "required": ["name"],
+      "schemata": ["Assessment", "Thing"],
       "temporalExtent": {
         "end": [],
-        "start": [
-          "publishDate"
-        ]
+        "start": ["publishDate"]
       }
     },
     "Asset": {
-      "caption": [
-        "name"
-      ],
+      "caption": ["name"],
       "description": "A piece of property which can be owned and assigned a monetary value.\n",
-      "extends": [
-        "Thing",
-        "Value"
-      ],
-      "featured": [
-        "name",
-        "amount"
-      ],
+      "extends": ["Thing", "Value"],
+      "featured": ["name", "amount"],
       "label": "Asset",
       "plural": "Assets",
       "properties": {
@@ -393,31 +328,19 @@
           "type": "entity"
         }
       },
-      "schemata": [
-        "Asset",
-        "Thing",
-        "Value"
-      ]
+      "schemata": ["Asset", "Thing", "Value"]
     },
     "Associate": {
       "description": "Non-family association between two people",
       "edge": {
-        "caption": [
-          "relationship"
-        ],
+        "caption": ["relationship"],
         "directed": false,
         "label": "associated with",
         "source": "person",
         "target": "associate"
       },
-      "extends": [
-        "Interval"
-      ],
-      "featured": [
-        "person",
-        "associate",
-        "relationship"
-      ],
+      "extends": ["Interval"],
+      "featured": ["person", "associate", "relationship"],
       "label": "Associate",
       "plural": "Associates",
       "properties": {
@@ -449,29 +372,13 @@
           "type": "string"
         }
       },
-      "required": [
-        "person",
-        "associate"
-      ],
-      "schemata": [
-        "Associate",
-        "Interval"
-      ]
+      "required": ["person", "associate"],
+      "schemata": ["Associate", "Interval"]
     },
     "Audio": {
-      "caption": [
-        "fileName",
-        "title"
-      ],
-      "extends": [
-        "Document"
-      ],
-      "featured": [
-        "title",
-        "fileName",
-        "mimeType",
-        "parent"
-      ],
+      "caption": ["fileName", "title"],
+      "extends": ["Document"],
+      "featured": ["title", "fileName", "mimeType", "parent"],
       "generated": true,
       "label": "Audio",
       "plural": "Audio files",
@@ -491,27 +398,13 @@
           "type": "number"
         }
       },
-      "schemata": [
-        "Analyzable",
-        "Audio",
-        "Document",
-        "Thing"
-      ]
+      "schemata": ["Analyzable", "Audio", "Document", "Thing"]
     },
     "BankAccount": {
-      "caption": [
-        "name",
-        "iban",
-        "accountNumber"
-      ],
+      "caption": ["name", "iban", "accountNumber"],
       "description": "An account held at a bank and controlled by an owner. This may also be used  to describe more complex arrangements like correspondent bank settlement accounts.\n",
-      "extends": [
-        "Asset"
-      ],
-      "featured": [
-        "accountNumber",
-        "bankName"
-      ],
+      "extends": ["Asset"],
+      "featured": ["accountNumber", "bankName"],
       "label": "Bank account",
       "matchable": true,
       "plural": "Bank accounts",
@@ -655,29 +548,15 @@
           "type": "entity"
         }
       },
-      "schemata": [
-        "Asset",
-        "BankAccount",
-        "Thing",
-        "Value"
-      ],
+      "schemata": ["Asset", "BankAccount", "Thing", "Value"],
       "temporalExtent": {
-        "end": [
-          "closingDate"
-        ],
-        "start": [
-          "openingDate"
-        ]
+        "end": ["closingDate"],
+        "start": ["openingDate"]
       }
     },
     "Call": {
-      "caption": [
-        "callerNumber",
-        "receiverNumber"
-      ],
-      "extends": [
-        "Interval"
-      ],
+      "caption": ["callerNumber", "receiverNumber"],
+      "extends": ["Interval"],
       "featured": [
         "callerNumber",
         "caller",
@@ -728,24 +607,13 @@
           "type": "phone"
         }
       },
-      "schemata": [
-        "Call",
-        "Interval"
-      ]
+      "schemata": ["Call", "Interval"]
     },
     "CallForTenders": {
-      "caption": [
-        "title"
-      ],
+      "caption": ["title"],
       "description": "A public appeal issued by an authority, possibly on behalf of another, for buying a specific work, supply or service\n",
-      "extends": [
-        "Interval",
-        "Thing"
-      ],
-      "featured": [
-        "title",
-        "authority"
-      ],
+      "extends": ["Interval", "Thing"],
+      "featured": ["title", "authority"],
       "label": "Call for tenders",
       "plural": "Calls for tenders",
       "properties": {
@@ -976,25 +844,13 @@
           "type": "string"
         }
       },
-      "required": [
-        "title",
-        "authority"
-      ],
-      "schemata": [
-        "CallForTenders",
-        "Interval",
-        "Thing"
-      ]
+      "required": ["title", "authority"],
+      "schemata": ["CallForTenders", "Interval", "Thing"]
     },
     "Company": {
-      "caption": [
-        "name"
-      ],
+      "caption": ["name"],
       "description": "A corporation, usually for profit. Does not distinguish between private and public companies, and can also be used to model more specific constructs like trusts and funds. Companies are assets, so they can be owned by other legal entities.\n",
-      "extends": [
-        "Asset",
-        "Organization"
-      ],
+      "extends": ["Asset", "Organization"],
       "featured": [
         "name",
         "jurisdiction",
@@ -1164,9 +1020,7 @@
           "type": "identifier"
         }
       },
-      "required": [
-        "name"
-      ],
+      "required": ["name"],
       "schemata": [
         "Asset",
         "Company",
@@ -1177,21 +1031,10 @@
       ]
     },
     "Contract": {
-      "caption": [
-        "title",
-        "name",
-        "procedureNumber"
-      ],
+      "caption": ["title", "name", "procedureNumber"],
       "description": "An contract or contract lot issued by an authority. Multiple lots may be awarded to different suppliers (see ContractAward).\n",
-      "extends": [
-        "Asset"
-      ],
-      "featured": [
-        "title",
-        "amount",
-        "authority",
-        "contractDate"
-      ],
+      "extends": ["Asset"],
+      "featured": ["title", "amount", "authority", "contractDate"],
       "label": "Contract",
       "plural": "Contracts",
       "properties": {
@@ -1324,37 +1167,23 @@
           "type": "string"
         }
       },
-      "required": [
-        "title"
-      ],
-      "schemata": [
-        "Asset",
-        "Contract",
-        "Thing",
-        "Value"
-      ],
+      "required": ["title"],
+      "schemata": ["Asset", "Contract", "Thing", "Value"],
       "temporalExtent": {
         "end": [],
-        "start": [
-          "contractDate"
-        ]
+        "start": ["contractDate"]
       }
     },
     "ContractAward": {
       "description": "A contract or contract lot as awarded to a supplier.",
       "edge": {
-        "caption": [
-          "lotNumber"
-        ],
+        "caption": ["lotNumber"],
         "directed": true,
         "label": "awarded to",
         "source": "contract",
         "target": "supplier"
       },
-      "extends": [
-        "Interest",
-        "Value"
-      ],
+      "extends": ["Interest", "Value"],
       "featured": [
         "supplier",
         "contract",
@@ -1441,30 +1270,13 @@
           "type": "entity"
         }
       },
-      "required": [
-        "supplier",
-        "contract"
-      ],
-      "schemata": [
-        "ContractAward",
-        "Interest",
-        "Interval",
-        "Value"
-      ]
+      "required": ["supplier", "contract"],
+      "schemata": ["ContractAward", "Interest", "Interval", "Value"]
     },
     "CourtCase": {
-      "caption": [
-        "name",
-        "caseNumber"
-      ],
-      "extends": [
-        "Thing"
-      ],
-      "featured": [
-        "name",
-        "fileDate",
-        "caseNumber"
-      ],
+      "caption": ["name", "caseNumber"],
+      "extends": ["Thing"],
+      "featured": ["name", "fileDate", "caseNumber"],
       "label": "Court case",
       "plural": "Court cases",
       "properties": {
@@ -1524,40 +1336,23 @@
           "type": "string"
         }
       },
-      "required": [
-        "name"
-      ],
-      "schemata": [
-        "CourtCase",
-        "Thing"
-      ],
+      "required": ["name"],
+      "schemata": ["CourtCase", "Thing"],
       "temporalExtent": {
-        "end": [
-          "closeDate"
-        ],
-        "start": [
-          "fileDate"
-        ]
+        "end": ["closeDate"],
+        "start": ["fileDate"]
       }
     },
     "CourtCaseParty": {
       "edge": {
-        "caption": [
-          "role"
-        ],
+        "caption": ["role"],
         "directed": true,
         "label": "involved in",
         "source": "party",
         "target": "case"
       },
-      "extends": [
-        "Interest"
-      ],
-      "featured": [
-        "party",
-        "case",
-        "role"
-      ],
+      "extends": ["Interest"],
+      "featured": ["party", "case", "role"],
       "label": "Case party",
       "plural": "Case parties",
       "properties": {
@@ -1580,31 +1375,14 @@
           "type": "entity"
         }
       },
-      "required": [
-        "case",
-        "party"
-      ],
-      "schemata": [
-        "CourtCaseParty",
-        "Interest",
-        "Interval"
-      ]
+      "required": ["case", "party"],
+      "schemata": ["CourtCaseParty", "Interest", "Interval"]
     },
     "CryptoWallet": {
-      "caption": [
-        "publicKey",
-        "name",
-        "summary"
-      ],
+      "caption": ["publicKey", "name", "summary"],
       "description": "A cryptocurrency wallet is a view on the transactions conducted by one participant on a blockchain / distributed ledger system.\n",
-      "extends": [
-        "Thing",
-        "Value"
-      ],
-      "featured": [
-        "currency",
-        "publicKey"
-      ],
+      "extends": ["Thing", "Value"],
+      "featured": ["currency", "publicKey"],
       "label": "Cryptocurrency wallet",
       "matchable": true,
       "plural": "Cryptocurrency wallets",
@@ -1665,39 +1443,23 @@
           "type": "identifier"
         }
       },
-      "schemata": [
-        "CryptoWallet",
-        "Thing",
-        "Value"
-      ],
+      "schemata": ["CryptoWallet", "Thing", "Value"],
       "temporalExtent": {
         "end": [],
-        "start": [
-          "creationDate"
-        ]
+        "start": ["creationDate"]
       }
     },
     "Debt": {
       "description": "A monetary debt between two parties.",
       "edge": {
-        "caption": [
-          "amount"
-        ],
+        "caption": ["amount"],
         "directed": true,
         "label": "owes",
         "source": "debtor",
         "target": "creditor"
       },
-      "extends": [
-        "Interval",
-        "Value"
-      ],
-      "featured": [
-        "debtor",
-        "creditor",
-        "date",
-        "amount"
-      ],
+      "extends": ["Interval", "Value"],
+      "featured": ["debtor", "creditor", "date", "amount"],
       "label": "Debt",
       "plural": "Debts",
       "properties": {
@@ -1720,38 +1482,20 @@
           "type": "entity"
         }
       },
-      "required": [
-        "debtor"
-      ],
-      "schemata": [
-        "Debt",
-        "Interval",
-        "Value"
-      ]
+      "required": ["debtor"],
+      "schemata": ["Debt", "Interval", "Value"]
     },
     "Directorship": {
-      "caption": [
-        "role"
-      ],
+      "caption": ["role"],
       "edge": {
-        "caption": [
-          "role"
-        ],
+        "caption": ["role"],
         "directed": true,
         "label": "directs",
         "source": "director",
         "target": "organization"
       },
-      "extends": [
-        "Interest"
-      ],
-      "featured": [
-        "director",
-        "organization",
-        "role",
-        "startDate",
-        "endDate"
-      ],
+      "extends": ["Interest"],
+      "featured": ["director", "organization", "role", "startDate", "endDate"],
       "label": "Directorship",
       "plural": "Directorships",
       "properties": {
@@ -1780,31 +1524,13 @@
           "type": "string"
         }
       },
-      "required": [
-        "director",
-        "organization"
-      ],
-      "schemata": [
-        "Directorship",
-        "Interest",
-        "Interval"
-      ]
+      "required": ["director", "organization"],
+      "schemata": ["Directorship", "Interest", "Interval"]
     },
     "Document": {
-      "caption": [
-        "fileName",
-        "title"
-      ],
-      "extends": [
-        "Analyzable",
-        "Thing"
-      ],
-      "featured": [
-        "title",
-        "fileName",
-        "mimeType",
-        "parent"
-      ],
+      "caption": ["fileName", "title"],
+      "extends": ["Analyzable", "Thing"],
+      "featured": ["title", "fileName", "mimeType", "parent"],
       "generated": true,
       "label": "File",
       "plural": "Files",
@@ -2008,42 +1734,24 @@
           "type": "text"
         }
       },
-      "required": [
-        "fileName"
-      ],
-      "schemata": [
-        "Analyzable",
-        "Document",
-        "Thing"
-      ],
+      "required": ["fileName"],
+      "schemata": ["Analyzable", "Document", "Thing"],
       "temporalExtent": {
         "end": [],
-        "start": [
-          "authoredAt",
-          "date",
-          "publishedAt"
-        ]
+        "start": ["authoredAt", "date", "publishedAt"]
       }
     },
     "Documentation": {
       "description": "Links some entity to a document, which might provide further detail or  evidence regarding the entity.\n",
       "edge": {
-        "caption": [
-          "role"
-        ],
+        "caption": ["role"],
         "directed": false,
         "label": "documents",
         "source": "document",
         "target": "entity"
       },
-      "extends": [
-        "Interest"
-      ],
-      "featured": [
-        "document",
-        "entity",
-        "role"
-      ],
+      "extends": ["Interest"],
+      "featured": ["document", "entity", "role"],
       "label": "Documentation",
       "plural": "Documentations",
       "properties": {
@@ -2066,26 +1774,13 @@
           "type": "entity"
         }
       },
-      "required": [
-        "document",
-        "entity"
-      ],
-      "schemata": [
-        "Documentation",
-        "Interest",
-        "Interval"
-      ]
+      "required": ["document", "entity"],
+      "schemata": ["Documentation", "Interest", "Interval"]
     },
     "EconomicActivity": {
-      "caption": [
-        "summary",
-        "goodsDescription",
-        "ccdNumber"
-      ],
+      "caption": ["summary", "goodsDescription", "ccdNumber"],
       "description": "A foreign economic activity",
-      "extends": [
-        "Interval"
-      ],
+      "extends": ["Interval"],
       "featured": [
         "sender",
         "receiver",
@@ -2289,30 +1984,13 @@
           "type": "string"
         }
       },
-      "schemata": [
-        "EconomicActivity",
-        "Interval"
-      ]
+      "schemata": ["EconomicActivity", "Interval"]
     },
     "Email": {
-      "caption": [
-        "subject",
-        "threadTopic",
-        "title",
-        "name",
-        "fileName"
-      ],
+      "caption": ["subject", "threadTopic", "title", "name", "fileName"],
       "description": "An internet mail message. The body can be formatted as plain text and/or HTML, and the message may have any number of attachments.",
-      "extends": [
-        "Folder",
-        "HyperText",
-        "PlainText"
-      ],
-      "featured": [
-        "subject",
-        "date",
-        "from"
-      ],
+      "extends": ["Folder", "HyperText", "PlainText"],
+      "featured": ["subject", "date", "from"],
       "generated": true,
       "label": "E-Mail",
       "plural": "E-Mails",
@@ -2425,28 +2103,16 @@
       ]
     },
     "Employment": {
-      "caption": [
-        "role"
-      ],
+      "caption": ["role"],
       "edge": {
-        "caption": [
-          "role"
-        ],
+        "caption": ["role"],
         "directed": true,
         "label": "works for",
         "source": "employee",
         "target": "employer"
       },
-      "extends": [
-        "Interest"
-      ],
-      "featured": [
-        "employer",
-        "employee",
-        "role",
-        "startDate",
-        "endDate"
-      ],
+      "extends": ["Interest"],
+      "featured": ["employer", "employee", "role", "startDate", "endDate"],
       "label": "Employment",
       "plural": "Employments",
       "properties": {
@@ -2469,33 +2135,13 @@
           "type": "entity"
         }
       },
-      "required": [
-        "employer",
-        "employee"
-      ],
-      "schemata": [
-        "Employment",
-        "Interest",
-        "Interval"
-      ]
+      "required": ["employer", "employee"],
+      "schemata": ["Employment", "Interest", "Interval"]
     },
     "Event": {
-      "caption": [
-        "name",
-        "summary",
-        "date"
-      ],
-      "extends": [
-        "Analyzable",
-        "Interval",
-        "Thing"
-      ],
-      "featured": [
-        "name",
-        "summary",
-        "date",
-        "location"
-      ],
+      "caption": ["name", "summary", "date"],
+      "extends": ["Analyzable", "Interval", "Thing"],
+      "featured": ["name", "summary", "date", "location"],
       "label": "Event",
       "plural": "Events",
       "properties": {
@@ -2538,35 +2184,20 @@
           "type": "entity"
         }
       },
-      "required": [
-        "name"
-      ],
-      "schemata": [
-        "Analyzable",
-        "Event",
-        "Interval",
-        "Thing"
-      ]
+      "required": ["name"],
+      "schemata": ["Analyzable", "Event", "Interval", "Thing"]
     },
     "Family": {
       "description": "Family relationship between two people",
       "edge": {
-        "caption": [
-          "relationship"
-        ],
+        "caption": ["relationship"],
         "directed": false,
         "label": "related to",
         "source": "person",
         "target": "relative"
       },
-      "extends": [
-        "Interval"
-      ],
-      "featured": [
-        "person",
-        "relative",
-        "relationship"
-      ],
+      "extends": ["Interval"],
+      "featured": ["person", "relative", "relationship"],
       "label": "Family",
       "plural": "Family members",
       "properties": {
@@ -2598,27 +2229,13 @@
           "type": "entity"
         }
       },
-      "required": [
-        "person",
-        "relative"
-      ],
-      "schemata": [
-        "Family",
-        "Interval"
-      ]
+      "required": ["person", "relative"],
+      "schemata": ["Family", "Interval"]
     },
     "Folder": {
-      "caption": [
-        "fileName",
-        "title"
-      ],
-      "extends": [
-        "Document"
-      ],
-      "featured": [
-        "title",
-        "parent"
-      ],
+      "caption": ["fileName", "title"],
+      "extends": ["Document"],
+      "featured": ["title", "parent"],
       "generated": true,
       "label": "Folder",
       "plural": "Folders",
@@ -2646,27 +2263,12 @@
           "type": "entity"
         }
       },
-      "schemata": [
-        "Analyzable",
-        "Document",
-        "Folder",
-        "Thing"
-      ]
+      "schemata": ["Analyzable", "Document", "Folder", "Thing"]
     },
     "HyperText": {
-      "caption": [
-        "title",
-        "fileName"
-      ],
-      "extends": [
-        "Document"
-      ],
-      "featured": [
-        "title",
-        "fileName",
-        "mimeType",
-        "parent"
-      ],
+      "caption": ["title", "fileName"],
+      "extends": ["Document"],
+      "featured": ["title", "fileName", "mimeType", "parent"],
       "generated": true,
       "label": "Web page",
       "plural": "Web pages",
@@ -2679,21 +2281,12 @@
           "type": "html"
         }
       },
-      "schemata": [
-        "Analyzable",
-        "Document",
-        "HyperText",
-        "Thing"
-      ]
+      "schemata": ["Analyzable", "Document", "HyperText", "Thing"]
     },
     "Identification": {
-      "caption": [
-        "number"
-      ],
+      "caption": ["number"],
       "description": "An form of identification associated with its holder and some issuing country. This can be used for national ID cards, voter enrollments and similar instruments.\n",
-      "extends": [
-        "Interval"
-      ],
+      "extends": ["Interval"],
       "featured": [
         "number",
         "country",
@@ -2741,30 +2334,14 @@
           "type": "string"
         }
       },
-      "required": [
-        "holder",
-        "number"
-      ],
-      "schemata": [
-        "Identification",
-        "Interval"
-      ]
+      "required": ["holder", "number"],
+      "schemata": ["Identification", "Interval"]
     },
     "Image": {
-      "caption": [
-        "fileName",
-        "title"
-      ],
+      "caption": ["fileName", "title"],
       "description": "An image file.\n",
-      "extends": [
-        "Document"
-      ],
-      "featured": [
-        "title",
-        "fileName",
-        "mimeType",
-        "parent"
-      ],
+      "extends": ["Document"],
+      "featured": ["title", "fileName", "mimeType", "parent"],
       "generated": true,
       "label": "Image",
       "plural": "Images",
@@ -2779,18 +2356,11 @@
           "type": "entity"
         }
       },
-      "schemata": [
-        "Analyzable",
-        "Document",
-        "Image",
-        "Thing"
-      ]
+      "schemata": ["Analyzable", "Document", "Image", "Thing"]
     },
     "Interest": {
       "abstract": true,
-      "extends": [
-        "Interval"
-      ],
+      "extends": ["Interval"],
       "label": "Interest",
       "plural": "Interest",
       "properties": {
@@ -2807,10 +2377,7 @@
           "type": "string"
         }
       },
-      "schemata": [
-        "Interest",
-        "Interval"
-      ]
+      "schemata": ["Interest", "Interval"]
     },
     "Interval": {
       "abstract": true,
@@ -2912,36 +2479,17 @@
           "type": "text"
         }
       },
-      "schemata": [
-        "Interval"
-      ],
+      "schemata": ["Interval"],
       "temporalExtent": {
-        "end": [
-          "endDate"
-        ],
-        "start": [
-          "date",
-          "startDate"
-        ]
+        "end": ["endDate"],
+        "start": ["date", "startDate"]
       }
     },
     "LegalEntity": {
-      "caption": [
-        "name",
-        "email",
-        "phone",
-        "registrationNumber"
-      ],
+      "caption": ["name", "email", "phone", "registrationNumber"],
       "description": "Any party to legal proceedings, such as asset ownership, corporate governance or social interactions. Often used when raw data does not specify if something is a person or company.\n",
-      "extends": [
-        "Thing"
-      ],
-      "featured": [
-        "name",
-        "country",
-        "legalForm",
-        "status"
-      ],
+      "extends": ["Thing"],
+      "featured": ["name", "country", "legalForm", "status"],
       "label": "Legal entity",
       "matchable": true,
       "plural": "Legal entities",
@@ -3523,30 +3071,17 @@
           "type": "url"
         }
       },
-      "required": [
-        "name"
-      ],
-      "schemata": [
-        "LegalEntity",
-        "Thing"
-      ],
+      "required": ["name"],
+      "schemata": ["LegalEntity", "Thing"],
       "temporalExtent": {
-        "end": [
-          "dissolutionDate"
-        ],
-        "start": [
-          "incorporationDate"
-        ]
+        "end": ["dissolutionDate"],
+        "start": ["incorporationDate"]
       }
     },
     "License": {
-      "caption": [
-        "name"
-      ],
+      "caption": ["name"],
       "description": "A grant of land, rights or property. A type of Contract",
-      "extends": [
-        "Contract"
-      ],
+      "extends": ["Contract"],
       "featured": [
         "name",
         "amount",
@@ -3576,41 +3111,20 @@
           "type": "string"
         }
       },
-      "required": [
-        "name",
-        "authority"
-      ],
-      "schemata": [
-        "Asset",
-        "Contract",
-        "License",
-        "Thing",
-        "Value"
-      ]
+      "required": ["name", "authority"],
+      "schemata": ["Asset", "Contract", "License", "Thing", "Value"]
     },
     "Membership": {
-      "caption": [
-        "role"
-      ],
+      "caption": ["role"],
       "edge": {
-        "caption": [
-          "role"
-        ],
+        "caption": ["role"],
         "directed": true,
         "label": "belongs to",
         "source": "member",
         "target": "organization"
       },
-      "extends": [
-        "Interest"
-      ],
-      "featured": [
-        "member",
-        "organization",
-        "role",
-        "startDate",
-        "endDate"
-      ],
+      "extends": ["Interest"],
+      "featured": ["member", "organization", "role", "startDate", "endDate"],
       "label": "Membership",
       "plural": "Memberships",
       "properties": {
@@ -3633,26 +3147,13 @@
           "type": "entity"
         }
       },
-      "required": [
-        "member",
-        "organization"
-      ],
-      "schemata": [
-        "Interest",
-        "Interval",
-        "Membership"
-      ]
+      "required": ["member", "organization"],
+      "schemata": ["Interest", "Interval", "Membership"]
     },
     "Mention": {
-      "caption": [
-        "name"
-      ],
+      "caption": ["name"],
       "extends": [],
-      "featured": [
-        "document",
-        "name",
-        "resolved"
-      ],
+      "featured": ["document", "name", "resolved"],
       "generated": true,
       "hidden": true,
       "label": "Mention",
@@ -3712,33 +3213,13 @@
           "type": "entity"
         }
       },
-      "required": [
-        "document",
-        "name"
-      ],
-      "schemata": [
-        "Mention"
-      ]
+      "required": ["document", "name"],
+      "schemata": ["Mention"]
     },
     "Message": {
-      "caption": [
-        "subject",
-        "title",
-        "threadTopic",
-        "fileName"
-      ],
-      "extends": [
-        "Folder",
-        "HyperText",
-        "Interval",
-        "PlainText"
-      ],
-      "featured": [
-        "subject",
-        "date",
-        "sender",
-        "recipients"
-      ],
+      "caption": ["subject", "title", "threadTopic", "fileName"],
+      "extends": ["Folder", "HyperText", "Interval", "PlainText"],
+      "featured": ["subject", "date", "sender", "recipients"],
       "generated": true,
       "label": "Message",
       "plural": "Messages",
@@ -3826,10 +3307,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "bodyText",
-        "sender"
-      ],
+      "required": ["bodyText", "sender"],
       "schemata": [
         "Analyzable",
         "Document",
@@ -3842,18 +3320,10 @@
       ]
     },
     "Note": {
-      "caption": [
-        "description"
-      ],
+      "caption": ["description"],
       "description": "An annotation that applies to a document or entity.\n",
-      "extends": [
-        "Analyzable",
-        "Thing"
-      ],
-      "featured": [
-        "description",
-        "entity"
-      ],
+      "extends": ["Analyzable", "Thing"],
+      "featured": ["description", "entity"],
       "label": "Note",
       "plural": "Notes",
       "properties": {
@@ -3867,31 +3337,19 @@
           "type": "entity"
         }
       },
-      "schemata": [
-        "Analyzable",
-        "Note",
-        "Thing"
-      ]
+      "schemata": ["Analyzable", "Note", "Thing"]
     },
     "Occupancy": {
       "description": "The occupation of a position by a person for a specific period of time.\n",
       "edge": {
-        "caption": [
-          "startDate",
-          "endDate"
-        ],
+        "caption": ["startDate", "endDate"],
         "directed": true,
         "label": "holds",
         "source": "holder",
         "target": "post"
       },
-      "extends": [
-        "Interval"
-      ],
-      "featured": [
-        "holder",
-        "post"
-      ],
+      "extends": ["Interval"],
+      "featured": ["holder", "post"],
       "label": "Occupancy",
       "plural": "Occupancies",
       "properties": {
@@ -3920,29 +3378,14 @@
           "type": "string"
         }
       },
-      "required": [
-        "holder",
-        "post"
-      ],
-      "schemata": [
-        "Interval",
-        "Occupancy"
-      ]
+      "required": ["holder", "post"],
+      "schemata": ["Interval", "Occupancy"]
     },
     "Organization": {
-      "caption": [
-        "name"
-      ],
+      "caption": ["name"],
       "description": "Any type of incorporated entity that cannot be owned by another (see Company). This might include charities, foundations or state-owned enterprises, depending on their  jurisdiction.\n",
-      "extends": [
-        "LegalEntity"
-      ],
-      "featured": [
-        "name",
-        "country",
-        "legalForm",
-        "status"
-      ],
+      "extends": ["LegalEntity"],
+      "featured": ["name", "country", "legalForm", "status"],
       "label": "Organization",
       "matchable": true,
       "plural": "Organizations",
@@ -3998,35 +3441,19 @@
           "type": "entity"
         }
       },
-      "required": [
-        "name"
-      ],
-      "schemata": [
-        "LegalEntity",
-        "Organization",
-        "Thing"
-      ]
+      "required": ["name"],
+      "schemata": ["LegalEntity", "Organization", "Thing"]
     },
     "Ownership": {
       "edge": {
-        "caption": [
-          "percentage"
-        ],
+        "caption": ["percentage"],
         "directed": true,
         "label": "owns",
         "source": "owner",
         "target": "asset"
       },
-      "extends": [
-        "Interest"
-      ],
-      "featured": [
-        "owner",
-        "asset",
-        "percentage",
-        "startDate",
-        "endDate"
-      ],
+      "extends": ["Interest"],
+      "featured": ["owner", "asset", "percentage", "startDate", "endDate"],
       "label": "Ownership",
       "plural": "Ownerships",
       "properties": {
@@ -4091,42 +3518,19 @@
           "type": "string"
         }
       },
-      "required": [
-        "owner",
-        "asset"
-      ],
-      "schemata": [
-        "Interest",
-        "Interval",
-        "Ownership"
-      ]
+      "required": ["owner", "asset"],
+      "schemata": ["Interest", "Interval", "Ownership"]
     },
     "Package": {
-      "caption": [
-        "fileName",
-        "title"
-      ],
+      "caption": ["fileName", "title"],
       "description": "A bundle of files that have been packaged together into some form of archive.\n",
-      "extends": [
-        "Folder"
-      ],
-      "featured": [
-        "title",
-        "fileName",
-        "mimeType",
-        "parent"
-      ],
+      "extends": ["Folder"],
+      "featured": ["title", "fileName", "mimeType", "parent"],
       "generated": true,
       "label": "Package",
       "plural": "Packages",
       "properties": {},
-      "schemata": [
-        "Analyzable",
-        "Document",
-        "Folder",
-        "Package",
-        "Thing"
-      ]
+      "schemata": ["Analyzable", "Document", "Folder", "Package", "Thing"]
     },
     "Page": {
       "extends": [],
@@ -4186,25 +3590,13 @@
           "type": "string"
         }
       },
-      "schemata": [
-        "Page"
-      ]
+      "schemata": ["Page"]
     },
     "Pages": {
-      "caption": [
-        "fileName",
-        "title"
-      ],
+      "caption": ["fileName", "title"],
       "description": "A multi-page document, such as a PDF or Word file or slide-show presentation.\n",
-      "extends": [
-        "Document"
-      ],
-      "featured": [
-        "title",
-        "fileName",
-        "mimeType",
-        "parent"
-      ],
+      "extends": ["Document"],
+      "featured": ["title", "fileName", "mimeType", "parent"],
       "generated": true,
       "label": "Document",
       "plural": "Documents",
@@ -4228,22 +3620,12 @@
           "type": "checksum"
         }
       },
-      "schemata": [
-        "Analyzable",
-        "Document",
-        "Pages",
-        "Thing"
-      ]
+      "schemata": ["Analyzable", "Document", "Pages", "Thing"]
     },
     "Passport": {
-      "caption": [
-        "passportNumber",
-        "number"
-      ],
+      "caption": ["passportNumber", "number"],
       "description": "An passport held by a person.\n",
-      "extends": [
-        "Identification"
-      ],
+      "extends": ["Identification"],
       "featured": [
         "passportNumber",
         "country",
@@ -4301,44 +3683,21 @@
           "type": "string"
         }
       },
-      "required": [
-        "holder",
-        "passportNumber",
-        "number"
-      ],
-      "schemata": [
-        "Identification",
-        "Interval",
-        "Passport"
-      ]
+      "required": ["holder", "passportNumber", "number"],
+      "schemata": ["Identification", "Interval", "Passport"]
     },
     "Payment": {
-      "caption": [
-        "amount"
-      ],
+      "caption": ["amount"],
       "description": "A monetary payment between two parties.",
       "edge": {
-        "caption": [
-          "amount",
-          "date",
-          "purpose"
-        ],
+        "caption": ["amount", "date", "purpose"],
         "directed": true,
         "label": "paid",
         "source": "payer",
         "target": "beneficiary"
       },
-      "extends": [
-        "Interval",
-        "Value"
-      ],
-      "featured": [
-        "payer",
-        "beneficiary",
-        "date",
-        "amount",
-        "purpose"
-      ],
+      "extends": ["Interval", "Value"],
+      "featured": ["payer", "beneficiary", "date", "amount", "purpose"],
       "label": "Payment",
       "plural": "Payments",
       "properties": {
@@ -4422,32 +3781,14 @@
           "type": "string"
         }
       },
-      "required": [
-        "payer",
-        "beneficiary"
-      ],
-      "schemata": [
-        "Interval",
-        "Payment",
-        "Value"
-      ]
+      "required": ["payer", "beneficiary"],
+      "schemata": ["Interval", "Payment", "Value"]
     },
     "Person": {
-      "caption": [
-        "name",
-        "lastName",
-        "email",
-        "phone"
-      ],
+      "caption": ["name", "lastName", "email", "phone"],
       "description": "A natural person, as opposed to a corporation of some type.\n",
-      "extends": [
-        "LegalEntity"
-      ],
-      "featured": [
-        "name",
-        "nationality",
-        "birthDate"
-      ],
+      "extends": ["LegalEntity"],
+      "featured": ["name", "nationality", "birthDate"],
       "label": "Person",
       "matchable": true,
       "plural": "People",
@@ -4658,62 +3999,29 @@
           "type": "string"
         }
       },
-      "required": [
-        "name"
-      ],
-      "schemata": [
-        "LegalEntity",
-        "Person",
-        "Thing"
-      ],
+      "required": ["name"],
+      "schemata": ["LegalEntity", "Person", "Thing"],
       "temporalExtent": {
-        "end": [
-          "deathDate"
-        ],
-        "start": [
-          "birthDate"
-        ]
+        "end": ["deathDate"],
+        "start": ["birthDate"]
       }
     },
     "PlainText": {
-      "caption": [
-        "fileName",
-        "title"
-      ],
+      "caption": ["fileName", "title"],
       "description": "Text files, like .txt or source code.\n",
-      "extends": [
-        "Document"
-      ],
-      "featured": [
-        "title",
-        "fileName",
-        "mimeType",
-        "parent"
-      ],
+      "extends": ["Document"],
+      "featured": ["title", "fileName", "mimeType", "parent"],
       "generated": true,
       "label": "Text file",
       "plural": "Text files",
       "properties": {},
-      "schemata": [
-        "Analyzable",
-        "Document",
-        "PlainText",
-        "Thing"
-      ]
+      "schemata": ["Analyzable", "Document", "PlainText", "Thing"]
     },
     "Position": {
-      "caption": [
-        "name"
-      ],
+      "caption": ["name"],
       "description": "A post, role or position within an organization or body. This describes a position one or more people may occupy and not the occupation of the post by a specific individual at a  specific point in time.\n'subnationalArea' should be used to further restrict the scope of the position. It should not simply represent some regional aspect of the role - e.g. the constituency of a national member of parliament - when their legislative jurisdiction is nationwide.\n",
-      "extends": [
-        "Thing"
-      ],
-      "featured": [
-        "name",
-        "country",
-        "subnationalArea"
-      ],
+      "extends": ["Thing"],
+      "featured": ["name", "country", "subnationalArea"],
       "label": "Position",
       "matchable": true,
       "plural": "Positions",
@@ -4764,40 +4072,19 @@
           "type": "string"
         }
       },
-      "required": [
-        "name"
-      ],
-      "schemata": [
-        "Position",
-        "Thing"
-      ],
+      "required": ["name"],
+      "schemata": ["Position", "Thing"],
       "temporalExtent": {
-        "end": [
-          "dissolutionDate"
-        ],
-        "start": [
-          "inceptionDate"
-        ]
+        "end": ["dissolutionDate"],
+        "start": ["inceptionDate"]
       }
     },
     "Post": {
-      "caption": [
-        "summary",
-        "organization",
-        "role"
-      ],
+      "caption": ["summary", "organization", "role"],
       "deprecated": true,
       "description": "A post, role or position held by an individual within an organization  or body. This describes the period for which the position is held, not the abstract concept of the post.\n",
-      "extends": [
-        "Interest"
-      ],
-      "featured": [
-        "holder",
-        "organization",
-        "role",
-        "startDate",
-        "endDate"
-      ],
+      "extends": ["Interest"],
+      "featured": ["holder", "organization", "role", "startDate", "endDate"],
       "label": "Post",
       "plural": "Posts",
       "properties": {
@@ -4825,31 +4112,14 @@
           "type": "identifier"
         }
       },
-      "required": [
-        "holder"
-      ],
-      "schemata": [
-        "Interest",
-        "Interval",
-        "Post"
-      ]
+      "required": ["holder"],
+      "schemata": ["Interest", "Interval", "Post"]
     },
     "Project": {
-      "caption": [
-        "name",
-        "projectId"
-      ],
+      "caption": ["name", "projectId"],
       "description": "An activity carried out by a group of participants.\n",
-      "extends": [
-        "Interval",
-        "Thing",
-        "Value"
-      ],
-      "featured": [
-        "name",
-        "projectId",
-        "startDate"
-      ],
+      "extends": ["Interval", "Thing", "Value"],
+      "featured": ["name", "projectId", "startDate"],
       "label": "Project",
       "plural": "Projects",
       "properties": {
@@ -4909,35 +4179,20 @@
           "type": "string"
         }
       },
-      "schemata": [
-        "Interval",
-        "Project",
-        "Thing",
-        "Value"
-      ]
+      "schemata": ["Interval", "Project", "Thing", "Value"]
     },
     "ProjectParticipant": {
-      "caption": [
-        "role"
-      ],
+      "caption": ["role"],
       "description": "An activity carried out by a group of participants.\n",
       "edge": {
-        "caption": [
-          "role"
-        ],
+        "caption": ["role"],
         "directed": true,
         "label": "participates in",
         "source": "participant",
         "target": "project"
       },
-      "extends": [
-        "Interest"
-      ],
-      "featured": [
-        "project",
-        "participant",
-        "role"
-      ],
+      "extends": ["Interest"],
+      "featured": ["project", "participant", "role"],
       "label": "Project participant",
       "plural": "Project participants",
       "properties": {
@@ -4960,55 +4215,25 @@
           "type": "entity"
         }
       },
-      "schemata": [
-        "Interest",
-        "Interval",
-        "ProjectParticipant"
-      ]
+      "schemata": ["Interest", "Interval", "ProjectParticipant"]
     },
     "PublicBody": {
-      "caption": [
-        "name"
-      ],
+      "caption": ["name"],
       "description": "A public body, such as a ministry, department or state company.\n",
-      "extends": [
-        "Organization"
-      ],
-      "featured": [
-        "name",
-        "country",
-        "legalForm",
-        "status"
-      ],
+      "extends": ["Organization"],
+      "featured": ["name", "country", "legalForm", "status"],
       "label": "Public body",
       "matchable": true,
       "plural": "Public bodies",
       "properties": {},
-      "required": [
-        "name"
-      ],
-      "schemata": [
-        "LegalEntity",
-        "Organization",
-        "PublicBody",
-        "Thing"
-      ]
+      "required": ["name"],
+      "schemata": ["LegalEntity", "Organization", "PublicBody", "Thing"]
     },
     "RealEstate": {
-      "caption": [
-        "name",
-        "address",
-        "registrationNumber"
-      ],
+      "caption": ["name", "address", "registrationNumber"],
       "description": "A piece of land or property.",
-      "extends": [
-        "Asset"
-      ],
-      "featured": [
-        "registrationNumber",
-        "address",
-        "country"
-      ],
+      "extends": ["Asset"],
+      "featured": ["registrationNumber", "address", "country"],
       "label": "Real estate",
       "plural": "Real estates",
       "properties": {
@@ -5090,32 +4315,19 @@
           "type": "identifier"
         }
       },
-      "schemata": [
-        "Asset",
-        "RealEstate",
-        "Thing",
-        "Value"
-      ]
+      "schemata": ["Asset", "RealEstate", "Thing", "Value"]
     },
     "Representation": {
       "description": "A mediatory, intermediary, middleman, or broker acting on behalf of a legal entity.",
       "edge": {
-        "caption": [
-          "role"
-        ],
+        "caption": ["role"],
         "directed": true,
         "label": "represents",
         "source": "agent",
         "target": "client"
       },
-      "extends": [
-        "Interest"
-      ],
-      "featured": [
-        "agent",
-        "client",
-        "role"
-      ],
+      "extends": ["Interest"],
+      "featured": ["agent", "client", "role"],
       "label": "Representation",
       "plural": "Representations",
       "properties": {
@@ -5138,31 +4350,14 @@
           "type": "entity"
         }
       },
-      "required": [
-        "agent",
-        "client"
-      ],
-      "schemata": [
-        "Interest",
-        "Interval",
-        "Representation"
-      ]
+      "required": ["agent", "client"],
+      "schemata": ["Interest", "Interval", "Representation"]
     },
     "Sanction": {
-      "caption": [
-        "program"
-      ],
+      "caption": ["program"],
       "description": "A sanction designation",
-      "extends": [
-        "Interval"
-      ],
-      "featured": [
-        "entity",
-        "authority",
-        "program",
-        "startDate",
-        "endDate"
-      ],
+      "extends": ["Interval"],
+      "featured": ["entity", "authority", "program", "startDate", "endDate"],
       "label": "Sanction",
       "plural": "Sanctions",
       "properties": {
@@ -5240,30 +4435,14 @@
           "type": "identifier"
         }
       },
-      "required": [
-        "entity"
-      ],
-      "schemata": [
-        "Interval",
-        "Sanction"
-      ]
+      "required": ["entity"],
+      "schemata": ["Interval", "Sanction"]
     },
     "Security": {
-      "caption": [
-        "name",
-        "isin",
-        "registrationNumber"
-      ],
+      "caption": ["name", "isin", "registrationNumber"],
       "description": "A tradeable financial asset.",
-      "extends": [
-        "Asset"
-      ],
-      "featured": [
-        "isin",
-        "name",
-        "issuer",
-        "country"
-      ],
+      "extends": ["Asset"],
+      "featured": ["isin", "name", "issuer", "country"],
       "label": "Security",
       "matchable": true,
       "plural": "Securities",
@@ -5332,33 +4511,17 @@
           "type": "string"
         }
       },
-      "schemata": [
-        "Asset",
-        "Security",
-        "Thing",
-        "Value"
-      ],
+      "schemata": ["Asset", "Security", "Thing", "Value"],
       "temporalExtent": {
-        "end": [
-          "maturityDate"
-        ],
-        "start": [
-          "issueDate"
-        ]
+        "end": ["maturityDate"],
+        "start": ["issueDate"]
       }
     },
     "Similar": {
-      "caption": [
-        "confidenceScore",
-        "criteria"
-      ],
+      "caption": ["confidenceScore", "criteria"],
       "description": "A link between two entities that are presumed to be the same, e.g. as the outcome of a probabilistic record linkage process.\n",
       "extends": [],
-      "featured": [
-        "candidate",
-        "match",
-        "confidenceScore"
-      ],
+      "featured": ["candidate", "match", "confidenceScore"],
       "generated": true,
       "label": "Similar",
       "plural": "Similar entities",
@@ -5400,29 +4563,19 @@
           "type": "string"
         }
       },
-      "schemata": [
-        "Similar"
-      ]
+      "schemata": ["Similar"]
     },
     "Succession": {
       "description": "Two entities that legally succeed each other.",
       "edge": {
-        "caption": [
-          "date"
-        ],
+        "caption": ["date"],
         "directed": true,
         "label": "preceeds",
         "source": "predecessor",
         "target": "successor"
       },
-      "extends": [
-        "Interest"
-      ],
-      "featured": [
-        "predecessor",
-        "successor",
-        "date"
-      ],
+      "extends": ["Interest"],
+      "featured": ["predecessor", "successor", "date"],
       "label": "Succession",
       "plural": "Successions",
       "properties": {
@@ -5445,32 +4598,14 @@
           "type": "entity"
         }
       },
-      "required": [
-        "predecessor",
-        "successor"
-      ],
-      "schemata": [
-        "Interest",
-        "Interval",
-        "Succession"
-      ]
+      "required": ["predecessor", "successor"],
+      "schemata": ["Interest", "Interval", "Succession"]
     },
     "Table": {
-      "caption": [
-        "title",
-        "name",
-        "fileName"
-      ],
+      "caption": ["title", "name", "fileName"],
       "description": "A document structured into rows and cells. This includes simple CSV files, spreadsheet sheets or database relations.\n",
-      "extends": [
-        "Document"
-      ],
-      "featured": [
-        "title",
-        "fileName",
-        "mimeType",
-        "parent"
-      ],
+      "extends": ["Document"],
+      "featured": ["title", "fileName", "mimeType", "parent"],
       "generated": true,
       "label": "Table",
       "plural": "Tables",
@@ -5496,25 +4631,12 @@
           "type": "number"
         }
       },
-      "schemata": [
-        "Analyzable",
-        "Document",
-        "Table",
-        "Thing"
-      ]
+      "schemata": ["Analyzable", "Document", "Table", "Thing"]
     },
     "TaxRoll": {
       "description": "A tax declaration of an individual",
-      "extends": [
-        "Interval"
-      ],
-      "featured": [
-        "taxee",
-        "date",
-        "income",
-        "wealth",
-        "taxPaid"
-      ],
+      "extends": ["Interval"],
+      "featured": ["taxee", "date", "income", "wealth", "taxPaid"],
       "label": "Tax roll",
       "plural": "Tax rolls",
       "properties": {
@@ -5572,24 +4694,14 @@
           "type": "string"
         }
       },
-      "required": [
-        "taxee"
-      ],
-      "schemata": [
-        "Interval",
-        "TaxRoll"
-      ]
+      "required": ["taxee"],
+      "schemata": ["Interval", "TaxRoll"]
     },
     "Thing": {
       "abstract": true,
-      "caption": [
-        "name"
-      ],
+      "caption": ["name"],
       "extends": [],
-      "featured": [
-        "name",
-        "country"
-      ],
+      "featured": ["name", "country"],
       "label": "Thing",
       "plural": "Thing",
       "properties": {
@@ -5833,22 +4945,12 @@
           "type": "url"
         }
       },
-      "required": [
-        "name"
-      ],
-      "schemata": [
-        "Thing"
-      ]
+      "required": ["name"],
+      "schemata": ["Thing"]
     },
     "Trip": {
-      "caption": [
-        "name",
-        "startDate",
-        "endDate"
-      ],
-      "extends": [
-        "Event"
-      ],
+      "caption": ["name", "startDate", "endDate"],
+      "extends": ["Event"],
       "featured": [
         "endLocation",
         "startLocation",
@@ -5887,37 +4989,19 @@
           "type": "entity"
         }
       },
-      "required": [
-        "name",
-        "endLocation",
-        "startLocation"
-      ],
-      "schemata": [
-        "Analyzable",
-        "Event",
-        "Interval",
-        "Thing",
-        "Trip"
-      ]
+      "required": ["name", "endLocation", "startLocation"],
+      "schemata": ["Analyzable", "Event", "Interval", "Thing", "Trip"]
     },
     "UnknownLink": {
       "edge": {
-        "caption": [
-          "role"
-        ],
+        "caption": ["role"],
         "directed": false,
         "label": "linked to",
         "source": "subject",
         "target": "object"
       },
-      "extends": [
-        "Interest"
-      ],
-      "featured": [
-        "subject",
-        "object",
-        "role"
-      ],
+      "extends": ["Interest"],
+      "featured": ["subject", "object", "role"],
       "label": "Other link",
       "plural": "Other links",
       "properties": {
@@ -5940,31 +5024,13 @@
           "type": "entity"
         }
       },
-      "required": [
-        "subject",
-        "object"
-      ],
-      "schemata": [
-        "Interest",
-        "Interval",
-        "UnknownLink"
-      ]
+      "required": ["subject", "object"],
+      "schemata": ["Interest", "Interval", "UnknownLink"]
     },
     "UserAccount": {
-      "caption": [
-        "username",
-        "email",
-        "service"
-      ],
-      "extends": [
-        "Thing"
-      ],
-      "featured": [
-        "username",
-        "service",
-        "email",
-        "owner"
-      ],
+      "caption": ["username", "email", "service"],
+      "extends": ["Thing"],
+      "featured": ["username", "service", "email", "owner"],
       "generated": true,
       "label": "User account",
       "matchable": true,
@@ -6039,13 +5105,8 @@
           "type": "string"
         }
       },
-      "required": [
-        "username"
-      ],
-      "schemata": [
-        "Thing",
-        "UserAccount"
-      ]
+      "required": ["username"],
+      "schemata": ["Thing", "UserAccount"]
     },
     "Value": {
       "abstract": true,
@@ -6078,25 +5139,12 @@
           "type": "string"
         }
       },
-      "schemata": [
-        "Value"
-      ]
+      "schemata": ["Value"]
     },
     "Vehicle": {
-      "caption": [
-        "name",
-        "registrationNumber"
-      ],
-      "extends": [
-        "Asset"
-      ],
-      "featured": [
-        "type",
-        "name",
-        "registrationNumber",
-        "country",
-        "owner"
-      ],
+      "caption": ["name", "registrationNumber"],
+      "extends": ["Asset"],
+      "featured": ["type", "name", "registrationNumber", "country", "owner"],
       "label": "Vehicle",
       "plural": "Vehicles",
       "properties": {
@@ -6179,37 +5227,17 @@
           "type": "string"
         }
       },
-      "schemata": [
-        "Asset",
-        "Thing",
-        "Value",
-        "Vehicle"
-      ],
+      "schemata": ["Asset", "Thing", "Value", "Vehicle"],
       "temporalExtent": {
-        "end": [
-          "deregistrationDate"
-        ],
-        "start": [
-          "buildDate",
-          "registrationDate"
-        ]
+        "end": ["deregistrationDate"],
+        "start": ["buildDate", "registrationDate"]
       }
     },
     "Vessel": {
-      "caption": [
-        "name",
-        "imoNumber"
-      ],
+      "caption": ["name", "imoNumber"],
       "description": "A boat or ship. Typically flying some sort of national flag.\n",
-      "extends": [
-        "Vehicle"
-      ],
-      "featured": [
-        "name",
-        "imoNumber",
-        "type",
-        "flag"
-      ],
+      "extends": ["Vehicle"],
+      "featured": ["name", "imoNumber", "type", "flag"],
       "label": "Vessel",
       "matchable": true,
       "plural": "Vessels",
@@ -6293,31 +5321,13 @@
           "type": "string"
         }
       },
-      "required": [
-        "name"
-      ],
-      "schemata": [
-        "Asset",
-        "Thing",
-        "Value",
-        "Vehicle",
-        "Vessel"
-      ]
+      "required": ["name"],
+      "schemata": ["Asset", "Thing", "Value", "Vehicle", "Vessel"]
     },
     "Video": {
-      "caption": [
-        "fileName",
-        "title"
-      ],
-      "extends": [
-        "Document"
-      ],
-      "featured": [
-        "title",
-        "fileName",
-        "mimeType",
-        "parent"
-      ],
+      "caption": ["fileName", "title"],
+      "extends": ["Document"],
+      "featured": ["title", "fileName", "mimeType", "parent"],
       "generated": true,
       "label": "Video",
       "plural": "Videos",
@@ -6330,38 +5340,18 @@
           "type": "number"
         }
       },
-      "schemata": [
-        "Analyzable",
-        "Document",
-        "Thing",
-        "Video"
-      ]
+      "schemata": ["Analyzable", "Document", "Thing", "Video"]
     },
     "Workbook": {
-      "caption": [
-        "fileName",
-        "title"
-      ],
+      "caption": ["fileName", "title"],
       "description": "A spreadsheet document, for example from Excel. Each spreadsheet contains a set of sheets that hold actual data.\n",
-      "extends": [
-        "Folder"
-      ],
-      "featured": [
-        "title",
-        "fileName",
-        "parent"
-      ],
+      "extends": ["Folder"],
+      "featured": ["title", "fileName", "parent"],
       "generated": true,
       "label": "Workbook",
       "plural": "Workbooks",
       "properties": {},
-      "schemata": [
-        "Analyzable",
-        "Document",
-        "Folder",
-        "Thing",
-        "Workbook"
-      ]
+      "schemata": ["Analyzable", "Document", "Folder", "Thing", "Workbook"]
     }
   },
   "types": {

@@ -3,9 +3,9 @@ import type { Property } from "./property";
 
 const castPropertyValue = (
   prop: Property,
-  value: Value
+  value: Value,
 ): Value | Date | number => {
-  if (typeof value !== "string") return value;  // Entity
+  if (typeof value !== "string") return value; // Entity
   if (prop.type.name == "number") return parseFloat(value);
   if (prop.type.name == "date") {
     if (value.length == 4) return value.toString();
@@ -16,7 +16,7 @@ const castPropertyValue = (
 
 export const getPrimitiveValue = (
   prop: Property,
-  value: Value | null
+  value: Value | null,
 ): number | string => {
   if (!value) return "";
   const casted = castPropertyValue(prop, value);

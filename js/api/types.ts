@@ -7,7 +7,7 @@ export interface IPublicQuery {
   readonly order_by?: string;
   readonly schema?: string;
   readonly country?: string;
-  limit?: number;
+  readonly limit?: number;
 }
 
 export interface IApiQuery extends IPublicQuery {
@@ -67,4 +67,13 @@ export interface IAggregationResult {
   readonly url: string;
   readonly coverage: ICoverage;
   readonly aggregations: Aggregations;
+}
+
+export interface IAutocompleteItem {
+  readonly id: string;
+  readonly name: string;
+}
+
+export interface IAutocompleteResult {
+  readonly candidates: IAutocompleteItem[];
 }

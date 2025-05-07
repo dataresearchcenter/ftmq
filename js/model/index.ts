@@ -5,4 +5,4 @@ export * from "./schema";
 export * from "./propertyType";
 
 // dataset model types
-export * from "./dataset"
+export * from "./dataset";

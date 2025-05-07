@@ -52,7 +52,7 @@ export class Entity {
 
   setProperty(
     prop: string | Property,
-    value: Value | IEntityDatum | undefined | null
+    value: Value | IEntityDatum | undefined | null,
   ): Values {
     const property = this.schema.getProperty(prop);
     if (property === undefined) {
@@ -122,7 +122,7 @@ export class Entity {
   getDisplayProperties(): Array<Property> {
     const properties = this.schema.getFeaturedProperties();
     const existingProps = this.getProperties().sort((a, b) =>
-      a.label.localeCompare(b.label)
+      a.label.localeCompare(b.label),
     );
     for (let prop of existingProps) {
       if (properties.indexOf(prop) == -1) {
@@ -181,7 +181,7 @@ export class Entity {
     const properties: EntityProperties = {};
     this.properties.forEach((values, prop) => {
       properties[prop.name] = values.map((value) =>
-        Entity.isEntity(value) ? (value as Entity).toJSON() : value
+        Entity.isEntity(value) ? (value as Entity).toJSON() : value,
       );
     });
     return {

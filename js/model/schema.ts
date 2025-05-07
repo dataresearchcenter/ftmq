@@ -12,6 +12,7 @@ interface IEdgeSpecification {
 }
 
 export type SchemaSpec = string | null | undefined | Schema;
+export type { TProperty };
 
 export interface ISchemaDatum {
   label: string;
