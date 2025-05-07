@@ -5,6 +5,7 @@ import type {
   IEntitiesResult,
   IAutocompleteResult,
 } from "./types";
+import { cleanQuery } from "./util";
 
 type ApiError = {
   detail: string[];
@@ -90,10 +91,7 @@ export default class Api {
     opts: RequestInit = {},
   ): Promise<any> {
     query.api_key = this.api_key; // this var is only accessible on server
-    const cleanedQuery = Object.fromEntries(
-      Object.entries(query).filter(([_, v]) => v.length),
-    );
-    const qs = new URLSearchParams(cleanedQuery);
+    const qs = new URLSearchParams(cleanQuery(query))
     const url = `${this.endpoint}/${path}?${qs.toString()}`;
     const res = await fetch(url, opts);
     if (res.ok) {
