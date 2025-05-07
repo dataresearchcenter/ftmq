@@ -57,3 +57,7 @@ export function pickLongestString(values: Values): string {
     "",
   );
 }
+
+
+export const countryNames: { [key: string]: string } =
+  defaultModel["types"]["country"]["values"];
