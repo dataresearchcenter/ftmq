@@ -19,7 +19,7 @@ export const cleanQuery = (
   const patch: IApiQuery = {
     // ensure limit is within PER_PAGE
     limit: query.limit
-      ? PER_PAGE.indexOf(query.limit) < 0
+      ? PER_PAGE.indexOf(query.limit) < 0 && !query.api_key
         ? DEFAULT_LIMIT
         : query.limit
       : DEFAULT_LIMIT,
