@@ -61,7 +61,7 @@ export class Property {
   }
 
   static isProperty = (
-    item: Property | string | undefined
+    item: Property | string | undefined,
   ): item is Property => {
     if (typeof item === "string") {
       return false;

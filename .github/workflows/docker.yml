@@ -18,11 +18,12 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/investigativedata/ftmq
+          images: ghcr.io/dataresearchcenter/ftmq
           tags: |
             type=ref,event=branch
             type=semver,pattern={{version}}
             type=sha
+            type=raw,value=latest
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:

@@ -128,6 +128,9 @@ class View(nk.base.View):
         self._cache[key] = cov
         return cov
 
+    def count(self, query: Q | None = None) -> int:
+        return self.stats(query).entity_count or 0
+
     def aggregations(self, query: Q) -> AggregatorResult | None:
         if not query.aggregations:
             return

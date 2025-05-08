@@ -3,13 +3,20 @@ import { Entity } from "./entity";
 import { Property } from "./property";
 import type { ISchemaDatum, Schema as TSchema } from "./schema";
 import { Schema } from "./schema";
-import type { IPropertyTypeDatum, PropertyType as TPropertyType } from "./propertyType";
+import type {
+  IPropertyTypeDatum,
+  PropertyType as TPropertyType,
+} from "./propertyType";
 import { PropertyType } from "./propertyType";
 
 interface IModelDatum {
   schemata: { [name: string]: ISchemaDatum };
   types: { [name: string]: IPropertyTypeDatum };
 }
+
+export * from "./value";
+export { default as IconRegistry } from "./icons";
+export type { TSchema };
 
 export class Model {
   public readonly schemata: { [x: string]: TSchema | undefined } = {};
@@ -61,6 +68,13 @@ export class Model {
       });
     });
     return Array.from(qnames.values());
+  }
+
+  /**
+   * Get an arbitrary property
+   */
+  getProperty(name: string): Property | undefined {
+    return this.getProperties().filter((p) => p.name === name)[0];
   }
 
   /**

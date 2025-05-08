@@ -72,12 +72,16 @@ class SQLQueryView(View, nk.sql.SQLView):
                 stats.coverage.end = end
             break
 
-        for res in self.store._execute(query.sql.count, stream=False):
-            for count in res:
-                stats.entity_count = count
-                break
+        stats.entity_count = self.count(query)
         self._cache[key] = stats
         return stats
+
+    def count(self, query: Q | None = None) -> int:
+        if query is not None:
+            for res in self.store._execute(query.sql.count, stream=False):
+                for count in res:
+                    return count
+        return 0
 
     def aggregations(self, query: Q) -> AggregatorResult | None:
         if not query.aggregations:

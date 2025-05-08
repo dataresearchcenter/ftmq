@@ -1,5 +1,6 @@
-import icons from "../data/icons.json";
 import type { Schema } from "./schema";
+import icons from "../data/icons.json";
+// const icons = require(`${process.env.FTM_ICONS || "../data/icons.json"}`);
 
 interface IIconStorage {
   [iconName: string]: string[];
