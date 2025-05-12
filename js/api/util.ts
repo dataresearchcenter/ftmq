@@ -30,7 +30,12 @@ export const cleanQuery = (
     Object.entries({ ...query, ...patch }).filter(
       ([k, v]) =>
         (keys.length ? keys.indexOf(k) > -1 : true) &&
-        !(v === undefined || v === "" || v === null),
+        !(
+          v === undefined ||
+          v === "" ||
+          v === null ||
+          (Array.isArray(v) && !v.length)
+        ),
     ),
   );
 };
