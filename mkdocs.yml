@@ -1,6 +1,6 @@
 site_name: ftmq
 site_url: https://docs.investigraph.dev/lib/ftmq
-repo_url: https://github.com/investigativedata/ftmq
+repo_url: https://github.com/dataresearchcenter/ftmq
 nav:
   - Intro: index.md
   - Command line: cli.md
@@ -15,8 +15,9 @@ nav:
     - ftmq.util: reference/util.md
 theme:
   name: material
-  logo: https://cdn.investigativedata.org/style/logo_basic_dark.svg
-  favicon: https://cdn.investigativedata.org/style/favicon.svg
+  logo: https://cdn.investigativedata.org/style/logos/darc/svg/DARC-Logo-RGB-Horizontal-Neg.svg
+  favicon: https://cdn.investigativedata.org/style/logos/darc/favicon.ico
+  custom_dir: docs/overrides
   features:
     - navigation.instant
     - navigation.tracking
@@ -29,11 +30,13 @@ extra_css:
 extra:
   social:
     - icon: material/mail
-      link: mailto:hi@investigativedata.org
+      link: mailto:hi@dataresearchcenter.org
     - icon: material/web
-      link: https://investigativedata.io
+      link: https://dataresearchcenter.org
     - icon: material/github
-      link: https://github.com/investigativedata/ftmq
+      link: https://github.com/openaleph/openaleph-procrastinate
+    - icon: material/linkedin
+      link: https://www.linkedin.com/company/dataresearchcenter/
 markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true
