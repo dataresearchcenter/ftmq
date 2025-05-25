@@ -118,14 +118,15 @@ def get_statements(proxy: CE, *datasets: str) -> SGenerator:
         A generator of `nomenklatura.statement.Statement`
     """
     datasets = datasets or ("default",)
-    for dataset in datasets:
-        # FIXME
+    for ix, dataset in enumerate(datasets):
         for stmt in Statement.from_entity(proxy, dataset):
             stmt = stmt.to_dict()
             stmt["target"] = stmt.get("target") or False
             stmt["external"] = stmt.get("external") or False
             stmt = Statement.from_dict(stmt)
             yield stmt
+            if ix:
+                continue
 
 
 @cache
