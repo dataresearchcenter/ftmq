@@ -125,7 +125,7 @@ def get_statements(proxy: CE, *datasets: str) -> SGenerator:
             stmt = Statement.from_dict(stmt)
             yield stmt
             if ix:
-                continue
+                break
 
 
 @cache
