@@ -119,12 +119,12 @@ def get_statements(proxy: CE, *datasets: str) -> SGenerator:
     """
     datasets = datasets or ("default",)
     for ix, dataset in enumerate(datasets):
-        for stmt in Statement.from_entity(proxy, dataset):
+        for sx, stmt in enumerate(Statement.from_entity(proxy, dataset)):
             stmt = stmt.to_dict()
             stmt["external"] = stmt.get("external") or False
             stmt = Statement.from_dict(stmt)
             yield stmt
-            if ix:
+            if ix and sx:
                 break
 
 
