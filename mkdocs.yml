@@ -34,7 +34,7 @@ extra:
     - icon: material/web
       link: https://dataresearchcenter.org
     - icon: material/github
-      link: https://github.com/openaleph/openaleph-procrastinate
+      link: https://github.com/dataresearchcenter/ftmq
     - icon: material/linkedin
       link: https://www.linkedin.com/company/dataresearchcenter/
 markdown_extensions:
