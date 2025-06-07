@@ -3,7 +3,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Literal, TypeAlias, TypeVar
 
-from anystore.types import SDict
+from anystore.types import BytesGenerator, SDict, SDictGenerator, StrGenerator
 from nomenklatura.entity import CE
 from nomenklatura.statement.statement import Statement
 from nomenklatura.stream import StreamEntity
@@ -23,10 +23,6 @@ ProxyGenerator: TypeAlias = Generator[Proxy, None, None]
 
 # statement generator
 SGenerator: TypeAlias = Generator[Statement, None, None]
-
-StrGenerator: TypeAlias = Generator[str, None, None]
-BytesGenerator: TypeAlias = Generator[bytes, None, None]
-SDictGenerator: TypeAlias = Generator[SDict, None, None]
 
 Schemata: TypeAlias = Literal[tuple(s.name for s in enums.Schemata)]
 Properties: TypeAlias = Literal[tuple(p.name for p in enums.Properties)]
