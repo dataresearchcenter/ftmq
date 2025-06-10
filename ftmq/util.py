@@ -119,14 +119,13 @@ def get_statements(proxy: CE, *datasets: str) -> SGenerator:
     """
     datasets = datasets or ("default",)
     for ix, dataset in enumerate(datasets):
-        for stmt in Statement.from_entity(proxy, dataset):
+        for sx, stmt in enumerate(Statement.from_entity(proxy, dataset)):
             stmt = stmt.to_dict()
-            stmt["target"] = stmt.get("target") or False
             stmt["external"] = stmt.get("external") or False
             stmt = Statement.from_dict(stmt)
             yield stmt
-            if ix:
-                continue
+            if ix and sx:
+                break
 
 
 @cache
@@ -144,7 +143,7 @@ def get_country_name(code: str) -> str:
         True  # United Kingdom
 
     Args:
-        alpha2: Two-letter iso code, case insensitive
+        code: Two-letter iso code, case insensitive
 
     Returns:
         Either the country name for a valid code or the code as fallback.

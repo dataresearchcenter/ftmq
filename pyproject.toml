@@ -1,6 +1,6 @@
 [project]
 name = "ftmq"
-version = "0.8.5"
+version = "0.8.6"
 description = "followthemoney query dsl and io helpers"
 authors = [{ name = "Simon Wörpel", email = "simon.woerpel@pm.me" }]
 license = "AGPLv3+"
@@ -15,11 +15,11 @@ classifiers = [
 ]
 requires-python = ">=3.11,<4"
 dependencies = [
-    "anystore (>=0.3.5,<0.4.0)",
+    "anystore (>=0.3.6,<0.4.0)",
     "nomenklatura (>=3.17.3,<4.0.0)",
-    "click (>=8.1.8,<9.0.0)",
+    "click (>=8.2.1,<9.0.0)",
     "click-default-group (>=1.2.4,<2.0.0)",
-    "orjson (>=3.10.16,<4.0.0)",
+    "orjson (>=3.10.18,<4.0.0)",
     "pyicu (>=2.15.2,<3.0.0)",
     "pydantic (>=2.11.3,<3.0.0)",
     "alephclient (>=2.6.0,<3.0.0)",
@@ -44,6 +44,7 @@ Issues = "https://github.com/dataresearchcenter/ftmq/issues"
 [tool.poetry.group.dev.dependencies]
 pytest = ">=7.4.3,<9.0.0"
 pytest-cov = ">=4.1,<7.0"
+pytest-env = "^1.1.1"
 black = ">=23.11,<25.0"
 isort = "^5.12.0"
 mypy = "^1.7.0"
@@ -51,9 +52,6 @@ pre-commit = "^4.0.1"
 flake8 = ">=6.1,<8.0"
 ipdb = "^0.13.13"
 bump2version = "^1.0.1"
-cloudpickle = ">=2.2.1,<4.0.0"
-pytest-env = "^1.1.1"
-bump-pydantic = ">=0.7,<0.9"
 mkdocs = "^1.6.1"
 mkdocstrings-python = "^1.16.10"
 mkdocs-autorefs = "^1.4.1"
