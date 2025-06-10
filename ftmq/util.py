@@ -143,7 +143,7 @@ def get_country_name(code: str) -> str:
         True  # United Kingdom
 
     Args:
-        alpha2: Two-letter iso code, case insensitive
+        code: Two-letter iso code, case insensitive
 
     Returns:
         Either the country name for a valid code or the code as fallback.
