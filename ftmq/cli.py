@@ -1,7 +1,5 @@
 import click
-import orjson
-from anystore.io import smart_write
-from anystore.util import clean_dict
+from anystore.io import smart_write, smart_write_json, smart_write_model
 from click_default_group import DefaultGroup
 from nomenklatura import settings
 
@@ -136,13 +134,9 @@ def q(
     smart_write_proxies(output_uri, proxies, dataset=store_dataset)
     if stats_uri:
         stats = stats.export()
-        stats = orjson.dumps(stats.model_dump(), option=orjson.OPT_APPEND_NEWLINE)
-        smart_write(stats_uri, stats)
-    if q.aggregator:
-        result = orjson.dumps(
-            clean_dict(q.aggregator.result), option=orjson.OPT_APPEND_NEWLINE
-        )
-        smart_write(aggregation_uri, result)
+        smart_write_model(stats_uri, stats)
+    if q.aggregator and aggregation_uri:
+        smart_write_json(aggregation_uri, [q.aggregator.result], clean=True)
 
 
 @cli.command("apply")
