@@ -97,12 +97,14 @@ def make_proxy(data: dict[str, Any], dataset: str | Dataset | None = None) -> CE
     return proxy
 
 
-def ensure_proxy(data: dict[str, Any] | CE | E | SE) -> CompositeEntity:
+def ensure_proxy(
+    data: dict[str, Any] | CE | E | SE, dataset: str | Dataset | None = None
+) -> CompositeEntity:
     if isinstance(data, CompositeEntity):
         return data
     if isinstance(data, (EntityProxy, StreamEntity)):
         data = data.to_full_dict()
-    return make_proxy(data)
+    return make_proxy(data, dataset)
 
 
 def get_statements(proxy: CE, *datasets: str) -> SGenerator:
