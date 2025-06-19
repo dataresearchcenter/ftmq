@@ -9,6 +9,7 @@ from nomenklatura.db import get_metadata
 from ftmq.model.dataset import Catalog, Dataset
 from ftmq.store.aleph import AlephStore
 from ftmq.store.base import Store, View
+from ftmq.store.lake import LakeStore
 from ftmq.store.memory import MemoryStore
 from ftmq.store.sql import SQLStore
 from ftmq.types import PathLike
@@ -87,7 +88,19 @@ def get_store(
         return SQLStore(catalog, dataset, uri=uri, linker=linker)
     if "aleph" in parsed.scheme:
         return AlephStore.from_uri(uri, catalog=catalog, dataset=dataset, linker=linker)
+    if parsed.scheme.startswith("lake+"):
+        uri = str(uri)[5:]
+        return LakeStore(uri=uri, catalog=catalog, dataset=dataset, linker=linker)
     raise NotImplementedError(uri)
 
 
-__all__ = ["get_store", "S", "Store", "View", "MemoryStore", "SQLStore", "AlephStore"]
+__all__ = [
+    "get_store",
+    "S",
+    "Store",
+    "View",
+    "MemoryStore",
+    "SQLStore",
+    "AlephStore",
+    "LakeStore",
+]

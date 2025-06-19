@@ -4,13 +4,14 @@ from ftmq.model import Catalog, Dataset
 from ftmq.query import Query
 from ftmq.store import AlephStore, MemoryStore, SQLStore, Store, get_store
 from ftmq.store.base import get_resolver
+from ftmq.store.lake import LakeStore
 from ftmq.store.level import LevelDBStore
 from ftmq.util import make_dataset
 
 # from ftmq.store.redis import RedisStore
 
 
-def _run_store_test_implicit(cls: Store, proxies, **kwargs):
+def _run_store_test_implicit(cls: type[Store], proxies, **kwargs):
     # implicit catalog from store content
     store = cls(linker=get_resolver(), **kwargs)
     assert not store.get_catalog().names
@@ -26,7 +27,7 @@ def _run_store_test_implicit(cls: Store, proxies, **kwargs):
     return True
 
 
-def _run_store_test(cls: Store, proxies, **kwargs):
+def _run_store_test(cls: type[Store], proxies, **kwargs):
     # explicit catalog
     catalog = Catalog(
         datasets=[Dataset(name="eu_authorities"), Dataset(name="donations")]
@@ -268,6 +269,11 @@ def test_store_sql_sqlite(tmp_path, proxies):
     assert _run_store_test(SQLStore, proxies, uri=uri)
 
 
+def test_store_lake(tmp_path, proxies):
+    assert _run_store_test_implicit(LakeStore, proxies, uri=tmp_path)
+    assert _run_store_test(LakeStore, proxies, uri=tmp_path)
+
+
 def test_store_init(tmp_path):
     store = get_store()
     assert isinstance(store, SQLStore)
@@ -283,3 +289,5 @@ def test_store_init(tmp_path):
     store = get_store("http+aleph://test_dataset@aleph.example.org")
     assert isinstance(store, AlephStore)
     assert store.dataset.name == "test_dataset"
+    store = get_store(f"lake+file://{tmp_path}")
+    assert isinstance(store, LakeStore)
