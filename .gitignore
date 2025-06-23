@@ -1,3 +1,5 @@
+lake/*
+.tmp/*
 node_modules
 .pypirc
 # Byte-compiled / optimized / DLL files

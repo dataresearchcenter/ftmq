@@ -1,102 +1,170 @@
 """
 https://openaleph.org/docs/lib/ftm-datalake/rfc/#basic-layout
 
-A file-like "datalake" statement store.
+A file-like "datalake" statement store based on parquet files and
+[deltalake](https://delta.io)
 
 Backend has to be local filesystem, s3 or anything else compatible with
-`anystore.store.fs`
+`deltalake`
 
 Layout:
     ```
     ./[dataset]/
         entities/
             statements/
-                [origin]/
-                    [entity_id]/
-                        [uuid].csv
+                _delta_log/
+                    [ix].json
+                origin=[origin]/
+                    [uuid].parquet
     ```
 """
 
-import csv
-from collections import defaultdict
-from pathlib import Path
-from typing import Generator, Optional
+# from collections import defaultdict
 
-from anystore.store import get_store
+# from functools import cache
+from pathlib import Path
+from typing import Any, Generator, Iterable
+
+import duckdb
+
+# from delta import DeltaTable, configure_spark_with_delta_pip
+# from pyspark.sql.session import SparkSession
+import numpy as np
+import pandas as pd
+from anystore.logging import get_logger
 from anystore.store.fs import Store as FSStore
-from anystore.types import Uri
-from anystore.util import make_data_checksum
-from nomenklatura.dataset import DS
-from nomenklatura.entity import CE
-from nomenklatura.statement import Statement, StatementDict
-from nomenklatura.store import View as NKView
-from nomenklatura.store import Writer
+from anystore.types import SDict
+from anystore.util import join_uri
+from deltalake import write_deltalake
+from nomenklatura import settings as nks
+from nomenklatura import store as nk
+from nomenklatura.db import get_metadata
+from nomenklatura.entity import CompositeEntity
+from nomenklatura.statement import Statement
+from sqlalchemy.sql import Select
 
 from ftmq.model import Catalog
-from ftmq.store.base import Store, View
-from ftmq.types import CEGenerator
+from ftmq.store.base import Store
+from ftmq.store.sql import SQLStore
+from ftmq.types import CEGenerator, SGenerator
 
 DEFAULT_ORIGIN = "default"
-FIELDNAMES = Statement.__slots__
+
+log = get_logger(__name__)
 
 
-class LakeView(NKView):
-    store: "LakeStore"
-
-    def get_origins(
-        self, dataset: str | None = None
-    ) -> Generator[tuple[str, str], None, None]:
-        datasets = self.dataset_names
-        if dataset:
-            datasets = [dataset]
-        for dataset in datasets:
-            prefix = self.store._backend.get_key(f"{dataset}/entities/statements")
-            for child in self.store._backend._fs.ls(prefix):
-                yield dataset, Path(child).name
-
-    def has_entity(self, id: str) -> bool:
-        for dataset in self.dataset_names:
-            for origin in self.store.get_origins(dataset):
-                prefix = f"{dataset}/entities/statements/{origin}/{id}"
-                for _ in self.store._backend.iterate_keys(prefix=prefix):
-                    return True
-        return False
-
-    def get_entity(self, id: str, dataset: str | None = None) -> Optional[CE]:
-        statements: list[Statement] = []
-        for ds, origin in self.get_origins(dataset):
-            prefix = f"{ds}/entities/statements/{origin}/{id}"
-            for key in self.store._backend.iterate_keys(prefix=prefix):
-                with self.store._backend.open(key, mode="r") as h:
-                    reader = csv.DictReader(h, fieldnames=FIELDNAMES)
-                    for row in reader:
-                        data = StatementDict(row)
-                        statements.append(Statement.from_dict(data))
-        return self.store.assemble(list(statements))
-
-    def entities(self) -> CEGenerator:
-        for dataset, origin in self.get_origins():
-            prefix = self.store._backend.get_key(
-                f"{dataset}/entities/statements/{origin}"
-            )
-            for path in self.store._backend._fs.ls(prefix):
-                id = path.split("/")[-1]
-                entity = self.get_entity(id, dataset=dataset)
-                if entity is not None:
-                    yield entity
+TABLE = (
+    # column, type, nullable
+    ("id", "STRING", False),
+    ("entity_id", "STRING", False),
+    ("canonical_id", "STRING", False),
+    ("schema", "STRING", False),
+    ("prop", "STRING", False),
+    ("value", "STRING", False),
+    ("original_value", "STRING", True),
+    ("lang", "STRING", True),
+    ("dataset", "STRING", False),
+    ("origin", "STRING", False),
+    ("first_seen", "TIMESTAMP", True),
+    ("last_seen", "TIMESTAMP", True),
+)
 
 
-class LakeQueryView(View, LakeView):
-    pass
+# @cache
+# def make_spark() -> SparkSession:
+#     builder = (
+#         SparkSession.builder.appName("ftm-lakehouse")
+#         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+#         .config(
+#             "spark.sql.catalog.spark_catalog",
+#             "org.apache.spark.sql.delta.catalog.DeltaCatalog",
+#         )
+#     )
+#     return configure_spark_with_delta_pip(builder).getOrCreate()
 
 
-class LakeStore(Store):
-    def __init__(self, uri: Uri, **kwargs):
-        self._backend: FSStore = get_store(uri)
+# @cache
+# def make_table(uri: Uri, dataset: str) -> DeltaTable:
+#     spark = make_spark()
+#     table = DeltaTable.createIfNotExists(spark).location(str(uri)).tableName(dataset)
+#     for c, t, n in TABLE:
+#         table = table.addColumn(c, t, nullable=n)
+#     table = table.partitionedBy("origin")
+#     table = table.clusterBy("schema", "prop", "canonical_id")
+#     table.execute()
+#     return DeltaTable.forName(spark, dataset)
+
+
+def multi_streams_sort(*streams: SGenerator) -> SGenerator:
+    """combine sort statements from different sorted streams"""
+    # statements = defaultdict(set[Statement])
+    # for ix, stream in enumerate(streams):
+    #     statement = next(stream)
+    #     statements[ix].add(next(stream))
+    #     pass
+    for stream in streams:
+        yield from stream
+
+
+def pack_statement(stmt: Statement, origin: str) -> SDict:
+    data = stmt.to_db_row()
+    data["origin"] = origin
+    return data
+
+
+def pack_statements(
+    statements: Iterable[Statement], origin: str
+) -> Generator[tuple[str, pd.DataFrame], None, None]:
+    df = pd.DataFrame(pack_statement(s, origin) for s in statements)
+    df = df.drop_duplicates().sort_values("canonical_id")
+    df = df.fillna(np.nan)
+    for dataset in df["dataset"].unique():
+        yield dataset, df[df["dataset"] == dataset]
+
+
+def make_string_query(q: Select, uri: str) -> str:
+    table = nks.STATEMENT_TABLE
+    sql = str(q.compile(compile_kwargs={"literal_binds": True}))
+    return sql.replace(f"FROM {table}", f"FROM delta_scan('{uri}') as {table}")
+
+
+class Row:
+    def __init__(self, data: SDict) -> None:
+        for key, value in data.items():
+            setattr(self, key, value)
+
+    def __iter__(self) -> Generator[Any, None, None]:
+        yield from self.__dict__.values()
+
+    def __getitem__(self, i: int) -> Any:
+        return list(self.__iter__())[i]
+
+
+def stream_duckdb(q: Select, uri: str) -> Generator[Any, None, None]:
+    query = make_string_query(q, uri)
+    res = duckdb.query(query)
+    while rows := res.fetchmany(10_000):
+        for row in rows:
+            yield Row(dict(zip(res.columns, row)))
+
+
+class LakeStore(SQLStore):
+    def __init__(self, *args, **kwargs) -> None:
+        self._backend: FSStore = FSStore(uri=kwargs.pop("uri"))
         assert isinstance(
             self._backend, FSStore
         ), f"Invalid store backend: `{self._backend.__class__}"
-        super().__init__(**kwargs)
+        kwargs["uri"] = "sqlite:///:memory:"
+        get_metadata.cache_clear()
+        super().__init__(*args, **kwargs)
+        self.uri = self._backend.uri
+
+    def _execute(self, q: Select, stream: bool = True) -> Generator[Any, None, None]:
+        streams: list[CEGenerator] = []
+        for dataset in self.dataset.dataset_names:
+            if dataset != "catalog":
+                streams.append(stream_duckdb(q, join_uri(self.uri, dataset)))
+        yield from multi_streams_sort(*streams)
 
     def get_catalog(self) -> Catalog:
         names: set[str] = set()
@@ -104,37 +172,44 @@ class LakeStore(Store):
             names.add(Path(child).name)
         return Catalog.from_names(names)
 
-    def query(self, scope: DS | None = None, external: bool = False) -> LakeQueryView:
-        scope = scope or self.dataset
-        return LakeQueryView(self, scope, external=external)
+    # def ensure_table(self, dataset: str) -> None:
+    #     make_table(self.uri, dataset)
 
-    def writer(self) -> "Writer[DS, CE]":
+    def writer(self) -> "LakeWriter":
         return LakeWriter(self)
 
-    def view(self, scope: DS, external: bool = False) -> "NKView[DS, CE]":
-        return LakeView(self, scope, external)
 
-
-class LakeWriter(Writer[DS, CE]):
+class LakeWriter(nk.Writer):
     store: LakeStore
+    BATCH_STATEMENTS = 1_000_000
 
-    def add_statement(self, stmt: Statement, origin: str | None = None) -> None:
-        origin = origin or DEFAULT_ORIGIN
-        key = f"{stmt.dataset}/entities/statements/{origin}/{stmt.entity_id}/{stmt.id}.csv"
-        with self.store._backend.open(key, "w") as h:
-            writer = csv.DictWriter(h, fieldnames=FIELDNAMES)
-            writer.writerow(stmt.to_csv_row())
+    def __init__(self, store: Store, origin: str | None = DEFAULT_ORIGIN):
+        super().__init__(store)
+        self.batch: set[Statement] = set()
+        self.origin = origin or DEFAULT_ORIGIN
 
-    def add_entity(self, entity: CE, origin: str | None = None) -> None:
-        datasets = defaultdict(list)
-        for stmt in entity.statements:
-            datasets[stmt.dataset].append(stmt)
-        origin = origin or DEFAULT_ORIGIN
-        for dataset, values in datasets.items():
-            ids = "-".join(set(s.id for s in values))
-            statements = [s.to_csv_row() for s in values]
-            checksum = make_data_checksum(ids)
-            key = f"{dataset}/entities/statements/{origin}/{entity.id}/{checksum}.csv"
-            with self.store._backend.open(key, "w") as h:
-                writer = csv.DictWriter(h, fieldnames=FIELDNAMES)
-                writer.writerows(statements)
+    def add_statement(self, stmt: Statement) -> None:
+        self.batch.add(stmt)
+
+    def add_entity(self, entity: CompositeEntity) -> None:
+        super().add_entity(entity)
+        if len(self.batch) >= self.BATCH_STATEMENTS:
+            self.flush()
+
+    def flush(self) -> None:
+        if self.batch:
+            log.info(
+                f"Write {len(self.batch)} statements to deltalake ...",
+                uri=self.store.uri,
+            )
+            for dataset, df in pack_statements(self.batch, self.origin):
+                # self.store.ensure_table(dataset)
+                ds_uri = join_uri(self.store.uri, dataset)
+                log.info(
+                    f"Write {len(df)} statements to dataset partition ...",
+                    uri=ds_uri,
+                    dataset=dataset,
+                )
+                write_deltalake(ds_uri, df, partition_by=["origin"], mode="append")
+
+        self.batch = set()

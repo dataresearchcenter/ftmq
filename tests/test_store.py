@@ -289,5 +289,5 @@ def test_store_init(tmp_path):
     store = get_store("http+aleph://test_dataset@aleph.example.org")
     assert isinstance(store, AlephStore)
     assert store.dataset.name == "test_dataset"
-    store = get_store(f"lake+file://{tmp_path}")
+    store = get_store(f"lake+{tmp_path}")
     assert isinstance(store, LakeStore)
