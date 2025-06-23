@@ -56,32 +56,36 @@ class Maintainer(BaseModel):
 
 
 class Dataset(BaseModel):
-    # nk props
+    # ftm props
     name: str
-    prefix: str | None = None
     title: str | None = None
     license: str | None = None
     summary: str | None = None
     description: str | None = None
     url: HttpUrl | None = None
     updated_at: datetime | None = None
+    last_export: datetime | None = None
+    last_change: datetime | None = None
+    entity_count: int | None = None
+    thing_count: int | None = None
     version: str | None = None
     category: Categories | None = None
+    tags: list[str] | None = []
+
     publisher: Publisher | None = None
     coverage: Coverage | None = None
     things: Schemata | None = None
     intervals: Schemata | None = None
-    entity_count: int | None = 0
     resources: list[Resource] | None = []
-    index_url: AnyUrl | None = None
 
     # own addition / aleph
+    index_url: AnyUrl | None = None
+    prefix: str | None = None
     catalog: str | None = None
     countries: list[str] | None = []
     info_url: HttpUrl | None = None
     data_url: HttpUrl | None = None
     aleph_url: HttpUrl | None = None
-    tags: list[str] | None = []
     content_type: ContentType | None = "structured"
     total_file_size: int | None = 0
 
