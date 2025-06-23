@@ -27,4 +27,3 @@ def get_similar(
                 yield target, score
             if source != entity_id:
                 yield source, score
-    resolver.commit()
