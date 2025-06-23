@@ -88,7 +88,7 @@ def get_store(
         return SQLStore(catalog, dataset, uri=uri, linker=linker)
     if "aleph" in parsed.scheme:
         return AlephStore.from_uri(uri, catalog=catalog, dataset=dataset, linker=linker)
-    if parsed.scheme.startswith("lake+"):
+    if uri.startswith("lake+"):
         uri = str(uri)[5:]
         return LakeStore(uri=uri, catalog=catalog, dataset=dataset, linker=linker)
     raise NotImplementedError(uri)
