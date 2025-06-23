@@ -1,5 +1,6 @@
 from functools import cache
 from typing import Generator, Iterable
+from urllib.parse import urlparse
 
 from nomenklatura import CompositeEntity
 from nomenklatura import store as nk
@@ -20,7 +21,9 @@ log = get_logger(__name__)
 
 @cache
 def get_resolver(uri: str | None = None) -> Resolver[CompositeEntity]:
-    return Resolver.make_default(get_engine(uri))
+    if uri and "sql" in urlparse(uri).scheme:
+        return Resolver.make_default(get_engine(uri))
+    return Resolver.make_default(get_engine("sqlite:///:memory:"))
 
 
 class Store(nk.Store):
@@ -52,7 +55,7 @@ class Store(nk.Store):
             dataset = catalog.get_scope()
         else:
             dataset = DefaultDataset
-        linker = linker or get_resolver()
+        linker = linker or get_resolver(kwargs.get("uri"))
         super().__init__(dataset=dataset, linker=linker, **kwargs)
         # implicit set all datasets as default store scope:
         if dataset == DefaultDataset:
