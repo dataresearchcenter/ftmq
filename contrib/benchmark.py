@@ -49,4 +49,5 @@ if __name__ == "__main__":
     benchmark("leveldb://.benchmark/leveldb")
     benchmark("sqlite:///.benchmark/sqlite")
     benchmark("postgresql:///ftm")
+    benchmark("lake+./.benchmark/lake")
     rmtree(".benchmark", ignore_errors=True)
