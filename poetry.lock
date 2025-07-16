@@ -287,7 +287,7 @@ optional = false
 python-versions = ">=3.11,<4"
 groups = ["main"]
 files = []
-develop = true
+develop = false
 
 [package.dependencies]
 banal = ">=1.0.6,<2.0.0"
@@ -4721,4 +4721,4 @@ sql = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<4"
-content-hash = "149315fa2f639a2532a626a2e631198787c6d71cad83cb33e577ca544edfc2fb"
+content-hash = "9fba22e660598acb8a769f81644bed8a15acdb5b9e2564195c1eceffae98d871"
