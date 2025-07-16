@@ -5,11 +5,10 @@ from followthemoney import model
 from followthemoney.property import Property
 from followthemoney.schema import Schema
 from followthemoney.types import registry
-from nomenklatura.entity import CE
 
 from ftmq.enums import Comparators
 from ftmq.exceptions import ValidationError
-from ftmq.types import Value
+from ftmq.types import Entity, Value
 
 
 class Lookup:
@@ -97,7 +96,7 @@ class BaseFilter:
             key = f"{self.key}__{self.lookup}"
         return {key: self.value}
 
-    def apply(self, proxy: CE) -> bool:
+    def apply(self, entity: Entity) -> bool:
         return self.lookup.apply(self.value)
 
     def get_casted_value(self, value: Any) -> Value:
@@ -118,10 +117,10 @@ class BaseFilter:
 class DatasetFilter(BaseFilter):
     key = "dataset"
 
-    def apply(self, proxy: CE) -> bool:
+    def apply(self, entity: Entity) -> bool:
         if self.comparator == Lookup.EQUALS:
-            return self.value in proxy.datasets
-        for value in proxy.datasets:
+            return self.value in entity.datasets
+        for value in entity.datasets:
             if self.lookup.apply(value):
                 return True
         return False
@@ -160,10 +159,10 @@ class SchemaFilter(BaseFilter):
             elif self.comparator == Comparators["not"]:
                 self.comparator = Comparators["not_in"]
 
-    def apply(self, proxy: CE) -> bool:
+    def apply(self, entity: Entity) -> bool:
         if len(self.schemata) > 1:
-            return proxy.schema in self.schemata
-        return self.lookup.apply(proxy.schema.name)
+            return entity.schema in self.schemata
+        return self.lookup.apply(entity.schema.name)
 
 
 class PropertyFilter(BaseFilter):
@@ -171,8 +170,8 @@ class PropertyFilter(BaseFilter):
         super().__init__(value, comparator)
         self.key = self.validate(prop)
 
-    def apply(self, proxy: CE) -> bool:
-        for value in proxy.get(self.key, quiet=True):
+    def apply(self, entity: Entity) -> bool:
+        for value in entity.get(self.key, quiet=True):
             if self.lookup.apply(value):
                 return True
         return False
@@ -194,8 +193,8 @@ class ReverseFilter(BaseFilter):
 
     key = "reverse"
 
-    def apply(self, proxy: CE) -> bool:
-        for prop, value in proxy.itervalues():
+    def apply(self, entity: Entity) -> bool:
+        for prop, value in entity.itervalues():
             if prop.type == registry.entity:
                 if self.lookup.apply(value):
                     return True
@@ -205,8 +204,8 @@ class ReverseFilter(BaseFilter):
 class IdFilter(BaseFilter):
     key = "id"
 
-    def apply(self, proxy: CE) -> bool:
-        return self.lookup.apply(proxy.id)
+    def apply(self, entity: Entity) -> bool:
+        return self.lookup.apply(entity.id)
 
 
 class EntityIdFilter(IdFilter):

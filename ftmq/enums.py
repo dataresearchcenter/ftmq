@@ -2,7 +2,6 @@ from enum import Enum, EnumMeta
 from typing import Any, Iterable
 
 from followthemoney import model
-from nomenklatura.dataset.coverage import DataCoverage
 
 
 class EMeta(EnumMeta):
@@ -70,11 +69,14 @@ Comparators = StrEnum(
         "endswith",
     ],
 )
-Frequencies = StrEnum("Frequencies", DataCoverage.FREQUENCIES)
 Aggregations = StrEnum("Aggregations", ("min", "max", "sum", "avg", "count"))
 Fields = StrEnum("Fields", ["id", "dataset", "schema", "year"])
 
 # aleph
+Frequencies = StrEnum(
+    "Frequencies",
+    ("unknown", "never", "hourly", "daily", "weekly", "monthly", "annually"),
+)
 Categories = StrEnum(
     "Categories",
     (

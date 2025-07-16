@@ -8,8 +8,8 @@ from followthemoney.types import registry
 from pydantic import BaseModel
 
 from ftmq.enums import Aggregations, Fields, Properties
-from ftmq.types import CE, CEGenerator
-from ftmq.util import prop_is_numeric, to_numeric
+from ftmq.types import Entities, Entity
+from ftmq.util import prop_is_numeric
 
 Value: TypeAlias = int | float | str
 Values: TypeAlias = list[Value]
@@ -45,7 +45,7 @@ class Aggregation(BaseModel):
             return len(set(values))
 
     def get_proxy_values(
-        self, proxy: CE, prop: Properties | Fields | None = None
+        self, proxy: Entity, prop: Properties | Fields | None = None
     ) -> Generator[str, None, None]:
         prop = prop or self.prop
         if prop == Fields.id:
@@ -60,11 +60,11 @@ class Aggregation(BaseModel):
         else:
             yield from proxy.get(prop, quiet=True)
 
-    def collect(self, proxy: CE) -> CE:
+    def collect(self, proxy: Entity) -> Entity:
         is_numeric = prop_is_numeric(proxy.schema, self.prop)
         for value in self.get_proxy_values(proxy):
             if is_numeric:
-                value = to_numeric(value)
+                value = registry.number.to_number(value)
             if value is not None:
                 self.values.append(value)
                 for prop in self.group_props:
@@ -72,7 +72,7 @@ class Aggregation(BaseModel):
                         self.grouper[prop][g].append(value)
         return proxy
 
-    def apply(self, proxies: CEGenerator) -> CEGenerator:
+    def apply(self, proxies: Entities) -> Entities:
         for proxy in proxies:
             yield self.collect(proxy)
         self.__exit__()
@@ -113,7 +113,7 @@ class Aggregator(BaseModel):
                 )
         self.result = clean_dict(self.result)
 
-    def apply(self, proxies: CEGenerator) -> CEGenerator:
+    def apply(self, proxies: Entities) -> Entities:
         for agg in self.aggregations:
             proxies = agg.apply(proxies)
         yield from proxies

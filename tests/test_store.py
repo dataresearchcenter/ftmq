@@ -1,20 +1,20 @@
-from nomenklatura.entity import CompositeEntity
+from followthemoney import StatementEntity
+from followthemoney.dataset.catalog import DataCatalog
+from followthemoney.dataset.dataset import Dataset
 
-from ftmq.model import Catalog, Dataset
 from ftmq.query import Query
-from ftmq.store import AlephStore, MemoryStore, SQLStore, Store, get_store
+from ftmq.store import MemoryStore, SQLStore, Store, get_store
+from ftmq.store.aleph import AlephStore, parse_uri
 from ftmq.store.base import get_resolver
 from ftmq.store.lake import LakeStore
 from ftmq.store.level import LevelDBStore
-from ftmq.util import make_dataset
-
-# from ftmq.store.redis import RedisStore
+from ftmq.util import get_scope_dataset, make_dataset
 
 
 def _run_store_test_implicit(cls: type[Store], proxies, **kwargs):
     # implicit catalog from store content
     store = cls(linker=get_resolver(), **kwargs)
-    assert not store.get_catalog().names
+    # assert not store.get_scope().dataset_names
 
     datasets_seen = set()
     with store.writer() as bulk:
@@ -23,16 +23,16 @@ def _run_store_test_implicit(cls: type[Store], proxies, **kwargs):
                 bulk.add_entity(proxy)
                 datasets_seen.update(proxy.datasets)
 
-    assert store.get_catalog().names == {"donations", "eu_authorities"}
+    assert store.get_scope().leaf_names == {"donations", "eu_authorities"}
     return True
 
 
 def _run_store_test(cls: type[Store], proxies, **kwargs):
-    # explicit catalog
-    catalog = Catalog(
-        datasets=[Dataset(name="eu_authorities"), Dataset(name="donations")]
+    store = cls(
+        dataset=get_scope_dataset("eu_authorities", "donations"),
+        linker=get_resolver(),
+        **kwargs,
     )
-    store = cls(catalog=catalog, linker=get_resolver(), **kwargs)
     with store.writer() as bulk:
         for proxy in proxies:
             bulk.add_entity(proxy)
@@ -52,8 +52,8 @@ def _run_store_test(cls: type[Store], proxies, **kwargs):
     }
     assert store.dataset.leaf_names == {"donations", "eu_authorities"}
     tested = False
-    for proxy in store.default_view().entities():
-        assert isinstance(proxy, CompositeEntity)
+    for proxy in view.entities():
+        assert isinstance(proxy, StatementEntity)
         tested = True
         break
     assert tested
@@ -65,32 +65,33 @@ def _run_store_test(cls: type[Store], proxies, **kwargs):
     assert len(entities) == 151
 
     view = store.default_view()
+    assert len([e for e in view.entities()]) == 474 + 151
     ds = make_dataset("eu_authorities")
     view = store.view(ds)
     assert len([e for e in view.entities()]) == 151
 
-    view = store.query()
+    view = store.default_view()
     q = Query().where(dataset="eu_authorities")
-    res = [e for e in view.entities(q)]
+    res = [e for e in view.query(q)]
     assert len(res) == 151
     assert "eu_authorities" in res[0].datasets
     q = Query().where(schema="Payment", prop="date", value=2011, comparator="gte")
-    res = [e for e in view.entities(q)]
+    res = [e for e in view.query(q)]
     assert all(r.schema.name == "Payment" for r in res)
     assert len(res) == 21
 
     # schemata filters
     q = Query().where(schema="Organization", schema_include_matchable=True)
-    res = [e for e in view.entities(q)]
+    res = [e for e in view.query(q)]
     assert len(res) == 224
     q = Query().where(schema="LegalEntity")
-    res = [e for e in view.entities(q)]
+    res = [e for e in view.query(q)]
     assert len(res) == 0
     q = Query().where(schema="LegalEntity", schema_include_matchable=True)
-    res = [e for e in view.entities(q)]
+    res = [e for e in view.query(q)]
     assert len(res) == 246
     q = Query().where(schema="LegalEntity", schema_include_descendants=True)
-    res = [e for e in view.entities(q)]
+    res = [e for e in view.query(q)]
     assert len(res) == 246
 
     # stats
@@ -113,11 +114,11 @@ def _run_store_test(cls: type[Store], proxies, **kwargs):
     # ordering
     q = Query().where(schema="Payment", prop="date", value=2011, comparator="gte")
     q = q.order_by("amountEur")
-    res = [e for e in view.entities(q)]
+    res = [e for e in view.query(q)]
     assert len(res) == 21
     assert res[0].get("amountEur") == ["50001"]
     q = q.order_by("amountEur", ascending=False)
-    res = [e for e in view.entities(q)]
+    res = [e for e in view.query(q)]
     assert len(res) == 21
     assert res[0].get("amountEur") == ["320000"]
 
@@ -125,12 +126,12 @@ def _run_store_test(cls: type[Store], proxies, **kwargs):
     q = Query().where(schema="Payment", prop="date", value=2011, comparator="gte")
     q = q.order_by("amountEur")
     q = q[:10]
-    res = [e for e in view.entities(q)]
+    res = [e for e in view.query(q)]
     assert len(res) == 10
     assert res[0].get("payer") == ["efccc434cdf141c7ba6f6e539bb6b42ecd97c368"]
 
     q = Query().where(schema="Person").order_by("name")[0]
-    res = [e for e in view.entities(q)]
+    res = [e for e in view.query(q)]
     assert len(res) == 1
     assert res[0].caption == "Dr.-Ing. E. h. Martin Herrenknecht"
 
@@ -208,7 +209,7 @@ def _run_store_test(cls: type[Store], proxies, **kwargs):
     # reversed
     entity_id = "783d918df9f9178400d6b3386439ab3b3679979c"
     q = Query().where(reverse=entity_id)
-    res = [p for p in view.entities(q)]
+    res = [p for p in view.query(q)]
     assert len(res) == 53
     tested = False
     for proxy in res:
@@ -226,22 +227,22 @@ def _run_store_test(cls: type[Store], proxies, **kwargs):
 
     # ids
     q = Query().where(entity_id="eu-authorities-chafea")
-    res = [p for p in view.entities(q)]
+    res = [p for p in view.query(q)]
     assert len(res) == 1
     q = Query().where(canonical_id="eu-authorities-chafea")
-    res = [p for p in view.entities(q)]
+    res = [p for p in view.query(q)]
     assert len(res) == 1
     q = Query().where(entity_id="eu-authorities-chafea", dataset="donations")
-    res = [p for p in view.entities(q)]
+    res = [p for p in view.query(q)]
     assert len(res) == 0
     q = Query().where(canonical_id="eu-authorities-chafea", dataset="donations")
-    res = [p for p in view.entities(q)]
+    res = [p for p in view.query(q)]
     assert len(res) == 0
     q = Query().where(entity_id__startswith="eu-authorities-")
-    res = [p for p in view.entities(q)]
+    res = [p for p in view.query(q)]
     assert len(res) == 151
     q = Query().where(canonical_id__startswith="eu-authorities-")
-    res = [p for p in view.entities(q)]
+    res = [p for p in view.query(q)]
     assert len(res) == 151
 
     return True
@@ -291,3 +292,18 @@ def test_store_init(tmp_path):
     assert store.dataset.name == "test_dataset"
     store = get_store(f"lake+{tmp_path}")
     assert isinstance(store, LakeStore)
+
+
+def test_store_aleph():
+    assert parse_uri("http://localhost") == ("http://localhost", None, None)
+    assert parse_uri("http://localhost") == ("http://localhost", None, None)
+    assert parse_uri("https://dataset@localhost") == (
+        "https://localhost",
+        None,
+        "dataset",
+    )
+    assert parse_uri("https://dataset:api_key@localhost") == (
+        "https://localhost",
+        "api_key",
+        "dataset",
+    )

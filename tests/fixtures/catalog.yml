@@ -1,3 +1,4 @@
+title: A nice catalog
 datasets:
   - from_uri: http://localhost:8000/datasets/eu_transparency_register.json
     maintainer:

@@ -2,7 +2,7 @@ from functools import cached_property
 from typing import TYPE_CHECKING, TypeAlias
 
 from followthemoney.types import PropertyType, registry
-from nomenklatura.statement import make_statement_table
+from nomenklatura.db import make_statement_table
 from sqlalchemy import (
     NUMERIC,
     BooleanClauseList,

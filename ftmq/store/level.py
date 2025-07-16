@@ -1,25 +1,25 @@
-from nomenklatura.dataset import DS
-from nomenklatura.store import level
+from followthemoney.dataset.dataset import Dataset
+from nomenklatura.store import level as nk
 
-from ftmq.model import Catalog
 from ftmq.store.base import Store, View
+from ftmq.util import get_scope_dataset
 
 
-class LevelDBQueryView(View, level.LevelDBView):
+class LevelDBQueryView(View, nk.LevelDBView):
     pass
 
 
-class LevelDBStore(Store, level.LevelDBStore):
-    def get_catalog(self) -> Catalog:
+class LevelDBStore(Store, nk.LevelDBStore):
+    def get_scope(self) -> Dataset:
         names: set[str] = set()
-        with self.db.iterator(prefix=b"e:", include_value=False) as it:
+        with self.db.iterator(prefix=b"s:", include_value=False) as it:
             for k in it:
-                _, _, dataset = k.decode("utf-8").split(":", 2)
+                dataset = k.decode().split(":")[3]
                 names.add(dataset)
-        return Catalog.from_names(names)
+        return get_scope_dataset(*names)
 
-    def query(
-        self, scope: DS | None = None, external: bool = False
+    def view(
+        self, scope: Dataset | None = None, external: bool = False
     ) -> LevelDBQueryView:
         scope = scope or self.dataset
         return LevelDBQueryView(self, scope, external=external)

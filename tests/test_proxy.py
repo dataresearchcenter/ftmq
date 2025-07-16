@@ -1,15 +1,14 @@
 import pytest
-from followthemoney import model
+from followthemoney import StatementEntity, model
 
 from ftmq.exceptions import ValidationError
-from ftmq.io import make_proxy
+from ftmq.io import make_entity
 from ftmq.query import Query
-from ftmq.util import get_statements
 
 
 def test_proxy_composite():
     data = {"id": "1", "schema": "Thing", "properties": {"name": "Test"}}
-    proxy = make_proxy(data)
+    proxy = make_entity(data, StatementEntity)
     assert proxy.id == "1"
     assert proxy.get("name") == ["Test"]
     assert proxy.datasets == {"default"}
@@ -20,7 +19,7 @@ def test_proxy_composite():
         "properties": {"name": "Test"},
         "datasets": ["test_dataset"],
     }
-    proxy = make_proxy(data)
+    proxy = make_entity(data, StatementEntity)
     assert proxy.id == "1"
     assert proxy.get("name") == ["Test"]
     assert proxy.datasets == {"test_dataset"}
@@ -31,14 +30,10 @@ def test_proxy_composite():
         "properties": {"name": "Test", "sourceUrl": "https://example.org"},
         "datasets": ["test_dataset", "ds2"],
     }
-    proxy = make_proxy(data, "another_dataset")
+    proxy = make_entity(data, StatementEntity, "another_dataset")
     assert proxy.id == "1"
     assert proxy.get("name") == ["Test"]
-    assert proxy.datasets == {"another_dataset", "ds2", "test_dataset"}
-
-    assert len(proxy.datasets) == 3
-    statements = [s for s in get_statements(proxy, *proxy.datasets)]
-    assert len(statements) == 7
+    assert proxy.datasets == {"another_dataset"}
 
 
 def test_proxy_filter_dataset(proxies):

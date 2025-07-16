@@ -1,17 +1,19 @@
 import pytest
-from followthemoney import model
+from followthemoney import StatementEntity, ValueEntity, model
 from followthemoney.exc import InvalidData
 
 from ftmq.aggregate import aggregate, merge
-from ftmq.util import make_proxy
+from ftmq.util import make_entity
 
 
 def test_aggregate():
-    p1 = make_proxy(
-        {"id": "a", "schema": "LegalEntity", "properties": {"name": ["Jane"]}}
+    p1 = make_entity(
+        {"id": "a", "schema": "LegalEntity", "properties": {"name": ["Jane"]}},
+        ValueEntity,
     )
-    p2 = make_proxy(
-        {"id": "a", "schema": "Person", "properties": {"name": ["Jane Doe"]}}
+    p2 = make_entity(
+        {"id": "a", "schema": "Person", "properties": {"name": ["Jane Doe"]}},
+        ValueEntity,
     )
     assert merge(p1, p2).schema.name == "Person"
     p1.schema = model.get("Company")
@@ -19,19 +21,21 @@ def test_aggregate():
         merge(p1, p2)
     assert merge(p1, p2, downgrade=True).schema.name == "LegalEntity"
 
-    p1 = make_proxy(
+    p1 = make_entity(
         {
             "id": "a",
             "schema": "Company",
             "properties": {"name": ["Jane"], "registrationNumber": ["123"]},
-        }
+        },
+        StatementEntity,
     )
-    p2 = make_proxy(
+    p2 = make_entity(
         {
             "id": "a",
             "schema": "Person",
             "properties": {"name": ["Jane Doe"], "birthDate": ["2001"]},
-        }
+        },
+        StatementEntity,
     )
     assert merge(p1, p2, downgrade=True).schema.name == "LegalEntity"
 

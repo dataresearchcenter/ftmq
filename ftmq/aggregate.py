@@ -11,10 +11,10 @@ from followthemoney.exc import InvalidData
 from followthemoney.schema import Schema
 
 from ftmq.enums import Schemata
-from ftmq.types import CEGenerator, Proxy
-from ftmq.util import make_proxy
+from ftmq.types import Entity, StatementEntities
+from ftmq.util import make_entity
 
-SCHEMATA: dict[Schemata, int] = {s: len(model.get(s).extends) for s in Schemata}
+SCHEMATA: dict[Schemata, int] = {s: len(model[s].extends) for s in Schemata}
 
 
 def extends(s: Schema) -> set[Schema]:
@@ -34,7 +34,7 @@ def common_ancestor(s1: Schema, s2: Schema) -> Schema:
     raise InvalidData(f"No common ancestors: {s1}, {s2}")
 
 
-def merge(p1: Proxy, p2: Proxy, downgrade: bool | None = False) -> Proxy:
+def merge(p1: Entity, p2: Entity, downgrade: bool | None = False) -> Entity:
     try:
         p1 = p1.merge(p2)
         p1.schema = model.common_schema(p1.schema, p2.schema)
@@ -48,15 +48,17 @@ def merge(p1: Proxy, p2: Proxy, downgrade: bool | None = False) -> Proxy:
             p1_data["schema"] = schema.name
             p2_data = p2.to_full_dict()
             p2_data["schema"] = schema.name
-            p1 = make_proxy(p1_data)
-            p2 = make_proxy(p2_data)
+            p1 = make_entity(p1_data, p1.__class__)
+            p2 = make_entity(p2_data, p1.__class__)
             return p1.merge(p2)
 
         raise e
 
 
-def aggregate(proxies: Iterable[Proxy], downgrade: bool | None = False) -> CEGenerator:
-    buffer: dict[str, Proxy] = {}
+def aggregate(
+    proxies: Iterable[Entity], downgrade: bool | None = False
+) -> StatementEntities:
+    buffer: dict[str, Entity] = {}
     for proxy in logged_items(proxies, "Aggregate", item_name="Proxy"):
         if proxy.id in buffer:
             buffer[proxy.id] = merge(buffer[proxy.id], proxy, downgrade)

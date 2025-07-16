@@ -1,10 +1,9 @@
 from typing import Any, Iterable, Mapping, Self, Sequence, TypeAlias
 
 from followthemoney.entity import ValueEntity
-from followthemoney.statement.entity import StatementEntity
 from followthemoney.types import registry
-from nomenklatura.publish.names import pick_caption
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from rigour.names import pick_name
 
 from ftmq.types import Entity
 from ftmq.util import make_entity, must_str
@@ -52,5 +51,6 @@ class EntityModel(BaseModel):
     @classmethod
     def get_caption(cls, data: Any) -> Any:
         if data.get("caption") is None:
-            data["caption"] = pick_caption(make_entity(data, StatementEntity))
+            entity = make_entity(data)
+            data["caption"] = pick_name(entity.get_type_values(registry.name))
         return data

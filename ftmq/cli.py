@@ -1,16 +1,17 @@
 import click
 from anystore.io import smart_write, smart_write_json, smart_write_model
 from click_default_group import DefaultGroup
+from followthemoney import ValueEntity
 from nomenklatura import settings
 
 from ftmq.aggregate import aggregate
-from ftmq.io import apply_datasets, smart_read_proxies, smart_write_proxies
+from ftmq.io import smart_read_proxies, smart_write_proxies
 from ftmq.logging import configure_logging, get_logger
-from ftmq.model.coverage import Collector
 from ftmq.model.dataset import Catalog, Dataset
+from ftmq.model.stats import Collector
 from ftmq.query import Query
 from ftmq.store import get_store
-from ftmq.util import parse_unknown_filters
+from ftmq.util import apply_dataset, parse_unknown_filters
 
 log = get_logger(__name__)
 
@@ -75,23 +76,23 @@ def cli() -> None:
 )
 @click.argument("properties", nargs=-1)
 def q(
-    input_uri: str | None = "-",
-    output_uri: str | None = "-",
-    dataset: tuple[str] | None = (),
-    schema: tuple[str] | None = (),
-    schema_include_descendants: bool | None = False,
-    schema_include_matchable: bool | None = False,
-    sort: tuple[str] | None = None,
-    sort_ascending: bool | None = True,
-    properties: tuple[str] | None = (),
+    input_uri: str = "-",
+    output_uri: str = "-",
+    dataset: tuple[str, ...] = (),
+    schema: tuple[str, ...] = (),
+    schema_include_descendants: bool = False,
+    schema_include_matchable: bool = False,
+    sort: tuple[str, ...] = (),
+    sort_ascending: bool = True,
+    properties: tuple[str, ...] = (),
     stats_uri: str | None = None,
     store_dataset: str | None = None,
-    sum: tuple[str] | None = (),
-    min: tuple[str] | None = (),
-    max: tuple[str] | None = (),
-    avg: tuple[str] | None = (),
-    count: tuple[str] | None = (),
-    groups: tuple[str] | None = (),
+    sum: tuple[str, ...] = (),
+    min: tuple[str, ...] = (),
+    max: tuple[str, ...] = (),
+    avg: tuple[str, ...] = (),
+    count: tuple[str, ...] = (),
+    groups: tuple[str, ...] = (),
     aggregation_uri: str | None = None,
 ):
     """
@@ -128,8 +129,8 @@ def q(
         for func, props in aggs.items():
             q = q.aggregate(func, *props, groups=groups)
     proxies = smart_read_proxies(input_uri, dataset=store_dataset, query=q)
+    stats = Collector()
     if stats_uri:
-        stats = Collector()
         proxies = stats.apply(proxies)
     smart_write_proxies(output_uri, proxies, dataset=store_dataset)
     if stats_uri:
@@ -139,29 +140,28 @@ def q(
         smart_write_json(aggregation_uri, [q.aggregator.result], clean=True)
 
 
-@cli.command("apply")
+@cli.command("apply-dataset")
 @click.option(
     "-i", "--input-uri", default="-", show_default=True, help="input file or uri"
 )
 @click.option(
     "-o", "--output-uri", default="-", show_default=True, help="output file or uri"
 )
-@click.option("-d", "--dataset", multiple=True, help="Dataset(s) to filter for")
+@click.option("-d", "--dataset", help="Dataset to apply", required=True)
 @click.option("--replace-dataset", is_flag=True, default=False, show_default=True)
 def apply(
+    dataset: str,
     input_uri: str | None = "-",
     output_uri: str | None = "-",
-    dataset: tuple[str] | None = (),
     replace_dataset: bool | None = False,
 ):
     """
     Uplevel an entity stream to nomenklatura entities and apply dataset(s) property
     """
 
-    proxies = smart_read_proxies(input_uri)
-    if dataset:
-        proxies = apply_datasets(proxies, *dataset, replace=replace_dataset)
-    smart_write_proxies(output_uri, proxies)
+    proxies = smart_read_proxies(input_uri or "-", entity_type=ValueEntity)
+    proxies = (apply_dataset(p, dataset, replace=replace_dataset) for p in proxies)
+    smart_write_proxies(output_uri or "-", proxies)
 
 
 @cli.group()
@@ -176,7 +176,7 @@ def dataset():
 @click.option(
     "-o", "--output-uri", default="-", show_default=True, help="output file or uri"
 )
-def dataset_iterate(input_uri: str | None = "-", output_uri: str | None = "-"):
+def dataset_iterate(input_uri: str = "-", output_uri: str = "-"):
     dataset = Dataset._from_uri(input_uri)
     smart_write_proxies(output_uri, dataset.iterate())
 
@@ -196,9 +196,9 @@ def dataset_iterate(input_uri: str | None = "-", output_uri: str | None = "-"):
     help="Calculate stats",
 )
 def make_dataset(
-    input_uri: str | None = "-",
-    output_uri: str | None = "-",
-    stats: bool | None = False,
+    input_uri: str = "-",
+    output_uri: str = "-",
+    stats: bool = False,
 ):
     """
     Convert dataset YAML specification into json and optionally calculate statistics
@@ -223,7 +223,7 @@ def catalog():
 @click.option(
     "-o", "--output-uri", default="-", show_default=True, help="output file or uri"
 )
-def catalog_iterate(input_uri: str | None = "-", output_uri: str | None = "-"):
+def catalog_iterate(input_uri: str = "-", output_uri: str = "-"):
     catalog = Catalog._from_uri(input_uri)
     smart_write_proxies(output_uri, catalog.iterate())
 
@@ -243,9 +243,9 @@ def catalog_iterate(input_uri: str | None = "-", output_uri: str | None = "-"):
     help="Calculate stats for each dataset",
 )
 def make_catalog(
-    input_uri: str | None = "-",
-    output_uri: str | None = "-",
-    stats: bool | None = False,
+    input_uri: str = "-",
+    output_uri: str = "-",
+    stats: bool = False,
 ):
     """
     Convert catalog YAML specification into json and fetch dataset metadata
@@ -277,14 +277,14 @@ def store():
     "-o", "--output-uri", default="-", show_default=True, help="output file or uri"
 )
 def store_list_datasets(
-    input_uri: str | None = settings.DB_URL,
-    output_uri: str | None = "-",
+    input_uri: str = settings.DB_URL,
+    output_uri: str = "-",
 ):
     """
     List datasets within a store
     """
     store = get_store(input_uri)
-    catalog = store.get_catalog()
+    catalog = store.get_scope()
     datasets = [ds.name for ds in catalog.datasets]
     smart_write(output_uri, "\n".join(datasets).encode() + b"\n")
 
@@ -301,8 +301,8 @@ def store_list_datasets(
     "-o", "--output-uri", default=None, show_default=True, help="output file or uri"
 )
 def store_iterate(
-    input_uri: str | None = settings.DB_URL,
-    output_uri: str | None = "-",
+    input_uri: str = settings.DB_URL,
+    output_uri: str = "-",
 ):
     """
     Iterate all entities from in to out
@@ -320,9 +320,9 @@ def store_iterate(
 )
 @click.option("--downgrade", is_flag=True, default=False, show_default=True)
 def cli_aggregate(
-    input_uri: str | None = "-",
-    output_uri: str | None = "-",
-    downgrade: bool | None = False,
+    input_uri: str = "-",
+    output_uri: str = "-",
+    downgrade: bool = False,
 ):
     """
     In-memory aggregation of entities, allowing to merge entities with a common
