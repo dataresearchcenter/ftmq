@@ -165,9 +165,9 @@ from ftmq import Query
 
 q = Query().where(dataset="my_dataset", schema="Event")
 store = get_store("sqlite:///followthemoney.store")
-view = store.query()
+view = store.default_view()
 
-for proxy in view.entities(q):
+for proxy in view.query(q):
     assert proxy.schema.name == "Event"
 ```
 

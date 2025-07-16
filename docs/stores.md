@@ -32,7 +32,8 @@ Filter entities with a [`Query`](./query.md) object using a [store view][ftmq.st
 from ftmq import Query
 
 q = Query().where(dataset="my_dataset", schema="Person")
-proxies = store.view(q)
+view = store.default_view()
+proxies = store.query(q)
 ```
 
 ### Command line
