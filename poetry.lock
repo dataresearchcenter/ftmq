@@ -281,13 +281,15 @@ trio = ["trio (>=0.26.1)"]
 
 [[package]]
 name = "anystore"
-version = "0.3.7"
+version = "0.3.8"
 description = "Store and cache things anywhere"
 optional = false
-python-versions = ">=3.11,<4"
+python-versions = "<4,>=3.11"
 groups = ["main"]
-files = []
-develop = false
+files = [
+    {file = "anystore-0.3.8-py3-none-any.whl", hash = "sha256:00e61efd435750e847605b51041c1250f7bdca3d056d521825ce4a66af10664e"},
+    {file = "anystore-0.3.8.tar.gz", hash = "sha256:d180501c2971a4a5852eb956f56ffeee924f758653dbe246b0fa41ae1c56ce11"},
+]
 
 [package.dependencies]
 banal = ">=1.0.6,<2.0.0"
@@ -310,12 +312,6 @@ uuid7 = ">=0.1.0,<0.2.0"
 [package.extras]
 redis = ["fakeredis (>=2.26.2,<3.0.0)", "redis (>=4.0.0)"]
 sql = ["sqlalchemy (>=2.0.36,<3.0.0)"]
-
-[package.source]
-type = "git"
-url = "https://github.com/dataresearchcenter/anystore.git"
-reference = "HEAD"
-resolved_reference = "12725634733d9ae29d05dac36946fec55587cf7f"
 
 [[package]]
 name = "arro3-core"
@@ -4790,4 +4786,4 @@ sql = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<4"
-content-hash = "3a2f83d810f44e5b4987d16d97d36b9ff7fe84a2fe181c2cbbeed0321614f36c"
+content-hash = "e42baa55aa228e631e68f78479dd8605467b243be2b847eb84b50ef56e39658e"
