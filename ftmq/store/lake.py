@@ -67,6 +67,10 @@ BLOOM = ColumnProperties(bloom_filter_properties=BloomFilterProperties(True))
 WRITER = WriterProperties(
     compression="SNAPPY",
     column_properties={
+        "canonical_id": BLOOM,
+        "entity_id": BLOOM,
+        "schema": BLOOM,
+        "prop": BLOOM,
         "value": BLOOM,
     },
 )
