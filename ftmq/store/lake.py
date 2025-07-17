@@ -219,11 +219,12 @@ class LakeQueryView(SQLQueryView):
 class LakeStore(SQLStore):
     def __init__(self, *args, **kwargs) -> None:
         self._backend: FSStore = FSStore(uri=kwargs.pop("uri"))
-        self._partition_by = kwargs.pop("partition_by", PARTITION_BY)
+        if not isinstance(self._backend, FSStore):
+            raise ImproperlyConfigured(
+                f"Invalid store backend: `{self._backend.__class__}"
+            )
         self._lock: Lock = kwargs.pop("lock", Lock(self._backend))
-        assert isinstance(
-            self._backend, FSStore
-        ), f"Invalid store backend: `{self._backend.__class__}"
+        self._partition_by = kwargs.pop("partition_by", PARTITION_BY)
         kwargs["uri"] = "sqlite:///:memory:"  # fake it till you make it
         get_metadata.cache_clear()
         super().__init__(*args, **kwargs)
