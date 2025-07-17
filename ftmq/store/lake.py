@@ -159,7 +159,7 @@ def pack_statement(stmt: Statement, origin: str) -> SDict:
 
 def pack_statements(statements: Iterable[Statement], origin: str) -> pd.DataFrame:
     df = pd.DataFrame(pack_statement(s, origin) for s in statements)
-    df = df.drop_duplicates().sort_values("canonical_id")
+    df = df.drop_duplicates().sort_values(Z_ORDER)
     df = df.fillna(np.nan)
     return df
 
@@ -219,12 +219,11 @@ class LakeQueryView(SQLQueryView):
 class LakeStore(SQLStore):
     def __init__(self, *args, **kwargs) -> None:
         self._backend: FSStore = FSStore(uri=kwargs.pop("uri"))
-        if not isinstance(self._backend, FSStore):
-            raise ImproperlyConfigured(
-                f"Invalid store backend: `{self._backend.__class__}"
-            )
-        self._lock: Lock = kwargs.pop("lock", Lock(self._backend))
         self._partition_by = kwargs.pop("partition_by", PARTITION_BY)
+        self._lock: Lock = kwargs.pop("lock", Lock(self._backend))
+        assert isinstance(
+            self._backend, FSStore
+        ), f"Invalid store backend: `{self._backend.__class__}"
         kwargs["uri"] = "sqlite:///:memory:"  # fake it till you make it
         get_metadata.cache_clear()
         super().__init__(*args, **kwargs)
