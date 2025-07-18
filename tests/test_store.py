@@ -1,13 +1,12 @@
 from followthemoney import StatementEntity
-from followthemoney.dataset.catalog import DataCatalog
-from followthemoney.dataset.dataset import Dataset
 
 from ftmq.query import Query
-from ftmq.store import MemoryStore, SQLStore, Store, get_store
+from ftmq.store import MemoryStore, Store, get_store
 from ftmq.store.aleph import AlephStore, parse_uri
 from ftmq.store.base import get_resolver
 from ftmq.store.lake import LakeStore
 from ftmq.store.level import LevelDBStore
+from ftmq.store.sql import SQLStore
 from ftmq.util import get_scope_dataset, make_dataset
 
 

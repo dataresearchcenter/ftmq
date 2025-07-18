@@ -100,5 +100,4 @@ __all__ = [
     "Store",
     "View",
     "MemoryStore",
-    "SQLStore",
 ]
