@@ -16,6 +16,15 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
+    services:
+      postgres:
+        image: postgres:17
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: ftm
+          POSTGRES_PASSWORD: ftm
+          POSTGRES_DATABASE: ftm
 
     steps:
     - uses: actions/checkout@v4
@@ -51,6 +60,8 @@ jobs:
     - name: Lint with flake8
       run: make lint
     - name: Test with pytest
+      env:
+        TESTING_FRAGMENTS_PSQL_URI: postgresql://ftm:ftm@localhost:5432/ftm
       run: make test
     - name: Test building
       run: poetry build
