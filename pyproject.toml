@@ -24,7 +24,6 @@ dependencies = [
     "pyicu (>=2.15.2,<3.0.0)",
     "pydantic (>=2.11.3,<3.0.0)",
     "pycountry (>=24.6.1,<25.0.0)",
-    "furl (>=2.1.4,<3.0.0)",
 ]
 
 [project.optional-dependencies]
@@ -38,7 +37,7 @@ lake = [
     "deltalake (>=1.0.2,<2.0.0)",
     "pyarrow (>=20.0.0,<21.0.0)",
 ]
-aleph = ["alephclient (>=2.6.0,<3.0.0)"]
+aleph = ["furl (>=2.1.4,<3.0.0)", "alephclient (>=2.6.0,<3.0.0)"]
 
 [project.scripts]
 ftmq = "ftmq.cli:cli"
