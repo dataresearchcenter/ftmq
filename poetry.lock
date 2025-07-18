@@ -1120,13 +1120,13 @@ pyflakes = ">=3.4.0,<3.5.0"
 
 [[package]]
 name = "followthemoney"
-version = "4.0.1"
+version = "4.0.3"
 description = "A data model for anti corruption data modeling and analysis."
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "followthemoney-4.0.1-py3-none-any.whl", hash = "sha256:c9268970a9c764997032074ec538b2eb4ab88064bdd646f33d3f2d22cc7f173d"},
+    {file = "followthemoney-4.0.3-py3-none-any.whl", hash = "sha256:259e8c622f6daba37ebda341b68e5b1741cc1822e99a40305bd03e8f0df579ca"},
 ]
 
 [package.dependencies]
@@ -2427,13 +2427,13 @@ files = [
 
 [[package]]
 name = "nomenklatura"
-version = "4.0.0"
+version = "4.0.1"
 description = "Make record linkages in followthemoney data."
 optional = false
 python-versions = ">=3.11"
 groups = ["main"]
 files = [
-    {file = "nomenklatura-4.0.0-py3-none-any.whl", hash = "sha256:c2485a6ff93351b04c61961af5b2803d2e3c9ec2f401943747565d23642b2a9a"},
+    {file = "nomenklatura-4.0.1-py3-none-any.whl", hash = "sha256:e0b7840990719c2b903c50db401e32a8c4cff87673c28728fb62b898ab6d71f4"},
 ]
 
 [package.dependencies]
@@ -4786,4 +4786,4 @@ sql = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<4"
-content-hash = "e42baa55aa228e631e68f78479dd8605467b243be2b847eb84b50ef56e39658e"
+content-hash = "da92f0700e6f292b91a06560bb194ce54568997e80598050186f555d4a9df4f1"
