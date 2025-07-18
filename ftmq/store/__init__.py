@@ -8,9 +8,7 @@ from nomenklatura import Resolver, settings
 from nomenklatura.db import get_metadata
 
 from ftmq.store.base import Store, View
-from ftmq.store.lake import LakeStore
 from ftmq.store.memory import MemoryStore
-from ftmq.store.sql import SQLStore
 
 
 @cache
@@ -69,8 +67,13 @@ def get_store(
         except ImportError:
             raise ImportError("Can not load RedisStore. Install `redis`")
     if "sql" in parsed.scheme:
-        get_metadata.cache_clear()
-        return SQLStore(dataset, uri=uri, linker=linker)
+        try:
+            from ftmq.store.sql import SQLStore
+
+            get_metadata.cache_clear()
+            return SQLStore(dataset, uri=uri, linker=linker)
+        except ImportError:
+            raise ImportError("Can not load SqlStore. Install sql dependencies.")
     if "aleph" in parsed.scheme:
         try:
             from ftmq.store.aleph import AlephStore
@@ -79,8 +82,13 @@ def get_store(
         except ImportError:
             raise ImportError("Can not load AlephStore. Install `alephclient`")
     if uri.startswith("lake+"):
-        uri = str(uri)[5:]
-        return LakeStore(uri=uri, dataset=dataset, linker=linker)
+        try:
+            from ftmq.store.lake import LakeStore
+
+            uri = str(uri)[5:]
+            return LakeStore(uri=uri, dataset=dataset, linker=linker)
+        except ImportError:
+            raise ImportError("Can not load LakeStore. Install `[lake]` dependencies")
     if uri.startswith("fragments+"):
         uri = str(uri)[10:]
         raise NotImplementedError(uri)
@@ -89,10 +97,8 @@ def get_store(
 
 __all__ = [
     "get_store",
-    "S",
     "Store",
     "View",
     "MemoryStore",
     "SQLStore",
-    "LakeStore",
 ]
