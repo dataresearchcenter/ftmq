@@ -2,11 +2,12 @@ from pathlib import Path
 
 import orjson
 from click.testing import CliRunner
-from nomenklatura.entity import CompositeEntity
+from followthemoney import ValueEntity
+from followthemoney.dataset.dataset import DatasetModel
 
 from ftmq.cli import cli
-from ftmq.io import make_proxy
-from ftmq.model import Catalog, Dataset
+from ftmq.io import make_entity
+from ftmq.model.dataset import Catalog
 
 runner = CliRunner()
 
@@ -25,8 +26,8 @@ def test_cli(fixtures_path: Path):
     assert result.exit_code == 0
     lines = _get_lines(result.output)
     assert len(lines) == 151
-    proxy = make_proxy(orjson.loads(lines[0]))
-    assert isinstance(proxy, CompositeEntity)
+    proxy = make_entity(orjson.loads(lines[0]), ValueEntity)
+    assert isinstance(proxy, ValueEntity)
 
     result = runner.invoke(cli, ["-i", in_uri, "-d", "other_dataset"])
     assert result.exit_code == 0
@@ -74,36 +75,39 @@ def test_cli(fixtures_path: Path):
 def test_cli_apply(fixtures_path: Path):
     in_uri = str(fixtures_path / "eu_authorities.ftm.json")
 
-    result = runner.invoke(cli, ["apply", "-i", in_uri, "-d", "another_dataset"])
+    result = runner.invoke(
+        cli, ["apply-dataset", "-i", in_uri, "-d", "another_dataset"]
+    )
     assert result.exit_code == 0
     lines = _get_lines(result.output)
     assert len(lines) == 151
-    proxy = make_proxy(orjson.loads(lines[0]))
-    assert isinstance(proxy, CompositeEntity)
+    proxy = make_entity(orjson.loads(lines[0]), ValueEntity)
+    assert isinstance(proxy, ValueEntity)
     assert "another_dataset" in proxy.datasets
     assert "eu_authorities" in proxy.datasets
     assert "default" not in proxy.datasets
 
     # replace dataset
     result = runner.invoke(
-        cli, ["apply", "-i", in_uri, "-d", "another_dataset", "--replace-dataset"]
+        cli,
+        ["apply-dataset", "-i", in_uri, "-d", "another_dataset", "--replace-dataset"],
     )
     assert result.exit_code == 0
     lines = _get_lines(result.output)
     assert len(lines) == 151
-    proxy = make_proxy(orjson.loads(lines[0]))
-    assert isinstance(proxy, CompositeEntity)
+    proxy = make_entity(orjson.loads(lines[0]), ValueEntity)
+    assert isinstance(proxy, ValueEntity)
     assert "another_dataset" in proxy.datasets
     assert "eu_authorities" not in proxy.datasets
     assert "default" not in proxy.datasets
 
 
-def test_cli_coverage(fixtures_path: Path):
+def test_cli_stats(fixtures_path: Path):
     in_uri = str(fixtures_path / "donations.ijson")
     result = runner.invoke(cli, ["-i", in_uri, "-o", "/dev/null", "--stats-uri", "-"])
     assert result.exit_code == 0
     test_result = orjson.loads(result.output)
-    test_result["coverage"]["countries"] = sorted(test_result["coverage"]["countries"])
+    test_result["countries"] = sorted(test_result["countries"])
     test_result["things"]["countries"] = sorted(
         test_result["things"]["countries"], key=lambda x: x["code"]
     )
@@ -111,13 +115,9 @@ def test_cli_coverage(fixtures_path: Path):
         test_result["things"]["schemata"], key=lambda x: x["name"]
     )
     assert test_result == {
-        "coverage": {
-            "start": "2002-07-04",
-            "end": "2011-12-29",
-            "frequency": "unknown",
-            "countries": ["cy", "de", "gb", "lu"],
-            "schedule": None,
-        },
+        "start": "2002-07-04T00:00:00",
+        "end": "2011-12-29T00:00:00",
+        "countries": ["cy", "de", "gb", "lu"],
         "things": {
             "total": 184,
             "countries": [
@@ -222,7 +222,7 @@ def test_cli_generate(fixtures_path: Path):
     uri = str(fixtures_path / "dataset.yml")
     res = runner.invoke(cli, ["dataset", "generate", "-i", uri])
     res = orjson.loads(res.stdout.split("\n")[-1])  # FIXME logging
-    assert Dataset(**res)
+    assert DatasetModel(**res)
 
     # catalog
     uri = str(fixtures_path / "catalog.yml")

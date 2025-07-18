@@ -1,26 +1,21 @@
 from functools import cache
 from pathlib import Path
-from typing import TypeVar
 from urllib.parse import urlparse
 
+from anystore.types import Uri
+from followthemoney.dataset.dataset import Dataset
 from nomenklatura import Resolver, settings
 from nomenklatura.db import get_metadata
 
-from ftmq.model.dataset import Catalog, Dataset
-from ftmq.store.aleph import AlephStore
 from ftmq.store.base import Store, View
 from ftmq.store.lake import LakeStore
 from ftmq.store.memory import MemoryStore
 from ftmq.store.sql import SQLStore
-from ftmq.types import PathLike
-
-S = TypeVar("S", bound=Store)
 
 
 @cache
 def get_store(
-    uri: PathLike | None = settings.DB_URL,
-    catalog: Catalog | None = None,
+    uri: Uri | None = settings.DB_URL,
     dataset: Dataset | str | None = None,
     linker: Resolver | None = None,
 ) -> Store:
@@ -47,50 +42,48 @@ def get_store(
 
     Args:
         uri: The store backend uri
-        catalog: A `ftmq.model.Catalog` instance to limit the scope to
-        dataset: A `ftmq.model.Dataset` instance to limit the scope to
+        dataset: A `followthemoney.Dataset` instance to limit the scope to
         linker: A `nomenklatura.Resolver` instance with linked / deduped data
 
     Returns:
         The initialized store. This is a cached object.
     """
-    if isinstance(dataset, str):
-        dataset = Dataset(name=dataset)
     uri = str(uri)
     parsed = urlparse(uri)
     if parsed.scheme == "memory":
-        return MemoryStore(catalog, dataset, linker=linker)
+        return MemoryStore(dataset, linker=linker)
     if parsed.scheme == "leveldb":
         path = uri.replace("leveldb://", "")
         path = Path(path).absolute()
         try:
             from ftmq.store.level import LevelDBStore
 
-            return LevelDBStore(catalog, dataset, path=path, linker=linker)
+            return LevelDBStore(dataset, path=path, linker=linker)
         except ImportError:
             raise ImportError("Can not load LevelDBStore. Install `plyvel`")
     if parsed.scheme == "redis":
         try:
             from ftmq.store.redis import RedisStore
 
-            return RedisStore(catalog, dataset, linker=linker)
+            return RedisStore(dataset, linker=linker)
         except ImportError:
             raise ImportError("Can not load RedisStore. Install `redis`")
-    if parsed.scheme == "clickhouse":
-        try:
-            from ftm_columnstore import get_store as get_cstore
-
-            return get_cstore(catalog, dataset, linker=linker)
-        except ImportError:
-            raise ImportError("Can not load ClickhouseStore. Install `ftm-columnstore`")
     if "sql" in parsed.scheme:
         get_metadata.cache_clear()
-        return SQLStore(catalog, dataset, uri=uri, linker=linker)
+        return SQLStore(dataset, uri=uri, linker=linker)
     if "aleph" in parsed.scheme:
-        return AlephStore.from_uri(uri, catalog=catalog, dataset=dataset, linker=linker)
+        try:
+            from ftmq.store.aleph import AlephStore
+
+            return AlephStore.from_uri(uri, dataset=dataset, linker=linker)
+        except ImportError:
+            raise ImportError("Can not load AlephStore. Install `alephclient`")
     if uri.startswith("lake+"):
         uri = str(uri)[5:]
-        return LakeStore(uri=uri, catalog=catalog, dataset=dataset, linker=linker)
+        return LakeStore(uri=uri, dataset=dataset, linker=linker)
+    if uri.startswith("fragments+"):
+        uri = str(uri)[10:]
+        raise NotImplementedError(uri)
     raise NotImplementedError(uri)
 
 
@@ -101,6 +94,5 @@ __all__ = [
     "View",
     "MemoryStore",
     "SQLStore",
-    "AlephStore",
     "LakeStore",
 ]

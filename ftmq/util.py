@@ -1,39 +1,44 @@
-import re
 from functools import cache, lru_cache
 from typing import Any, Generator
 
 import pycountry
+from anystore.types import SDict
 from banal import ensure_list, is_listish
-from followthemoney.proxy import E, EntityProxy
+from followthemoney.dataset import Dataset
+from followthemoney.entity import ValueEntity
+from followthemoney.proxy import EntityProxy
 from followthemoney.schema import Schema
 from followthemoney.types import registry
 from followthemoney.util import make_entity_id, sanitize_text
-from nomenklatura.dataset import Dataset
-from nomenklatura.entity import CE, CompositeEntity
-from nomenklatura.statement import Statement
-from nomenklatura.stream import StreamEntity
 from normality import collapse_spaces, slugify
 
 from ftmq.enums import Comparators
 from ftmq.exceptions import ValidationError
-from ftmq.types import SE, SGenerator
+from ftmq.types import Entity, EntityType
+
+DEFAULT_DATASET = "default"
 
 
 @cache
-def make_dataset(name: str) -> Dataset:
-    return Dataset.make({"name": name, "title": name})
+def make_dataset(name: str | None = DEFAULT_DATASET) -> Dataset:
+    name = name or DEFAULT_DATASET
+    return Dataset.make({"name": name, "title": name.title()})
 
 
 @cache
-def ensure_dataset(ds: str | Dataset | None = None) -> Dataset | None:
+def ensure_dataset(ds: str | Dataset | None = None) -> Dataset:
     if not ds:
-        return
+        return make_dataset()
     if isinstance(ds, str):
         return make_dataset(ds)
     return ds
 
 
-DefaultDataset = make_dataset("default")
+@cache
+def get_scope_dataset(*names: str) -> Dataset:
+    ds = Dataset({"name": "default", "datasets": names})
+    ds.children = {make_dataset(n) for n in names}
+    return ds
 
 
 def parse_comparator(key: str) -> tuple[str, Comparators]:
@@ -46,15 +51,15 @@ def parse_comparator(key: str) -> tuple[str, Comparators]:
 
 
 def parse_unknown_filters(
-    filters: tuple[str],
-) -> Generator[tuple[str, str, str], None, None]:
-    filters = (f for f in filters)
-    for prop in filters:
+    filters: tuple[str, ...],
+) -> Generator[tuple[str, str | list[str], str], None, None]:
+    _filters = (f for f in filters)
+    for prop in _filters:
         prop = prop.lstrip("-")
         if "=" in prop:  # 'country=de'
             prop, value = prop.split("=")
         else:  # ("country", "de"):
-            value = next(filters)
+            value = next(_filters)
 
         prop, *op = prop.split("__")
         op = op[0] if op else Comparators.eq
@@ -67,67 +72,72 @@ def parse_unknown_filters(
         yield prop, value, op
 
 
-def make_proxy(data: dict[str, Any], dataset: str | Dataset | None = None) -> CE:
+def make_entity(
+    data: SDict,
+    entity_type: EntityType | None = ValueEntity,
+    default_dataset: str | Dataset | None = None,
+) -> Entity:
     """
-    Create a `nomenklatura.entity.CompositeEntity` from a json dict.
+    Create a `Entity` from a json dict.
 
     Args:
         data: followthemoney data dict that represents entity data.
-        dataset: A default dataset
+        entity_type: The entity class to use (`StatementEntity` or `ValueEntity`)
+        default_dataset: A default dataset if no dataset in data
 
     Returns:
-        The composite entity proxy
+        The Entity instance
     """
-    datasets = ensure_list(data.pop("datasets", None))
-    if dataset is not None:
-        if isinstance(dataset, str):
-            dataset = make_dataset(dataset)
-        datasets.append(dataset.name)
-    elif datasets:
-        dataset = datasets[0]
-        dataset = make_dataset(dataset)
+    etype = entity_type or ValueEntity
+    if data.get("id") is None:
+        raise ValidationError("Entity has no ID.")
+    if etype == ValueEntity:
+        if not data.get("datasets"):
+            dataset = make_dataset(default_dataset).name
+            data["datasets"] = [dataset]
+        return etype.from_dict(data)
+    datasets = data.get("datasets", [])
+    if len(datasets) == 1:
+        dataset = ensure_dataset(datasets[0])
     else:
-        dataset = DefaultDataset
-    proxy = CompositeEntity(dataset, data)
-    if len(datasets) > 1:
-        if proxy.id is None:
-            raise ValidationError("Entity has no ID.")
-        statements = get_statements(proxy, *datasets)
-        return CompositeEntity.from_statements(dataset, statements)
-    return proxy
+        dataset = ensure_dataset(default_dataset)
+    return etype.from_data(dataset, data)
 
 
-def ensure_proxy(
-    data: dict[str, Any] | CE | E | SE, dataset: str | Dataset | None = None
-) -> CompositeEntity:
-    if isinstance(data, CompositeEntity):
-        return data
-    if isinstance(data, (EntityProxy, StreamEntity)):
-        data = data.to_full_dict()
-    return make_proxy(data, dataset)
-
-
-def get_statements(proxy: CE, *datasets: str) -> SGenerator:
+def ensure_entity(
+    data: dict[str, Any] | Entity | EntityProxy,
+    entity_type: EntityType,
+    default_dataset: str | Dataset | None = None,
+) -> Entity:
     """
-    Get statements from a `nomenklatura.entity.CompositeEntity` with multiple
-    datasets if needed
+    Ensure input data to be specified `Entity` type
 
     Args:
-        proxy: `nomenklatura.entity.CompositeEntity`
-        *datasets: Any (additional) datasets to create statements for
+        data: entity or data
+        entity_type: The entity class to use (`StatementEntity` or `ValueEntity`)
+        default_dataset: A default dataset if no dataset in data
 
-    Yields:
-        A generator of `nomenklatura.statement.Statement`
+    Returns:
+        The Entity instance
     """
-    datasets = datasets or ("default",)
-    for ix, dataset in enumerate(datasets):
-        for sx, stmt in enumerate(Statement.from_entity(proxy, dataset)):
-            stmt = stmt.to_dict()
-            stmt["external"] = stmt.get("external") or False
-            stmt = Statement.from_dict(stmt)
-            yield stmt
-            if ix and sx:
-                break
+    if isinstance(data, entity_type):
+        if data.datasets:
+            return data
+    if isinstance(data, EntityProxy):
+        data = data.to_dict()
+    return make_entity(data, entity_type, default_dataset)
+
+
+def apply_dataset(
+    entity: Entity, dataset: str | Dataset, replace: bool | None = False
+) -> Entity:
+    dataset = ensure_dataset(dataset)
+    data = entity.to_dict()
+    if replace:
+        data["datasets"] = [dataset.name]
+    else:
+        data["datasets"].append(dataset.name)
+    return make_entity(data, entity.__class__, dataset)
 
 
 @cache
@@ -195,48 +205,6 @@ def get_country_code(value: Any, splitter: str | None = ",") -> str | None:
         if code:
             return code
     return
-
-
-NUMERIC_US = re.compile(r"^-?\d+(?:,\d{3})*(?:\.\d+)?$")
-NUMERIC_DE = re.compile(r"^-?\d+(?:\.\d{3})*(?:,\d+)?$")
-
-
-def to_numeric(value: str) -> float | int | None:
-    """
-    Convert a string value into a primitive numeric dtype (`int` or `float`)
-    taking US and DE formatting into account via regex
-
-    Examples:
-        >>> to_numeric("1")
-        1
-        >>> to_numeric("1.0")
-        1
-        >>> to_numeric("1.1")
-        1.1
-        >>> to_numeric("1,101,000")
-        1101000
-        >>> to_numeric("1.000,1")
-        1000.1
-        >>> to_numeric("foo")
-        None
-
-    Args:
-        value: The input
-
-    Returns:
-        The converted number or `None` if conversion fails
-    """
-    value = str(value).strip()
-    try:
-        value = float(value)
-        if int(value) == value:
-            return int(value)
-        return value
-    except ValueError:
-        if re.match(NUMERIC_US, value):
-            return to_numeric(value.replace(",", ""))
-        if re.match(NUMERIC_DE, value):
-            return to_numeric(value.replace(".", "").replace(",", "."))
 
 
 def join_slug(
@@ -321,7 +289,6 @@ def get_year_from_iso(value: Any) -> int | None:
         return
 
 
-@lru_cache(1024)
 def clean_string(value: Any) -> str | None:
     """
     Convert a value to `None` or a sanitized string without linebreaks
@@ -352,7 +319,6 @@ def clean_string(value: Any) -> str | None:
     return collapse_spaces(value)
 
 
-@lru_cache(1024)
 def clean_name(value: Any) -> str | None:
     """
     Clean a value and only return it if it is a "name" in the sense of, doesn't
@@ -376,7 +342,6 @@ def clean_name(value: Any) -> str | None:
     return value
 
 
-@lru_cache(1024)
 def make_fingerprint(value: Any) -> str | None:
     """
     Create a stable but simplified string or `None` from input that can be used
@@ -410,7 +375,6 @@ def make_fingerprint(value: Any) -> str | None:
     return " ".join(sorted(set(slugify(value).split("-"))))
 
 
-@lru_cache(1024)
 def make_string_id(*values: Any) -> str | None:
     """
     Compute a hash id based on values
@@ -425,7 +389,6 @@ def make_string_id(*values: Any) -> str | None:
     return make_entity_id(*map(clean_name, values))
 
 
-@lru_cache(1024)
 def make_fingerprint_id(*values: Any) -> str | None:
     """
     Compute a hash id based on values fingerprints
@@ -459,47 +422,36 @@ def prop_is_numeric(schema: Schema, prop: str) -> bool:
     return False
 
 
-def get_proxy_caption_property(proxy: CE) -> dict[str, str]:
-    for prop in proxy.schema.caption:
-        for value in proxy.get(prop):
-            return {prop: value}
+def get_entity_caption_property(e: Entity) -> SDict:
+    """Get the minimal properties dict required to compute the caption"""
+    for prop in e.schema.caption:
+        if e.caption:
+            return {prop: [e.caption]}
+        for value in e.get(prop):
+            return {prop: [value]}
     return {}
 
 
-def get_dehydrated_proxy(proxy: CE) -> CE:
+def get_dehydrated_entity(e: Entity) -> Entity:
     """
-    Reduce proxy payload to only include caption property
-
-    Args:
-        proxy: `nomenklatura.entity.CompositeEntity`
-
-    Returns:
-        A `nomenklatura.entity.CompositeEntity` with only the caption property.
+    Reduce an Entity to only its property dict that is needed to compute the
+    caption.
     """
-    return make_proxy(
-        {
-            "id": proxy.id,
-            "schema": proxy.schema.name,
-            "properties": get_proxy_caption_property(proxy),
-            "datasets": proxy.datasets,
-        }
-    )
+    data = {
+        "id": e.id,
+        "schema": e.schema.name,
+        "properties": get_entity_caption_property(e),
+    }
+    return make_entity(data, e.__class__)
 
 
-def get_featured_proxy(proxy: CE) -> CE:
+def get_featured_entity(e: Entity) -> Entity:
     """
-    Reduce proxy payload to only include featured properties
-
-    Args:
-        proxy: `nomenklatura.entity.CompositeEntity`
-
-    Returns:
-        A `nomenklatura.entity.CompositeEntity` with only the featured
-            properties for its schema.
+    Reduce an Entity with only its featured properties
     """
-    featured = get_dehydrated_proxy(proxy)
-    for prop in proxy.schema.featured:
-        featured.add(prop, proxy.get(prop))
+    featured = get_dehydrated_entity(e)
+    for prop in e.schema.featured:
+        featured.add(prop, e.get(prop))
     return featured
 
 

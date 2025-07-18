@@ -3,9 +3,10 @@ from datetime import datetime
 
 import cloudpickle
 import pytest
-from followthemoney import model
-from nomenklatura.dataset import Dataset
-from nomenklatura.entity import CompositeEntity
+from followthemoney import DefaultDataset, model
+from followthemoney.dataset import Dataset
+from followthemoney.entity import ValueEntity
+from followthemoney.statement.entity import StatementEntity
 
 from ftmq import util
 from ftmq.enums import Comparators, StrEnum
@@ -15,14 +16,30 @@ if sys.version_info >= (3, 11):
 
 
 def test_util_make_dataset():
-    ds = util.make_dataset("Test")
+    ds = util.make_dataset("test")
     assert isinstance(ds, Dataset)
     assert ds.to_dict() == {
-        "name": "Test",
+        "name": "test",
         "title": "Test",
         "tags": [],
         "resources": [],
+        "children": [],
     }
+
+
+def test_util_ensure_dataset():
+    ds = util.ensure_dataset("test")
+    assert isinstance(ds, Dataset)
+    assert ds.name == "test"
+
+    ds = util.ensure_dataset(ds)
+    assert isinstance(ds, Dataset)
+    assert ds.name == "test"
+
+    ds = util.ensure_dataset()
+    assert isinstance(ds, Dataset)
+    assert ds.name == "default"
+    assert ds == DefaultDataset
 
 
 def test_util_str_enum():
@@ -56,15 +73,6 @@ def test_util_unknown_filters():
     args = ("--country", "de", "--year__gte", "2023")
     res = (("country", "de", Comparators.eq), ("year", "2023", Comparators.gte))
     assert tuple(util.parse_unknown_filters(args)) == res
-
-
-def test_util_numeric():
-    assert util.to_numeric("1") == 1
-    assert util.to_numeric("1.0") == 1
-    assert util.to_numeric("1.1") == 1.1
-    assert util.to_numeric("1,101,000") == 1_101_000
-    assert util.to_numeric("1.000,1") == 1000.1
-    assert util.to_numeric("foo") is None
 
 
 def test_util_parse_lookup_key():
@@ -114,12 +122,52 @@ def test_util_prop_is_numeric():
     assert util.prop_is_numeric(model.get("Payment"), "amountEur")
 
 
-def test_util_ensure_proxy():
+def test_util_ensure_entity():
     data = {
         "id": "org",
         "schema": "LegalEntity",
         "properties": {"name": ["Test"]},
     }
-    assert isinstance(util.ensure_proxy(data), CompositeEntity)
-    assert isinstance(util.ensure_proxy(model.get_proxy(data)), CompositeEntity)
-    assert isinstance(util.ensure_proxy(util.make_proxy(data)), CompositeEntity)
+    # from dict
+    entity = util.ensure_entity(data, StatementEntity)
+    assert isinstance(entity, StatementEntity)
+    assert entity.datasets == {"default"}
+    entity = util.ensure_entity(data, StatementEntity, "foo")
+    assert entity.datasets == {"foo"}
+    # from EntityProxy
+    entity = util.ensure_entity(model.get_proxy(data), StatementEntity)
+    assert isinstance(entity, StatementEntity)
+    assert entity.datasets == {"default"}
+    entity = util.ensure_entity(model.get_proxy(data), StatementEntity, "foo")
+    assert entity.datasets == {"foo"}
+    # dict -> ValueEntity
+    entity = util.ensure_entity(data, ValueEntity)
+    assert isinstance(entity, ValueEntity)
+    assert entity.datasets == {"default"}
+    data.pop("datasets")
+    entity = util.ensure_entity(data, ValueEntity, "foo")
+    assert entity.datasets == {"foo"}
+    # ValueEntity -> StatementEntity
+    sentity = util.ensure_entity(entity, StatementEntity)
+    assert sentity.datasets == {"foo"}
+
+
+def test_util_apply_entity():
+    data = {
+        "id": "org",
+        "schema": "LegalEntity",
+        "properties": {"name": ["Test"]},
+    }
+    entity = util.make_entity(data, entity_type=ValueEntity)
+    assert entity.datasets == {"default"}
+    entity = util.apply_dataset(entity, "foo")
+    assert entity.datasets == {"default", "foo"}
+    entity = util.apply_dataset(entity, "foo", replace=True)
+    assert entity.datasets == {"foo"}
+
+    entity = util.make_entity(data, entity_type=StatementEntity)
+    assert entity.datasets == {"default"}
+    entity = util.apply_dataset(entity, "foo")
+    assert entity.datasets == {"foo"}
+    entity = util.apply_dataset(entity, "foo", replace=True)
+    assert entity.datasets == {"foo"}

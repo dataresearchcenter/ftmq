@@ -25,7 +25,7 @@ def test_similar(eu_authorities, tmp_path):
     assert entity_id == "eu-authorities-ercea"
     assert score > 0.5
 
-    view = store.query()
+    view = store.default_view()
     similar = view.similar("eu-authorities-rea")
     proxy, score = next(similar)
     assert proxy.id == "eu-authorities-ercea"

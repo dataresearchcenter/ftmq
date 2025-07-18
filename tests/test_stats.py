@@ -1,10 +1,7 @@
-from datetime import date
 from pathlib import Path
 
-from nomenklatura.dataset.coverage import DataCoverage
-
 from ftmq.io import smart_read_proxies
-from ftmq.model.coverage import Collector, DatasetStats
+from ftmq.model.stats import Collector, DatasetStats
 
 
 def test_coverage(fixtures_path: Path):
@@ -13,13 +10,9 @@ def test_coverage(fixtures_path: Path):
         c.collect(proxy)
 
     result = {
-        "coverage": {
-            "start": "2002-07-04",
-            "end": "2011-12-29",
-            "frequency": "unknown",
-            "countries": ["cy", "de", "gb", "lu"],
-            "schedule": None,
-        },
+        "start": "2002-07-04T00:00:00",
+        "end": "2011-12-29T00:00:00",
+        "countries": ["cy", "de", "gb", "lu"],
         "things": {
             "total": 184,
             "countries": [
@@ -67,7 +60,7 @@ def test_coverage(fixtures_path: Path):
 
     assert isinstance(c.export(), DatasetStats)
     test_result = c.to_dict()
-    test_result["coverage"]["countries"] = sorted(test_result["coverage"]["countries"])
+    test_result["countries"] = sorted(test_result["countries"])
     test_result["things"]["countries"] = sorted(
         test_result["things"]["countries"], key=lambda x: x["code"]
     )
@@ -83,15 +76,4 @@ def test_coverage(fixtures_path: Path):
     stats = collector.export()
     assert stats.entity_count > 0
     assert stats.entity_count == len_proxies
-    assert stats.coverage.years == (2002, 2011)
-
-    # align with nomenklatura
-    nk_coverage = DataCoverage(stats.coverage.model_dump())
-    test_result = nk_coverage.to_dict()
-    test_result["countries"] = sorted(test_result["countries"])
-    result = {
-        "start": "2002-07-04",
-        "end": "2011-12-29",
-        "countries": ["cy", "de", "gb", "lu"],
-        "frequency": "unknown",
-    }
+    assert stats.years == (2002, 2011)

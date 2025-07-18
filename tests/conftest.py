@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 import requests
+from followthemoney import StatementEntity
 
 from ftmq.io import smart_read_proxies
 
@@ -21,19 +22,33 @@ def fixtures_path():
 @pytest.fixture(scope="module")
 def proxies():
     proxies = []
-    proxies.extend(smart_read_proxies(FIXTURES_PATH / AUTHORITIES))
-    proxies.extend(smart_read_proxies(FIXTURES_PATH / DONATIONS))
+    proxies.extend(
+        smart_read_proxies(FIXTURES_PATH / AUTHORITIES, entity_type=StatementEntity)
+    )
+    proxies.extend(
+        smart_read_proxies(FIXTURES_PATH / DONATIONS, entity_type=StatementEntity)
+    )
     return proxies
 
 
 @pytest.fixture(scope="module")
 def eu_authorities():
-    return [x for x in smart_read_proxies(FIXTURES_PATH / AUTHORITIES)]
+    return [
+        x
+        for x in smart_read_proxies(
+            FIXTURES_PATH / AUTHORITIES, entity_type=StatementEntity
+        )
+    ]
 
 
 @pytest.fixture(scope="module")
 def donations():
-    return [x for x in smart_read_proxies(FIXTURES_PATH / DONATIONS)]
+    return [
+        x
+        for x in smart_read_proxies(
+            FIXTURES_PATH / DONATIONS, entity_type=StatementEntity
+        )
+    ]
 
 
 # https://pawamoy.github.io/posts/local-http-server-fake-files-testing-purposes/

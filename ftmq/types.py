@@ -1,50 +1,31 @@
-import os
-from collections.abc import Generator
-from pathlib import Path
-from typing import Literal, TypeAlias, TypeVar
+from typing import Generator, TypeAlias, TypeVar
 
-from anystore.types import BytesGenerator, SDict, SDictGenerator, StrGenerator
-from nomenklatura.entity import CE
-from nomenklatura.statement.statement import Statement
-from nomenklatura.stream import StreamEntity
-
-from ftmq import enums
+from followthemoney import Statement, StatementEntity, ValueEntity
 
 # property multi-value
 Value: TypeAlias = list[str]
+"""FtM property value is always multi-valued string"""
 
-SE = TypeVar("SE", bound=StreamEntity)
-Proxy: TypeAlias = SE | CE
+Entity = TypeVar("Entity", StatementEntity, ValueEntity)
+"""Generic type used mostly in ftmq"""
+EntityType = TypeVar("EntityType", type[StatementEntity], type[ValueEntity])
+"""Entity classes"""
 
 # entity generators
-CEGenerator: TypeAlias = Generator[CE, None, None]
-SEGenerator: TypeAlias = Generator[SE, None, None]
-ProxyGenerator: TypeAlias = Generator[Proxy, None, None]
+Entities: TypeAlias = Generator[Entity, None, None]
+"""A generator for generic entity type"""
+StatementEntities: TypeAlias = Generator[StatementEntity, None, None]
+"""A generator for StatementEntity instances"""
+ValueEntities: TypeAlias = Generator[ValueEntity, None, None]
+"""A generator for ValueEntity instances"""
 
 # statement generator
-SGenerator: TypeAlias = Generator[Statement, None, None]
-
-Schemata: TypeAlias = Literal[tuple(s.name for s in enums.Schemata)]
-Properties: TypeAlias = Literal[tuple(p.name for p in enums.Properties)]
-Frequencies: TypeAlias = Literal[tuple(f.name for f in enums.Frequencies)]
-
-PathLike: TypeAlias = str | os.PathLike[str] | Path
+Statements: TypeAlias = Generator[Statement, None, None]
+"""A generator for Statement instances"""
 
 __all__ = [
-    "BytesGenerator",
-    "CE",
-    "SE",
-    "Proxy",
-    "CEGenerator",
-    "SEGenerator",
-    "ProxyGenerator",
-    "Frequencies",
-    "PathLike",
-    "Properties",
-    "Schemata",
-    "SDict",
-    "SGenerator",
-    "SDictGenerator",
-    "StrGenerator",
+    "Entities",
+    "ValueEntities",
+    "Statements",
     "Value",
 ]

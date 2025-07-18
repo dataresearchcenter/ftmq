@@ -3,7 +3,7 @@ Test if we are still in sync with the nomenklatura data model
 (aka OpenSanctions)
 """
 
-from nomenklatura import CompositeEntity
+from followthemoney import ValueEntity
 
 from ftmq.model.dataset import Catalog
 
@@ -13,7 +13,7 @@ def test_nk_compatibility(fixtures_path):
     ds = catalog.datasets[0]
     proxies = False
     for proxy in ds.iterate():
-        assert isinstance(proxy, CompositeEntity)
+        assert isinstance(proxy, ValueEntity)
         proxies = True
         break
     assert proxies
@@ -25,7 +25,7 @@ def test_nk_compatibility(fixtures_path):
     )
     assert len(catalog.datasets) > 100
     for proxy in catalog.iterate():
-        assert isinstance(proxy, CompositeEntity)
+        assert isinstance(proxy, ValueEntity)
         proxies = True
         break
     assert proxies

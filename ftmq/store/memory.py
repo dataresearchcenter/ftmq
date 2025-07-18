@@ -1,18 +1,18 @@
-from nomenklatura import store as nk
-from nomenklatura.dataset import DS
+from followthemoney.dataset.dataset import Dataset
+from nomenklatura.store import memory as nk
 
-from ftmq.model.dataset import Catalog
 from ftmq.store.base import Store, View
+from ftmq.util import get_scope_dataset
 
 
-class MemoryQueryView(View, nk.memory.MemoryView):
+class MemoryQueryView(View, nk.MemoryView):
     pass
 
 
-class MemoryStore(Store, nk.SimpleMemoryStore):
-    def get_catalog(self) -> Catalog:
-        return Catalog.from_names(self.entities.keys())
+class MemoryStore(Store, nk.MemoryStore):
+    def get_scope(self) -> Dataset:
+        return get_scope_dataset(*self.entities.keys())
 
-    def query(self, scope: DS | None = None, external: bool = False) -> MemoryQueryView:
+    def view(self, scope: Dataset | None = None, external: bool = False) -> View:
         scope = scope or self.dataset
         return MemoryQueryView(self, scope, external=external)

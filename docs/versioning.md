@@ -1,0 +1,1 @@
+To mark the compatibility with [followthemoney](https://followthemoney.tech) and [nomenklatura](https://github.com/opensanctions/nomenklatura), `ftmq` follows the same major version, which is currently 4.x.x.

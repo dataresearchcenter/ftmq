@@ -1,17 +1,17 @@
-from typing import Any, Iterable, Self, Sequence, TypeAlias, TypeVar, Union
+from typing import Any, Iterable, Mapping, Self, Sequence, TypeAlias
 
+from followthemoney.entity import ValueEntity
 from followthemoney.types import registry
-from nomenklatura.publish.names import pick_caption
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from rigour.names import pick_name
 
-from ftmq.types import CE
-from ftmq.util import make_proxy, must_str
+from ftmq.types import Entity
+from ftmq.util import make_entity, must_str
 
-EntityProp = TypeVar("EntityProp", bound="Entity")
-Properties: TypeAlias = dict[str, Sequence[Union[str, EntityProp]]]
+Properties: TypeAlias = Mapping[str, Sequence["str | EntityModel"]]
 
 
-class Entity(BaseModel):
+class EntityModel(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     id: str = Field(..., examples=["NK-A7z...."])
@@ -22,11 +22,13 @@ class Entity(BaseModel):
     referents: list[str] = Field([], examples=[["ofac-1234"]])
 
     @classmethod
-    def from_proxy(cls, entity: CE, adjacents: Iterable[CE] | None = None) -> Self:
+    def from_proxy(
+        cls, entity: Entity, adjacents: Iterable[Entity] | None = None
+    ) -> Self:
         properties = dict(entity.properties)
         if adjacents:
-            adjacents_: dict[str, Entity] = {
-                must_str(e.id): Entity.from_proxy(e) for e in adjacents
+            adjacents_: dict[str, EntityModel] = {
+                must_str(e.id): cls.from_proxy(e) for e in adjacents
             }
             for prop in entity.iterprops():
                 if prop.type == registry.entity:
@@ -42,12 +44,13 @@ class Entity(BaseModel):
             referents=list(entity.referents),
         )
 
-    def to_proxy(self) -> CE:
-        return make_proxy(self.model_dump(by_alias=True))
+    def to_proxy(self) -> Entity:
+        return make_entity(self.model_dump(by_alias=True), ValueEntity)
 
     @model_validator(mode="before")
     @classmethod
     def get_caption(cls, data: Any) -> Any:
         if data.get("caption") is None:
-            data["caption"] = pick_caption(make_proxy(data))
+            entity = make_entity(data)
+            data["caption"] = pick_name(entity.get_type_values(registry.name))
         return data

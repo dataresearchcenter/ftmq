@@ -1,9 +1,9 @@
 from collections.abc import Iterable
 from itertools import islice
-from typing import Any, TypeVar
+from typing import Any, Self, TypeVar
 
 from banal import ensure_list, is_listish, is_mapping
-from nomenklatura.entity import CE
+from followthemoney import registry
 
 from ftmq.aggregations import Aggregation, Aggregator
 from ftmq.enums import Aggregations, Properties
@@ -18,13 +18,8 @@ from ftmq.filters import (
     SchemaFilter,
 )
 from ftmq.sql import Sql
-from ftmq.types import CEGenerator
-from ftmq.util import (
-    parse_comparator,
-    parse_unknown_filters,
-    prop_is_numeric,
-    to_numeric,
-)
+from ftmq.types import Entities, Entity
+from ftmq.util import parse_comparator, parse_unknown_filters, prop_is_numeric
 
 Q = TypeVar("Q", bound="Query")
 Slice = TypeVar("Slice", bound=slice)
@@ -35,18 +30,18 @@ class Sort:
         self.values = tuple(values)
         self.ascending = ascending
 
-    def apply(self, proxy: CE) -> tuple[str]:
+    def apply(self, entity: Entity) -> tuple[str]:
         values = tuple()
         for v in self.values:
-            p_values = proxy.get(v, quiet=True) or []
-            if prop_is_numeric(proxy.schema, v):
-                p_values = map(to_numeric, p_values)
+            p_values = entity.get(v, quiet=True) or []
+            if prop_is_numeric(entity.schema, v):
+                p_values = map(registry.number.to_number, p_values)
             values = values + (tuple(p_values))
         return values
 
-    def apply_iter(self, proxies: CEGenerator) -> CEGenerator:
+    def apply_iter(self, entities: Entities) -> Entities:
         yield from sorted(
-            proxies, key=lambda x: self.apply(x), reverse=not self.ascending
+            entities, key=lambda x: self.apply(x), reverse=not self.ascending
         )
 
     def serialize(self) -> list[str]:
@@ -70,7 +65,7 @@ class Query:
         self.sort = sort
         self.slice = slice
 
-    def __getitem__(self, value: Any) -> Q:
+    def __getitem__(self, value: Any) -> Self:
         """
         Implement list-like slicing. No negative values allowed.
 
@@ -276,7 +271,7 @@ class Query:
             data["aggregations"] = self.get_aggregator().to_dict()
         return data
 
-    def where(self, **lookup: Any) -> Q:
+    def where(self, **lookup: Any) -> Self:
         """
         Add another lookup to the current `Query` instance.
 
@@ -345,7 +340,7 @@ class Query:
 
         return self._chain()
 
-    def order_by(self, *values: Iterable[str], ascending: bool | None = True) -> Q:
+    def order_by(self, *values: str, ascending: bool | None = True) -> Self:
         """
         Add or update the current sorting.
 
@@ -364,7 +359,7 @@ class Query:
         func: Aggregations,
         *props: Properties,
         groups: Properties | list[Properties] | None = None,
-    ) -> Q:
+    ) -> Self:
         for prop in props:
             self.aggregations.add(
                 Aggregation(func=func, prop=prop, group_props=ensure_list(groups))
@@ -374,42 +369,42 @@ class Query:
     def get_aggregator(self) -> Aggregator:
         return Aggregator(aggregations=self.aggregations)
 
-    def apply(self, proxy: CE) -> bool:
+    def apply(self, entity: Entity) -> bool:
         """
-        Test if a proxy matches the current `Query` instance.
+        Test if a entity matches the current `Query` instance.
         """
         if not self.filters:
             return True
-        return all(f.apply(proxy) for f in self.filters)
+        return all(f.apply(entity) for f in self.filters)
 
-    def apply_iter(self, proxies: CEGenerator) -> CEGenerator:
+    def apply_iter(self, entities: Entities) -> Entities:
         """
-        Apply the current `Query` instance to a generator of proxies and return
-        a generator of filtered proxies
+        Apply the current `Query` instance to a generator of entities and return
+        a generator of filtered entities
 
         Example:
             ```python
-            proxies = [...]
+            entities = [...]
             q = Query().where(dataset="my_dataset", schema="Company")
-            for proxy in q.apply_iter(proxies):
-                assert proxy.schema.name == "Company"
+            for entity in q.apply_iter(entities):
+                assert entity.schema.name == "Company"
             ```
 
         Yields:
-            A generator of `nomenklatura.entity.CompositeEntity`
+            A generator of `EntityProxy` or a sub-type
         """
         if not self:
-            yield from proxies
+            yield from entities
             return
 
-        proxies = (p for p in proxies if self.apply(p))
+        entities = (p for p in entities if self.apply(p))
         if self.sort:
-            proxies = self.sort.apply_iter(proxies)
+            entities = self.sort.apply_iter(entities)
         if self.slice:
-            proxies = islice(
-                proxies, self.slice.start, self.slice.stop, self.slice.step
+            entities = islice(
+                entities, self.slice.start, self.slice.stop, self.slice.step
             )
         if self.aggregations:
             self.aggregator = self.get_aggregator()
-            proxies = self.aggregator.apply(proxies)
-        yield from proxies
+            entities = self.aggregator.apply(entities)
+        yield from entities
