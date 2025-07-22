@@ -52,7 +52,7 @@ from sqlalchemy.sql import Select
 from ftmq.query import Query
 from ftmq.store.base import Store
 from ftmq.store.sql import SQLQueryView, SQLStore
-from ftmq.types import OriginStatement, OriginStatements, StatementEntities
+from ftmq.types import OriginStatement, StatementEntities
 from ftmq.util import ensure_entity, get_scope_dataset
 
 log = get_logger(__name__)
@@ -161,7 +161,7 @@ def pack_statement(stmt: Statement, origin: str) -> SDict:
     return data
 
 
-def pack_statements(statements: Iterable[OriginStatements]) -> pd.DataFrame:
+def pack_statements(statements: Iterable[OriginStatement]) -> pd.DataFrame:
     df = pd.DataFrame(pack_statement(*s) for s in statements)
     df = df.drop_duplicates().sort_values(Z_ORDER)
     df = df.fillna(np.nan)
