@@ -1,12 +1,13 @@
 from functools import cache
 
+from ftmq.store.fragments.dataset import Dataset
 from ftmq.store.fragments.settings import Settings
 from ftmq.store.fragments.store import Store
 from ftmq.store.fragments.utils import NULL_ORIGIN
 
 
 @cache
-def get_store(database_uri: str | None = None, **config):
+def get_store(database_uri: str | None = None, **config) -> Store:
     settings = Settings()
     return Store(database_uri=database_uri or settings.database_uri, **config)
 
@@ -17,7 +18,7 @@ def get_dataset(
     origin: str | None = NULL_ORIGIN,
     database_uri: str | None = None,
     **config,
-):
+) -> Dataset:
     settings = Settings()
     uri = database_uri or settings.database_uri
     store = get_store(uri, **config)
