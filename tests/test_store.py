@@ -32,6 +32,9 @@ def _run_store_test(cls: type[Store], proxies, **kwargs):
         linker=get_resolver(),
         **kwargs,
     )
+
+    assert store.default_view().get_entity("foo") is None
+
     with store.writer() as bulk:
         for proxy in proxies:
             bulk.add_entity(proxy)

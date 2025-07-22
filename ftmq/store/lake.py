@@ -37,6 +37,7 @@ from deltalake import (
     WriterProperties,
     write_deltalake,
 )
+from deltalake._internal import TableNotFoundError
 from followthemoney import EntityProxy, StatementEntity, model
 from followthemoney.dataset.dataset import Dataset
 from followthemoney.statement import Statement
@@ -240,7 +241,10 @@ class LakeStore(SQLStore):
         return DeltaTable(self.uri, storage_options=storage_options())
 
     def _execute(self, q: Select, stream: bool = True) -> Generator[Any, None, None]:
-        yield from stream_duckdb(q, self.deltatable)
+        try:
+            yield from stream_duckdb(q, self.deltatable)
+        except TableNotFoundError:
+            pass
 
     def get_scope(self) -> Dataset:
         if "dataset" not in self._partition_by:
