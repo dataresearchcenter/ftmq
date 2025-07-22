@@ -1,9 +1,11 @@
-from followthemoney import StatementEntity
+from followthemoney import EntityProxy, StatementEntity
+from sqlalchemy import select
 
 from ftmq.query import Query
 from ftmq.store import MemoryStore, Store, get_store
 from ftmq.store.aleph import AlephStore, parse_uri
 from ftmq.store.base import get_resolver
+from ftmq.store.fragments import get_fragments
 from ftmq.store.lake import LakeStore
 from ftmq.store.level import LevelDBStore
 from ftmq.store.sql import SQLStore
@@ -311,3 +313,37 @@ def test_store_aleph():
         "api_key",
         "dataset",
     )
+
+
+def test_store_fragments_to_lake(tmp_path):
+    fragments = get_fragments("test", database_uri="sqlite:///:memory:")
+    lake = get_store(f"lake+{tmp_path}")
+    f1 = EntityProxy.from_dict(
+        {"id": "1", "schema": "LegalEntity", "properties": {"name": ["Jane Doe"]}}
+    )
+    f2 = EntityProxy.from_dict(
+        {"id": "1", "schema": "Person", "properties": {"birthDate": ["2016-04-03"]}}
+    )
+    f3 = EntityProxy.from_dict(
+        {"id": "2", "schema": "Organization", "properties": {"name": ["DARC"]}}
+    )
+    fragments.put(f1, origin="source1")
+    fragments.put(f2, origin="source2")
+    fragments.put(f3)
+    origins = set()
+    schemata = set()
+    ids = set()
+    for stmt, origin in fragments.origin_statements():
+        origins.add(origin)
+        schemata.add(stmt.schema)
+        ids.add(stmt.entity_id)
+    assert origins == {None, "source1", "source2"}
+    assert schemata == {"LegalEntity", "Person", "Organization"}
+    assert ids == {"1", "2"}
+
+    with lake.writer(origin="ingest") as bulk:
+        for stmt, origin in fragments.origin_statements():
+            bulk.add_statement(stmt, origin)
+    entities = list(lake.iterate())
+    assert len(entities) == 2
+    assert lake.get_origins() == {"ingest", "source1", "source2"}

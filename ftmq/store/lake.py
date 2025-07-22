@@ -46,14 +46,13 @@ from nomenklatura import store as nk
 from nomenklatura.db import get_metadata
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from sqlalchemy import Boolean, DateTime, column, table
+from sqlalchemy import Boolean, DateTime, column, select, table
 from sqlalchemy.sql import Select
 
-from ftmq.exceptions import ImproperlyConfigured
 from ftmq.query import Query
 from ftmq.store.base import Store
 from ftmq.store.sql import SQLQueryView, SQLStore
-from ftmq.types import StatementEntities
+from ftmq.types import OriginStatement, OriginStatements, StatementEntities
 from ftmq.util import ensure_entity, get_scope_dataset
 
 log = get_logger(__name__)
@@ -162,8 +161,8 @@ def pack_statement(stmt: Statement, origin: str) -> SDict:
     return data
 
 
-def pack_statements(statements: Iterable[Statement], origin: str) -> pd.DataFrame:
-    df = pd.DataFrame(pack_statement(s, origin) for s in statements)
+def pack_statements(statements: Iterable[OriginStatements]) -> pd.DataFrame:
+    df = pd.DataFrame(pack_statement(*s) for s in statements)
     df = df.drop_duplicates().sort_values(Z_ORDER)
     df = df.fillna(np.nan)
     return df
@@ -247,9 +246,7 @@ class LakeStore(SQLStore):
 
     def get_scope(self) -> Dataset:
         if "dataset" not in self._partition_by:
-            raise ImproperlyConfigured(
-                "Can not get catalog for store without dataset partition"
-            )
+            return super().get_scope()
         names: set[str] = set()
         for child in self._backend._fs.ls(self._backend.uri):
             name = Path(child).name
@@ -266,6 +263,10 @@ class LakeStore(SQLStore):
     def writer(self, origin: str | None = DEFAULT_ORIGIN) -> "LakeWriter":
         return LakeWriter(self, origin=origin or DEFAULT_ORIGIN)
 
+    def get_origins(self) -> set[str]:
+        q = select(self.table.c.origin).distinct()
+        return set([r.origin for r in stream_duckdb(q, self.get_deltatable())])
+
 
 class LakeWriter(nk.Writer):
     store: LakeStore
@@ -273,19 +274,21 @@ class LakeWriter(nk.Writer):
 
     def __init__(self, store: Store, origin: str | None = DEFAULT_ORIGIN):
         super().__init__(store)
-        self.batch: set[Statement] = set()
+        self.batch: set[OriginStatement] = set()
         self.origin = origin or DEFAULT_ORIGIN
 
-    def add_statement(self, stmt: Statement) -> None:
+    def add_statement(self, stmt: Statement, origin: str | None) -> None:
         if stmt.entity_id is None:
             return
+        origin = origin or self.origin
         canonical_id = self.store.linker.get_canonical(stmt.entity_id)
         stmt.canonical_id = canonical_id
-        self.batch.add(stmt)
+        self.batch.add((stmt, origin))
 
-    def add_entity(self, entity: EntityProxy) -> None:
+    def add_entity(self, entity: EntityProxy, origin: str | None = None) -> None:
         e = ensure_entity(entity, StatementEntity, self.store.dataset)
-        super().add_entity(e)
+        for stmt in e.statements:
+            self.add_statement(stmt, origin)
         if len(self.batch) >= self.BATCH_STATEMENTS:
             self.flush()
 
@@ -298,7 +301,7 @@ class LakeWriter(nk.Writer):
             with self.store._lock:
                 write_deltalake(
                     str(self.store.uri),
-                    pack_statements(self.batch, self.origin),
+                    pack_statements(self.batch),
                     partition_by=self.store._partition_by,
                     mode="append",
                     writer_properties=WRITER,

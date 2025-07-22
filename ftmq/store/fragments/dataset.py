@@ -1,8 +1,9 @@
 import logging
 from datetime import datetime
+from typing import Iterable
 
 from banal import ensure_list
-from followthemoney import ValueEntity
+from followthemoney import StatementEntity, ValueEntity
 from followthemoney.dataset.util import dataset_name_check
 from normality import slugify
 from sqlalchemy import (
@@ -21,7 +22,8 @@ from sqlalchemy.exc import OperationalError
 
 from ftmq.store.fragments.loader import BulkLoader
 from ftmq.store.fragments.utils import NULL_ORIGIN
-from ftmq.types import ValueEntities
+from ftmq.types import OriginStatements, ValueEntities
+from ftmq.util import make_dataset
 
 log = logging.getLogger(__name__)
 UNDEFINED = (OperationalError,)
@@ -170,6 +172,34 @@ class Fragments(object):
             fragments = 1
         if entity is not None:
             yield entity
+
+    def origin_statements(
+        self, entity_ids: Iterable[str] | None = None, origin: str | None = None
+    ) -> OriginStatements:
+        """Iterate unsorted statements with its origins: (Statement, origin)"""
+        stmt = self.table.select()
+        entity_ids = ensure_list(entity_ids)
+        if len(entity_ids) == 1:
+            stmt = stmt.where(self.table.c.id == entity_ids[0])
+        if len(entity_ids) > 1:
+            stmt = stmt.where(self.table.c.id.in_(entity_ids))
+        if origin is not None:
+            stmt = stmt.where(self.table.c.origin == origin)
+        conn = self.store.engine.connect()
+        try:
+            conn = conn.execution_options(stream_results=True)
+            for ent in conn.execute(stmt):
+                data = {"id": ent.id, "datasets": [self.name], **ent.entity}
+                entity = StatementEntity.from_dict(
+                    data, default_dataset=make_dataset(self.name)
+                )
+                for statement in entity.statements:
+                    yield statement, ent.origin if ent.origin != NULL_ORIGIN else None
+        except Exception:
+            self.reset()
+            raise
+        finally:
+            conn.close()
 
     def get(self, entity_id) -> ValueEntity | None:
         for entity in self.iterate(entity_id=entity_id):
