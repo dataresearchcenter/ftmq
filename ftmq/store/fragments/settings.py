@@ -6,5 +6,5 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_uri: str = Field(
-        default="sqlite:///followthemoney.store", alias="ftm_fragments_uri"
+        default="sqlite:///ftm_fragments.db", alias="ftm_fragments_uri"
     )

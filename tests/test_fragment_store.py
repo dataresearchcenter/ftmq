@@ -7,21 +7,22 @@ from ftmq.store.fragments import get_dataset
 
 
 def test_fragment_store_settings(monkeypatch):
-    uri = "sqlite:///followthemoney.store"
-    monkeypatch.setenv("FTM_STORE_URI", uri)
     dataset = get_dataset("test")
-    assert dataset.store.database_uri == uri
+    assert dataset.store.database_uri == "sqlite:///ftm_fragments.db"  # default
 
-    monkeypatch.delenv("FTM_STORE_URI")
     get_dataset.cache_clear()
     uri = "sqlite:///fragments.store"
-    monkeypatch.setenv("FRAGMENTS_URI", uri)
+    monkeypatch.setenv("FTM_FRAGMENTS_URI", uri)
     dataset = get_dataset("test")
     assert dataset.store.database_uri == uri
 
 
 def test_fragment_store_postgres():
     uri = os.environ.get("TESTING_FRAGMENTS_PSQL_URI")
+    if not uri:
+        print("Skipping psql test (no `TESTING_FRAGMENTS_PSQL_URI` env)")
+        return
+
     with pytest.raises(ValueError):
         dataset = get_dataset("TEST-US-OFAC", database_uri=uri)
 
