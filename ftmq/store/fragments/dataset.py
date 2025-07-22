@@ -174,7 +174,10 @@ class Fragments(object):
             yield entity
 
     def origin_statements(
-        self, entity_ids: Iterable[str] | None = None, origin: str | None = None
+        self,
+        entity_ids: Iterable[str] | None = None,
+        origin: str | None = None,
+        since: datetime | None = None,
     ) -> OriginStatements:
         """Iterate unsorted statements with its origins: (Statement, origin)"""
         stmt = self.table.select()
@@ -185,16 +188,21 @@ class Fragments(object):
             stmt = stmt.where(self.table.c.id.in_(entity_ids))
         if origin is not None:
             stmt = stmt.where(self.table.c.origin == origin)
+        if since is not None:
+            stmt = stmt.where(self.table.c.timestamp > since)
         conn = self.store.engine.connect()
+        default_dataset = make_dataset(self.name)
         try:
             conn = conn.execution_options(stream_results=True)
-            for ent in conn.execute(stmt):
-                data = {"id": ent.id, "datasets": [self.name], **ent.entity}
+            for fragment in conn.execute(stmt):
+                data = {"id": fragment.id, "datasets": [self.name], **fragment.entity}
                 entity = StatementEntity.from_dict(
-                    data, default_dataset=make_dataset(self.name)
+                    data, default_dataset=default_dataset
                 )
                 for statement in entity.statements:
-                    yield statement, ent.origin if ent.origin != NULL_ORIGIN else None
+                    statement.last_seen = fragment.timestamp.isoformat()
+                    origin = fragment.origin if fragment.origin != NULL_ORIGIN else None
+                    yield statement, origin
         except Exception:
             self.reset()
             raise

@@ -337,6 +337,7 @@ def test_store_fragments_to_lake(tmp_path):
         origins.add(origin)
         schemata.add(stmt.schema)
         ids.add(stmt.entity_id)
+        assert stmt.last_seen is not None
     assert origins == {None, "source1", "source2"}
     assert schemata == {"LegalEntity", "Person", "Organization"}
     assert ids == {"1", "2"}
