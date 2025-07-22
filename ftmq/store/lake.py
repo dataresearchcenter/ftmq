@@ -18,7 +18,7 @@ Layout:
     ```
 """
 
-from functools import cache, cached_property
+from functools import cache
 from pathlib import Path
 from typing import Any, Generator, Iterable
 
@@ -236,13 +236,12 @@ class LakeStore(SQLStore):
         self.uri = self._backend.uri
         setup_duckdb_storage()
 
-    @cached_property
-    def deltatable(self) -> DeltaTable:
+    def get_deltatable(self) -> DeltaTable:
         return DeltaTable(self.uri, storage_options=storage_options())
 
     def _execute(self, q: Select, stream: bool = True) -> Generator[Any, None, None]:
         try:
-            yield from stream_duckdb(q, self.deltatable)
+            yield from stream_duckdb(q, self.get_deltatable())
         except TableNotFoundError:
             pass
 
@@ -314,7 +313,8 @@ class LakeWriter(nk.Writer):
         """
         Optimize the storage: Z-Ordering and compacting
         """
-        self.store.deltatable.optimize.z_order(Z_ORDER, writer_properties=WRITER)
+        table = self.store.get_deltatable()
+        table.optimize.z_order(Z_ORDER, writer_properties=WRITER)
         if vacuum:
             self.store.deltatable.vacuum(
                 retention_hours=vacuum_keep_hours,
