@@ -2,7 +2,8 @@ import logging
 from datetime import datetime
 
 from banal import ensure_list
-from followthemoney.proxy import EntityProxy
+from followthemoney import ValueEntity
+from followthemoney.dataset.util import dataset_name_check
 from normality import slugify
 from sqlalchemy import (
     JSON,
@@ -20,6 +21,7 @@ from sqlalchemy.exc import OperationalError
 
 from ftmq.store.fragments.loader import BulkLoader
 from ftmq.store.fragments.utils import NULL_ORIGIN
+from ftmq.types import ValueEntities
 
 log = logging.getLogger(__name__)
 UNDEFINED = (OperationalError,)
@@ -34,7 +36,7 @@ except ImportError:
 class Dataset(object):
     def __init__(self, store, name, origin=NULL_ORIGIN):
         self.store = store
-        self.name = name
+        self.name = dataset_name_check(name)
         self.origin = origin
         self._table = None
 
@@ -113,7 +115,7 @@ class Dataset(object):
         try:
             conn = conn.execution_options(stream_results=True)
             for ent in conn.execute(stmt):
-                data = {"id": ent.id, **ent.entity}
+                data = {"id": ent.id, "datasets": [self.name], **ent.entity}
                 if ent.origin != NULL_ORIGIN:
                     data["origin"] = ent.origin
                 yield data
@@ -123,17 +125,17 @@ class Dataset(object):
         finally:
             conn.close()
 
-    def partials(self, entity_id=None, skip_errors=False):
+    def partials(self, entity_id=None, skip_errors=False) -> ValueEntities:
         for fragment in self.fragments(entity_ids=entity_id):
             try:
-                yield EntityProxy.from_dict(fragment, cleaned=True)
+                yield ValueEntity.from_dict(fragment, cleaned=True)
             except Exception:
                 if skip_errors:
                     log.exception("Invalid data [%s]: %s", self.name, fragment["id"])
                     continue
                 raise
 
-    def iterate(self, entity_id=None, skip_errors=False):
+    def iterate(self, entity_id=None, skip_errors=False) -> ValueEntities:
         entity = None
         invalid = None
         fragments = 1
@@ -169,11 +171,11 @@ class Dataset(object):
         if entity is not None:
             yield entity
 
-    def get(self, entity_id):
+    def get(self, entity_id) -> ValueEntity | None:
         for entity in self.iterate(entity_id=entity_id):
             return entity
 
-    def __iter__(self):
+    def __iter__(self) -> ValueEntities:
         return self.iterate()
 
     def __len__(self):

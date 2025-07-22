@@ -1,5 +1,8 @@
 import os
 
+import pytest
+from followthemoney import ValueEntity
+
 from ftmq.store.fragments import get_dataset
 
 
@@ -19,8 +22,11 @@ def test_fragment_store_settings(monkeypatch):
 
 def test_fragment_store_postgres():
     uri = os.environ.get("TESTING_FRAGMENTS_PSQL_URI")
-    dataset = get_dataset("TEST-US-OFAC", database_uri=uri)
-    assert dataset.name == "TEST-US-OFAC"
+    with pytest.raises(ValueError):
+        dataset = get_dataset("TEST-US-OFAC", database_uri=uri)
+
+    dataset = get_dataset("test_us_ofac", database_uri=uri)
+    assert dataset.name == "test_us_ofac"
     assert dataset.store.database_uri.startswith("postgres")
 
     entity1 = {"id": "key1", "schema": "Person", "properties": {}}
@@ -34,7 +40,11 @@ def test_fragment_store_postgres():
     dataset.put(entity2)
     dataset.put(entity3, fragment="2")
 
-    assert dataset.get("key1").schema.name == "Person"
+    entity = dataset.get("key1")
+    assert entity is not None
+    assert isinstance(entity, ValueEntity)
+    assert entity.schema.name == "Person"
+    assert entity.datasets == {"test_us_ofac"}
 
     assert len(list(dataset.iterate())) == 3
     assert len(dataset) == 3
@@ -61,8 +71,10 @@ def test_fragment_store_postgres():
 
 def test_fragment_store_sqlite():
     uri = "sqlite://"
-    dataset = get_dataset("TEST-US-OFAC", database_uri=uri)
-    assert dataset.name == "TEST-US-OFAC"
+    with pytest.raises(ValueError):
+        dataset = get_dataset("TEST-US-OFAC", database_uri=uri)
+    dataset = get_dataset("test_us_ofac", database_uri=uri)
+    assert dataset.name == "test_us_ofac"
     assert len(dataset.store) == 0
     dataset.drop()
     assert len(dataset.store) == 0
@@ -78,7 +90,11 @@ def test_fragment_store_sqlite():
     dataset.put(entity2)
     dataset.put(entity3, fragment="2")
 
-    assert dataset.get("key1").schema.name == "Person"
+    entity = dataset.get("key1")
+    assert entity is not None
+    assert isinstance(entity, ValueEntity)
+    assert entity.schema.name == "Person"
+    assert entity.datasets == {"test_us_ofac"}
 
     assert len(list(dataset.iterate())) == 3
     assert len(list(dataset)) == 3
