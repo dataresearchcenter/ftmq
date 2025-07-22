@@ -1,7 +1,7 @@
 from sqlalchemy import MetaData, create_engine
 from sqlalchemy import inspect as sqlalchemy_inspect
 
-from ftmq.store.fragments.dataset import Dataset
+from ftmq.store.fragments.dataset import Fragments
 from ftmq.store.fragments.utils import NULL_ORIGIN
 
 
@@ -23,7 +23,7 @@ class Store(object):
         self.meta = MetaData()
 
     def get(self, name, origin=NULL_ORIGIN):
-        return Dataset(self, name, origin=origin)
+        return Fragments(self, name, origin=origin)
 
     def all(self, origin=NULL_ORIGIN):
         prefix = f"{self.PREFIX}_"
@@ -31,7 +31,7 @@ class Store(object):
         for table in inspect.get_table_names():
             if table.startswith(prefix):
                 name = table[len(prefix) :]
-                yield Dataset(self, name, origin=origin)
+                yield Fragments(self, name, origin=origin)
 
     def close(self):
         self.engine.dispose()

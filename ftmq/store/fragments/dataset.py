@@ -33,7 +33,7 @@ except ImportError:
     pass
 
 
-class Dataset(object):
+class Fragments(object):
     def __init__(self, store, name, origin=NULL_ORIGIN):
         self.store = store
         self.name = dataset_name_check(name)

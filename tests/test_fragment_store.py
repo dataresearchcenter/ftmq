@@ -3,17 +3,17 @@ import os
 import pytest
 from followthemoney import ValueEntity
 
-from ftmq.store.fragments import get_dataset
+from ftmq.store.fragments import get_fragments
 
 
 def test_fragment_store_settings(monkeypatch):
-    dataset = get_dataset("test")
+    dataset = get_fragments("test")
     assert dataset.store.database_uri == "sqlite:///ftm_fragments.db"  # default
 
-    get_dataset.cache_clear()
+    get_fragments.cache_clear()
     uri = "sqlite:///fragments.store"
     monkeypatch.setenv("FTM_FRAGMENTS_URI", uri)
-    dataset = get_dataset("test")
+    dataset = get_fragments("test")
     assert dataset.store.database_uri == uri
 
 
@@ -24,9 +24,9 @@ def test_fragment_store_postgres():
         return
 
     with pytest.raises(ValueError):
-        dataset = get_dataset("TEST-US-OFAC", database_uri=uri)
+        dataset = get_fragments("TEST-US-OFAC", database_uri=uri)
 
-    dataset = get_dataset("test_us_ofac", database_uri=uri)
+    dataset = get_fragments("test_us_ofac", database_uri=uri)
     assert dataset.name == "test_us_ofac"
     assert dataset.store.database_uri.startswith("postgres")
 
@@ -73,8 +73,8 @@ def test_fragment_store_postgres():
 def test_fragment_store_sqlite():
     uri = "sqlite://"
     with pytest.raises(ValueError):
-        dataset = get_dataset("TEST-US-OFAC", database_uri=uri)
-    dataset = get_dataset("test_us_ofac", database_uri=uri)
+        dataset = get_fragments("TEST-US-OFAC", database_uri=uri)
+    dataset = get_fragments("test_us_ofac", database_uri=uri)
     assert dataset.name == "test_us_ofac"
     assert len(dataset.store) == 0
     dataset.drop()
