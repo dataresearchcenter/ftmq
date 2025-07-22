@@ -8,8 +8,6 @@ Value: TypeAlias = list[str]
 
 Entity = TypeVar("Entity", StatementEntity, ValueEntity)
 """Generic type used mostly in ftmq"""
-EntityType = TypeVar("EntityType", type[StatementEntity], type[ValueEntity])
-"""Entity classes"""
 
 # entity generators
 Entities: TypeAlias = Generator[Entity, None, None]

@@ -1,9 +1,10 @@
 from functools import cache, lru_cache
-from typing import Any, Generator
+from typing import Any, Generator, Type
 
 import pycountry
 from anystore.types import SDict
 from banal import ensure_list, is_listish
+from followthemoney import E
 from followthemoney.dataset import Dataset
 from followthemoney.entity import ValueEntity
 from followthemoney.proxy import EntityProxy
@@ -14,7 +15,7 @@ from normality import collapse_spaces, slugify
 
 from ftmq.enums import Comparators
 from ftmq.exceptions import ValidationError
-from ftmq.types import Entity, EntityType
+from ftmq.types import Entity
 
 DEFAULT_DATASET = "default"
 
@@ -74,9 +75,9 @@ def parse_unknown_filters(
 
 def make_entity(
     data: SDict,
-    entity_type: EntityType | None = ValueEntity,
+    entity_type: Type[E] | None = ValueEntity,
     default_dataset: str | Dataset | None = None,
-) -> Entity:
+) -> E:
     """
     Create a `Entity` from a json dict.
 
@@ -106,9 +107,9 @@ def make_entity(
 
 def ensure_entity(
     data: dict[str, Any] | Entity | EntityProxy,
-    entity_type: EntityType,
+    entity_type: Type[E],
     default_dataset: str | Dataset | None = None,
-) -> Entity:
+) -> E:
     """
     Ensure input data to be specified `Entity` type
 
@@ -121,16 +122,14 @@ def ensure_entity(
         The Entity instance
     """
     if isinstance(data, entity_type):
-        if data.datasets:
+        if hasattr(data, "datasets"):
             return data
     if isinstance(data, EntityProxy):
         data = data.to_dict()
     return make_entity(data, entity_type, default_dataset)
 
 
-def apply_dataset(
-    entity: Entity, dataset: str | Dataset, replace: bool | None = False
-) -> Entity:
+def apply_dataset(entity: E, dataset: str | Dataset, replace: bool | None = False) -> E:
     dataset = ensure_dataset(dataset)
     data = entity.to_dict()
     if replace:
