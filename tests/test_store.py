@@ -278,7 +278,7 @@ def test_store_lake(tmp_path, proxies):
     assert _run_store_test_implicit(LakeStore, proxies, uri=tmp_path)
     assert _run_store_test(LakeStore, proxies, uri=tmp_path)
     lake = LakeStore(uri=tmp_path)
-    lake.writer().optimize()
+    lake.writer().optimize(vacuum=True)
 
 
 def test_store_init(tmp_path):

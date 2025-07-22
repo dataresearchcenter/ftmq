@@ -319,7 +319,7 @@ class LakeWriter(nk.Writer):
         table = self.store.get_deltatable()
         table.optimize.z_order(Z_ORDER, writer_properties=WRITER)
         if vacuum:
-            self.store.deltatable.vacuum(
+            table.vacuum(
                 retention_hours=vacuum_keep_hours,
                 enforce_retention_duration=False,
                 dry_run=False,
