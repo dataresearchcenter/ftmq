@@ -1,7 +1,6 @@
 import pytest
 from followthemoney import StatementEntity, model
 
-from ftmq.exceptions import ValidationError
 from ftmq.io import make_entity
 from ftmq.query import Query
 
@@ -89,7 +88,7 @@ def test_proxy_filter_schema(proxies):
     assert len(result) == 22
 
     # invalid
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValueError):
         q = Query().where(schema="Invalid schema")
 
 

@@ -14,7 +14,6 @@ from followthemoney.util import make_entity_id, sanitize_text
 from normality import collapse_spaces, slugify
 
 from ftmq.enums import Comparators
-from ftmq.exceptions import ValidationError
 from ftmq.types import Entity
 
 DEFAULT_DATASET = "default"
@@ -91,7 +90,7 @@ def make_entity(
     """
     etype = entity_type or ValueEntity
     if data.get("id") is None:
-        raise ValidationError("Entity has no ID.")
+        raise ValueError("Entity has no ID.")
     if etype == ValueEntity:
         if not data.get("datasets"):
             dataset = make_dataset(default_dataset).name

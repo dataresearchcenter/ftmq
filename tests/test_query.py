@@ -1,6 +1,5 @@
 import pytest
 
-from ftmq.exceptions import ValidationError
 from ftmq.query import Query
 
 
@@ -97,21 +96,21 @@ def test_query():
     assert q.slice == slice(1, 10, None)
     assert q.to_dict() == {"limit": 9, "offset": 1}
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValueError):
         Query().where(foo="bar")
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValueError):
         Query().where(schema="foo")
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValueError):
         Query().where(prop="foo")
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValueError):
         Query().where(prop="foo", value="bar")
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValueError):
         Query().where(prop="date", value=2023, comparator="foo")
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValueError):
         Query()[-1]
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValueError):
         Query()[1:1:1]
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValueError):
         Query().where(dataset=[1, 2, 3])
 
 

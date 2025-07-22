@@ -17,13 +17,10 @@ StatementEntities: TypeAlias = Generator[StatementEntity, None, None]
 ValueEntities: TypeAlias = Generator[ValueEntity, None, None]
 """A generator for ValueEntity instances"""
 
-# statement generator
+# statements
 Statements: TypeAlias = Generator[Statement, None, None]
 """A generator for Statement instances"""
-
-__all__ = [
-    "Entities",
-    "ValueEntities",
-    "Statements",
-    "Value",
-]
+OriginStatement: TypeAlias = tuple[Statement, str]
+"""A statement with its origin"""
+OriginStatements: TypeAlias = Generator[OriginStatement, None, None]
+"""A generator for OriginStatement instances"""

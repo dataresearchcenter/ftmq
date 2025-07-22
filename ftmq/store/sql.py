@@ -10,7 +10,6 @@ from sqlalchemy import select
 
 from ftmq.aggregations import AggregatorResult
 from ftmq.enums import Fields
-from ftmq.exceptions import ValidationError
 from ftmq.model.stats import Collector, DatasetStats
 from ftmq.query import Query
 from ftmq.store.base import Store, View
@@ -31,7 +30,7 @@ class SQLQueryView(View, nk.SQLView):
         if not query.datasets:
             return query.where(dataset__in=self.dataset_names)
         if query.dataset_names - self.dataset_names:
-            raise ValidationError("Query datasets outside view scope")
+            raise ValueError("Query datasets outside view scope")
         return query
 
     def query(self, query: Query | None = None) -> StatementEntities:

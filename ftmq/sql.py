@@ -29,7 +29,6 @@ from ftmq.enums import (
     PropertyTypesMap,
     Things,
 )
-from ftmq.exceptions import ValidationError
 from ftmq.filters import F
 
 if TYPE_CHECKING:
@@ -139,7 +138,7 @@ class Sql:
     def _sorted_statements(self) -> Select:
         if self.q.sort:
             if len(self.q.sort.values) > 1:
-                raise ValidationError(
+                raise ValueError(
                     f"Multi-valued sort not supported for `{self.__class__.__name__}`"
                 )
             prop = self.q.sort.values[0]

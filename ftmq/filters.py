@@ -7,7 +7,6 @@ from followthemoney.schema import Schema
 from followthemoney.types import registry
 
 from ftmq.enums import Comparators
-from ftmq.exceptions import ValidationError
 from ftmq.types import Entity, Value
 
 
@@ -30,7 +29,7 @@ class Lookup:
         try:
             return Comparators[comparator]
         except KeyError:
-            raise ValidationError(f"Invalid oparator: `{comparator}`")
+            raise ValueError(f"Invalid oparator: `{comparator}`")
 
     def apply(self, value: str | None) -> bool:
         if self.comparator == "eq":
@@ -71,7 +70,7 @@ class BaseFilter:
         try:
             self.comparator = Comparators[comparator or "eq"]
         except KeyError:
-            raise ValidationError(f"Invalid comparator `{comparator}`")
+            raise ValueError(f"Invalid comparator `{comparator}`")
         self.value: Value = self.get_casted_value(value)
         self.lookup: Lookup = Lookup(self.comparator, self.value)
 
@@ -105,7 +104,7 @@ class BaseFilter:
         if self.comparator == Lookup.NULL:
             return as_bool(value)
         if is_listish(value):
-            raise ValidationError(f"Invalid value for `{self.comparator}`: {value}")
+            raise ValueError(f"Invalid value for `{self.comparator}`: {value}")
         return self.stringify(value) if value is not None else None
 
     def stringify(self, value: Any) -> str:
@@ -147,10 +146,10 @@ class SchemaFilter(BaseFilter):
                 if schema_include_matchable:
                     self.schemata.update(schema.matchable_schemata)
         if not self.schemata and self.comparator in ("eq", "in", "not", "not_in"):
-            raise ValidationError(f"Invalid schema: `{self.value}`")
+            raise ValueError(f"Invalid schema: `{self.value}`")
         if len(self.schemata) > 1:
             if self.comparator not in ("eq", "in", "not", "not_in"):
-                raise ValidationError(
+                raise ValueError(
                     f"Invalid schema lookup: `{self.comparator}` with multiple schemata"
                 )
             self.value = {s.name for s in self.schemata}
@@ -183,7 +182,7 @@ class PropertyFilter(BaseFilter):
             for p in model.properties:
                 if p.name == prop or p.qname == prop:
                     return prop
-        raise ValidationError(f"Invalid prop: `{prop}`")
+        raise ValueError(f"Invalid prop: `{prop}`")
 
 
 class ReverseFilter(BaseFilter):

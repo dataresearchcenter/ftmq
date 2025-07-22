@@ -1,7 +1,6 @@
 import pytest
 from sqlalchemy.sql.selectable import Select
 
-from ftmq.exceptions import ValidationError
 from ftmq.query import Query
 
 
@@ -206,7 +205,7 @@ def test_sql():
 
     # no multi-value sort
     q = Query().order_by("name", "title")
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValueError):
         q.sql.statements
 
     # slice

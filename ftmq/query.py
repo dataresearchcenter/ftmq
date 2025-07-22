@@ -7,7 +7,6 @@ from followthemoney import registry
 
 from ftmq.aggregations import Aggregation, Aggregator
 from ftmq.enums import Aggregations, Properties
-from ftmq.exceptions import ValidationError
 from ftmq.filters import (
     FILTERS,
     DatasetFilter,
@@ -82,11 +81,11 @@ class Query:
         """
         if isinstance(value, int):
             if value < 0:
-                raise ValidationError(f"Invalid slicing: `{value}`")
+                raise ValueError(f"Invalid slicing: `{value}`")
             return self._chain(slice=slice(value, value + 1))
         if isinstance(value, slice):
             if value.step is not None:
-                raise ValidationError(f"Invalid slicing: `{value}`")
+                raise ValueError(f"Invalid slicing: `{value}`")
             return self._chain(slice=value)
         raise NotImplementedError
 
@@ -303,7 +302,7 @@ class Query:
         comparator = lookup.pop("comparator", None)
         if prop is not None:
             if value is None:
-                raise ValidationError("No lookup value specified")
+                raise ValueError("No lookup value specified")
             f = PropertyFilter(prop, value, comparator)
             self.filters.discard(f)  # replace existing property filter with updated one
             self.filters.add(f)
