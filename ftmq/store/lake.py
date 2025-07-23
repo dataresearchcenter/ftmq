@@ -310,6 +310,17 @@ class LakeWriter(nk.Writer):
 
         self.batch = set()
 
+    def pop(self, entity_id: str) -> list[Statement]:
+        q = select(TABLE)
+        q = q.where(TABLE.c.canonical_id == entity_id)
+        statements: list[Statement] = []
+        for row in self.store._execute(q):
+            statements.append(Statement.from_db_row(row))
+
+        table = self.store.get_deltatable()
+        table.delete(f"canonical_id = '{entity_id}'")
+        return statements
+
     def optimize(
         self, vacuum: bool | None = False, vacuum_keep_hours: int | None = 0
     ) -> None:

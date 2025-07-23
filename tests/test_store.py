@@ -1,5 +1,4 @@
 from followthemoney import EntityProxy, StatementEntity
-from sqlalchemy import select
 
 from ftmq.query import Query
 from ftmq.store import MemoryStore, Store, get_store
@@ -28,7 +27,7 @@ def _run_store_test_implicit(cls: type[Store], proxies, **kwargs):
     return True
 
 
-def _run_store_test(cls: type[Store], proxies, **kwargs):
+def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **kwargs):
     store = cls(
         dataset=get_scope_dataset("eu_authorities", "donations"),
         linker=get_resolver(),
@@ -249,6 +248,14 @@ def _run_store_test(cls: type[Store], proxies, **kwargs):
     res = [p for p in view.query(q)]
     assert len(res) == 151
 
+    # pop
+    # FIXME
+    if test_pop:
+        statements = store.writer().pop("006dd13b055a6b66947f991ced6c854defe0e626")
+        assert len(statements) == 7
+        statements = store.writer().pop("006dd13b055a6b66947f991ced6c854defe0e626")
+        assert len(statements) == 0
+
     return True
 
 
@@ -261,7 +268,7 @@ def test_store_leveldb(tmp_path, proxies):
     path = tmp_path / "level.db"
     assert _run_store_test_implicit(LevelDBStore, proxies, path=path)
     path = tmp_path / "level2.db"
-    assert _run_store_test(LevelDBStore, proxies, path=path)
+    assert _run_store_test(LevelDBStore, proxies, test_pop=False, path=path)  # FIXME
 
 
 def test_store_sql_sqlite(tmp_path, proxies):
@@ -271,7 +278,7 @@ def test_store_sql_sqlite(tmp_path, proxies):
     from nomenklatura.db import get_metadata
 
     get_metadata.cache_clear()
-    assert _run_store_test(SQLStore, proxies, uri=uri)
+    assert _run_store_test(SQLStore, proxies, test_pop=False, uri=uri)  # FIXME
 
 
 def test_store_lake(tmp_path, proxies):
