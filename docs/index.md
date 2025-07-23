@@ -1,8 +1,12 @@
+[![Docs](https://img.shields.io/badge/docs-live-brightgreen)](https://docs.investigraph.dev/lib/ftmq/)
 [![ftmq on pypi](https://img.shields.io/pypi/v/ftmq)](https://pypi.org/project/ftmq/)
+[![PyPI Downloads](https://static.pepy.tech/badge/ftmq/month)](https://pepy.tech/projects/ftmq)
+[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/ftmq)](https://pypi.org/project/ftmq/)
 [![Python test and package](https://github.com/investigativedata/ftmq/actions/workflows/python.yml/badge.svg)](https://github.com/investigativedata/ftmq/actions/workflows/python.yml)
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://github.com/pre-commit/pre-commit)
 [![Coverage Status](https://coveralls.io/repos/github/investigativedata/ftmq/badge.svg?branch=main)](https://coveralls.io/github/investigativedata/ftmq?branch=main)
 [![AGPLv3+ License](https://img.shields.io/pypi/l/ftmq)](./LICENSE)
+[![Pydantic v2](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/pydantic/pydantic/main/docs/badge/v2.json)](https://pydantic.dev)
 
 # ftmq
 
