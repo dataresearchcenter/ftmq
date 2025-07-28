@@ -1,9 +1,9 @@
 import logging
 from datetime import datetime
-from typing import Iterable
+from typing import Generator, Iterable, TypeAlias
 
 from banal import ensure_list
-from followthemoney import StatementEntity, ValueEntity
+from followthemoney import EntityProxy, StatementEntity
 from followthemoney.dataset.util import dataset_name_check
 from normality import slugify
 from sqlalchemy import (
@@ -22,7 +22,7 @@ from sqlalchemy.exc import OperationalError
 
 from ftmq.store.fragments.loader import BulkLoader
 from ftmq.store.fragments.utils import NULL_ORIGIN
-from ftmq.types import OriginStatements, ValueEntities
+from ftmq.types import OriginStatements
 from ftmq.util import make_dataset
 
 log = logging.getLogger(__name__)
@@ -33,6 +33,9 @@ try:
     UNDEFINED = (UndefinedTable, *UNDEFINED)
 except ImportError:
     pass
+
+
+EntityFragments: TypeAlias = Generator[EntityProxy, None, None]
 
 
 class Fragments(object):
@@ -127,17 +130,17 @@ class Fragments(object):
         finally:
             conn.close()
 
-    def partials(self, entity_id=None, skip_errors=False) -> ValueEntities:
+    def partials(self, entity_id=None, skip_errors=False) -> EntityFragments:
         for fragment in self.fragments(entity_ids=entity_id):
             try:
-                yield ValueEntity.from_dict(fragment, cleaned=True)
+                yield EntityProxy.from_dict(fragment, cleaned=True)
             except Exception:
                 if skip_errors:
                     log.exception("Invalid data [%s]: %s", self.name, fragment["id"])
                     continue
                 raise
 
-    def iterate(self, entity_id=None, skip_errors=False) -> ValueEntities:
+    def iterate(self, entity_id=None, skip_errors=False) -> EntityFragments:
         entity = None
         invalid = None
         fragments = 1
@@ -209,11 +212,11 @@ class Fragments(object):
         finally:
             conn.close()
 
-    def get(self, entity_id) -> ValueEntity | None:
+    def get(self, entity_id) -> EntityProxy | None:
         for entity in self.iterate(entity_id=entity_id):
             return entity
 
-    def __iter__(self) -> ValueEntities:
+    def __iter__(self) -> EntityFragments:
         return self.iterate()
 
     def __len__(self):

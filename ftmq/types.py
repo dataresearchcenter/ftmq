@@ -20,7 +20,7 @@ ValueEntities: TypeAlias = Generator[ValueEntity, None, None]
 # statements
 Statements: TypeAlias = Generator[Statement, None, None]
 """A generator for Statement instances"""
-OriginStatement: TypeAlias = tuple[Statement, str]
+OriginStatement: TypeAlias = tuple[Statement, str | None]
 """A statement with its origin"""
 OriginStatements: TypeAlias = Generator[OriginStatement, None, None]
 """A generator for OriginStatement instances"""

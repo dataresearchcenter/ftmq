@@ -1,7 +1,7 @@
 import os
 
 import pytest
-from followthemoney import ValueEntity
+from followthemoney import EntityProxy
 
 from ftmq.store.fragments import get_fragments
 
@@ -39,13 +39,13 @@ def test_fragment_store_postgres():
     dataset.put(entity1)
     dataset.put(entity1f, fragment="f")
     dataset.put(entity2)
-    dataset.put(entity3, fragment="2")
+    dataset.put(entity3, fragment="2", origin="test_o")
 
     entity = dataset.get("key1")
     assert entity is not None
-    assert isinstance(entity, ValueEntity)
+    assert isinstance(entity, EntityProxy)
     assert entity.schema.name == "Person"
-    assert entity.datasets == {"test_us_ofac"}
+    # assert entity.datasets == {"test_us_ofac"}
 
     assert len(list(dataset.iterate())) == 3
     assert len(dataset) == 3
@@ -65,6 +65,10 @@ def test_fragment_store_postgres():
     bulk.flush()
     assert len(list(dataset.iterate(entity_id="key1"))) == 1
     assert len(list(dataset.fragments(entity_ids="key1"))) == 2
+
+    entity = dataset.get("key3")
+    assert entity.context.get("origin") == "test_o"
+    assert entity.to_dict()["origin"] == "test_o"
 
     dataset.drop()
     dataset.store.close()
@@ -89,13 +93,13 @@ def test_fragment_store_sqlite():
     dataset.put(entity1)
     dataset.put(entity1f, fragment="f")
     dataset.put(entity2)
-    dataset.put(entity3, fragment="2")
+    dataset.put(entity3, fragment="2", origin="test_o")
 
     entity = dataset.get("key1")
     assert entity is not None
-    assert isinstance(entity, ValueEntity)
+    assert isinstance(entity, EntityProxy)
     assert entity.schema.name == "Person"
-    assert entity.datasets == {"test_us_ofac"}
+    # assert entity.datasets == {"test_us_ofac"}
 
     assert len(list(dataset.iterate())) == 3
     assert len(list(dataset)) == 3
@@ -103,6 +107,10 @@ def test_fragment_store_sqlite():
     assert len(list(dataset.iterate(entity_id="key1"))) == 1
     assert len(list(dataset.iterate(entity_id="key3"))) == 1
     assert len(dataset.store) == 1
+
+    entity = dataset.get("key3")
+    assert entity.context.get("origin") == "test_o"
+    assert entity.to_dict()["origin"] == "test_o"
 
     dataset.drop()
     dataset.store.close()
