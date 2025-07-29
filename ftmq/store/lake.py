@@ -53,7 +53,7 @@ from ftmq.query import Query
 from ftmq.store.base import Store
 from ftmq.store.sql import SQLQueryView, SQLStore
 from ftmq.types import OriginStatement, StatementEntities
-from ftmq.util import ensure_entity, get_scope_dataset
+from ftmq.util import apply_dataset, ensure_entity, get_scope_dataset
 
 log = get_logger(__name__)
 
@@ -225,6 +225,7 @@ class LakeStore(SQLStore):
         self._backend: FSStore = FSStore(uri=kwargs.pop("uri"))
         self._partition_by = kwargs.pop("partition_by", PARTITION_BY)
         self._lock: Lock = kwargs.pop("lock", Lock(self._backend))
+        self._enforce_dataset = kwargs.pop("enforce_dataset", False)
         assert isinstance(
             self._backend, FSStore
         ), f"Invalid store backend: `{self._backend.__class__}"
@@ -235,12 +236,13 @@ class LakeStore(SQLStore):
         self.uri = self._backend.uri
         setup_duckdb_storage()
 
-    def get_deltatable(self) -> DeltaTable:
+    @property
+    def deltatable(self) -> DeltaTable:
         return DeltaTable(self.uri, storage_options=storage_options())
 
     def _execute(self, q: Select, stream: bool = True) -> Generator[Any, None, None]:
         try:
-            yield from stream_duckdb(q, self.get_deltatable())
+            yield from stream_duckdb(q, self.deltatable)
         except TableNotFoundError:
             pass
 
@@ -265,7 +267,7 @@ class LakeStore(SQLStore):
 
     def get_origins(self) -> set[str]:
         q = select(self.table.c.origin).distinct()
-        return set([r.origin for r in stream_duckdb(q, self.get_deltatable())])
+        return set([r.origin for r in stream_duckdb(q, self.deltatable)])
 
 
 class LakeWriter(nk.Writer):
@@ -287,6 +289,8 @@ class LakeWriter(nk.Writer):
 
     def add_entity(self, entity: EntityProxy, origin: str | None = None) -> None:
         e = ensure_entity(entity, StatementEntity, self.store.dataset)
+        if self.store._enforce_dataset:
+            e = apply_dataset(e, self.store.dataset, replace=True)
         for stmt in e.statements:
             self.add_statement(stmt, origin)
         if len(self.batch) >= self.BATCH_STATEMENTS:
@@ -317,8 +321,7 @@ class LakeWriter(nk.Writer):
         for row in self.store._execute(q):
             statements.append(Statement.from_db_row(row))
 
-        table = self.store.get_deltatable()
-        table.delete(f"canonical_id = '{entity_id}'")
+        self.store.deltatable.delete(f"canonical_id = '{entity_id}'")
         return statements
 
     def optimize(
@@ -327,10 +330,9 @@ class LakeWriter(nk.Writer):
         """
         Optimize the storage: Z-Ordering and compacting
         """
-        table = self.store.get_deltatable()
-        table.optimize.z_order(Z_ORDER, writer_properties=WRITER)
+        self.store.deltatable.optimize.z_order(Z_ORDER, writer_properties=WRITER)
         if vacuum:
-            table.vacuum(
+            self.store.deltatable.vacuum(
                 retention_hours=vacuum_keep_hours,
                 enforce_retention_duration=False,
                 dry_run=False,
