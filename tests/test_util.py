@@ -99,6 +99,8 @@ def test_util_get_year():
     assert util.get_year_from_iso(datetime.now()) >= 2023
     assert util.get_year_from_iso("2000-01") == 2000
 
+
+def test_util_clean():
     assert util.clean_string(" foo\n bar") == "foo bar"
     assert util.clean_string("foo Bar, baz") == "foo Bar, baz"
     assert util.clean_string(None) is None
@@ -109,12 +111,21 @@ def test_util_get_year():
     assert util.clean_name("  foo\n bar") == "foo bar"
     assert util.clean_name("- - . *") is None
 
+
+def test_util_fingerprints():
     assert util.make_fingerprint("Mrs. Jane Doe") == "doe jane mrs"
     assert util.make_fingerprint("Mrs. Jane Mrs. Doe") == "doe jane mrs"
     assert util.make_fingerprint("#") is None
     assert util.make_fingerprint(" ") is None
     assert util.make_fingerprint("") is None
     assert util.make_fingerprint(None) is None
+
+    fps = {"doe jane", "mrs. jane doe"}
+    assert util.make_fingerprints({model["Person"]}, ["Mrs. Jane Doe"]) == fps
+    entity = util.make_entity(
+        {"id": "jane", "schema": "Person", "properties": {"name": ["Mrs. Jane Doe"]}}
+    )
+    assert util.entity_fingerprints(entity) == fps
 
 
 def test_util_prop_is_numeric():

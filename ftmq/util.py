@@ -1,10 +1,11 @@
 from functools import cache, lru_cache
-from typing import Any, Generator, Type
+from typing import Any, Generator, Iterable, Type
 
 import pycountry
 from anystore.types import SDict
 from banal import ensure_list, is_listish
 from followthemoney import E
+from followthemoney.compare import _normalize_names
 from followthemoney.dataset import Dataset
 from followthemoney.entity import ValueEntity
 from followthemoney.proxy import EntityProxy
@@ -373,6 +374,21 @@ def make_fingerprint(value: Any) -> str | None:
     if value is None:
         return
     return " ".join(sorted(set(slugify(value).split("-"))))
+
+
+def entity_fingerprints(entity: EntityProxy) -> set[str]:
+    """Get the set of entity name fingerprints"""
+    # FIXME private import
+    return set(_normalize_names(entity.schema, entity.names))
+
+
+def make_fingerprints(schemata: set[Schema], names: Iterable[str]) -> set[str]:
+    """Mimic `fingerprints.generate`"""
+    # FIXME private import
+    fps: set[str] = set()
+    for schema in schemata:
+        fps.update(set(_normalize_names(schema, names)))
+    return fps
 
 
 def make_string_id(*values: Any) -> str | None:
