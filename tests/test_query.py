@@ -207,3 +207,8 @@ def test_query_schema():
 
     q = Query().where(schema="Person", schema_include_matchable=True)
     assert len(q.schemata_names) == 2
+
+
+def test_query_origins():
+    q = Query().where(origin="test")
+    assert q.origin_names == {"test"}

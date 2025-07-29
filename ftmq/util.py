@@ -91,6 +91,8 @@ def make_entity(
     etype = entity_type or ValueEntity
     if data.get("id") is None:
         raise ValueError("Entity has no ID.")
+    if etype == EntityProxy:
+        return EntityProxy.from_dict(data)
     if etype == ValueEntity:
         if not data.get("datasets"):
             dataset = make_dataset(default_dataset).name

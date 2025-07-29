@@ -125,6 +125,21 @@ class DatasetFilter(BaseFilter):
         return False
 
 
+class OriginFilter(BaseFilter):
+    key = "origin"
+
+    def apply(self, entity: Entity) -> bool:
+        if not hasattr(entity, "context"):
+            return False
+        origins = ensure_list(entity.context.get("origin"))
+        if self.comparator == Lookup.EQUALS:
+            return self.value in origins
+        for value in origins:
+            if self.lookup.apply(value):
+                return True
+        return False
+
+
 class SchemaFilter(BaseFilter):
     key = "schema"
 
@@ -232,4 +247,5 @@ FILTERS = {
     "reverse": ReverseFilter,
     "entity_id": EntityIdFilter,
     "canonical_id": CanonicalIdFilter,
+    "origin": OriginFilter,
 }

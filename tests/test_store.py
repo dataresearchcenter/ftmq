@@ -256,6 +256,11 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
         statements = store.writer().pop("006dd13b055a6b66947f991ced6c854defe0e626")
         assert len(statements) == 0
 
+    # origin
+    q = Query().where(origin="test")
+    res = [p for p in view.query(q)]
+    assert len(res) == 0
+
     return True
 
 

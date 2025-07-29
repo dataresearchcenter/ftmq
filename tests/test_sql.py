@@ -380,3 +380,8 @@ def test_sql_ids():
     #     """,
     #     str(q.sql.canonical_ids),
     # )
+
+
+def test_sql_origins():
+    q = Query().where(origin="test")
+    assert "WHERE test_table.origin = :origin_1" in str(q.sql.statements)

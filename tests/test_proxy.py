@@ -1,5 +1,5 @@
 import pytest
-from followthemoney import StatementEntity, model
+from followthemoney import EntityProxy, StatementEntity, model
 
 from ftmq.io import make_entity
 from ftmq.query import Query
@@ -217,3 +217,23 @@ def test_proxy_filter_ids(eu_authorities):
     q = Query().where(entity_id__startswith="eu-authorities")
     res = [p for p in q.apply_iter(eu_authorities)]
     assert len(res) == len(eu_authorities)
+
+
+def test_proxy_filter_origin():
+    JANE = {
+        "id": "jane",
+        "schema": "Person",
+        "properties": {"name": ["Jane Doe"]},
+        "origin": ["test"],
+    }
+    entity = make_entity(JANE)
+    assert entity.context["origin"] == ["test"]
+    q = Query().where(origin="yolo")
+    assert not q.apply(entity)
+    q = Query().where(origin="test")
+    assert q.apply(entity)
+    _q = Query().where(origin__startswith="te")
+    assert _q.apply(entity)
+
+    entity = make_entity(JANE, StatementEntity)
+    assert not q.apply(entity)

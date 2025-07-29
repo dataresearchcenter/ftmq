@@ -12,6 +12,7 @@ from ftmq.filters import (
     DatasetFilter,
     F,
     IdFilter,
+    OriginFilter,
     PropertyFilter,
     ReverseFilter,
     SchemaFilter,
@@ -211,6 +212,23 @@ class Query:
         names = set()
         for f in self.schemata:
             names.update(ensure_list([s.name for s in f.schemata]))
+        return names
+
+    @property
+    def origins(self) -> set[OriginFilter]:
+        """
+        The current filtered origins
+        """
+        return {f for f in self.filters if isinstance(f, OriginFilter)}
+
+    @property
+    def origin_names(self) -> set[str]:
+        """
+        The names of the current filtered origins
+        """
+        names = set()
+        for f in self.origins:
+            names.update(ensure_list(f.value))
         return names
 
     @property

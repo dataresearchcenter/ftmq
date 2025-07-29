@@ -92,6 +92,13 @@ class Sql:
                     for f in sorted(self.q.schemata)
                 )
             )
+        if self.q.origins:
+            clauses.append(
+                or_(
+                    self.get_expression(self.table.c.origin, f)
+                    for f in sorted(self.q.origins)
+                )
+            )
         if self.q.reversed:
             rclause = or_(
                 and_(
