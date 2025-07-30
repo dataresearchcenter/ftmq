@@ -52,7 +52,7 @@ from sqlalchemy.sql import Select
 from ftmq.query import Query
 from ftmq.store.base import Store
 from ftmq.store.sql import SQLQueryView, SQLStore
-from ftmq.types import OriginStatement, StatementEntities
+from ftmq.types import StatementEntities
 from ftmq.util import apply_dataset, ensure_entity, get_scope_dataset
 
 log = get_logger(__name__)
@@ -154,15 +154,14 @@ def get_schema_bucket(schema_name: str) -> str:
     return BUCKET_THING
 
 
-def pack_statement(stmt: Statement, origin: str) -> SDict:
+def pack_statement(stmt: Statement) -> SDict:
     data = stmt.to_db_row()
-    data["origin"] = origin
     data["bucket"] = get_schema_bucket(data["schema"])
     return data
 
 
-def pack_statements(statements: Iterable[OriginStatement]) -> pd.DataFrame:
-    df = pd.DataFrame(pack_statement(*s) for s in statements)
+def pack_statements(statements: Iterable[Statement]) -> pd.DataFrame:
+    df = pd.DataFrame(map(pack_statement, statements))
     df = df.drop_duplicates().sort_values(Z_ORDER)
     df = df.fillna(np.nan)
     return df
@@ -276,23 +275,25 @@ class LakeWriter(nk.Writer):
 
     def __init__(self, store: Store, origin: str | None = DEFAULT_ORIGIN):
         super().__init__(store)
-        self.batch: set[OriginStatement] = set()
+        self.batch: set[Statement] = set()
         self.origin = origin or DEFAULT_ORIGIN
 
-    def add_statement(self, stmt: Statement, origin: str | None) -> None:
+    def add_statement(self, stmt: Statement) -> None:
         if stmt.entity_id is None:
             return
-        origin = origin or self.origin
+        stmt.origin = stmt.origin or self.origin
         canonical_id = self.store.linker.get_canonical(stmt.entity_id)
         stmt.canonical_id = canonical_id
-        self.batch.add((stmt, origin))
+        self.batch.add(stmt)
 
     def add_entity(self, entity: EntityProxy, origin: str | None = None) -> None:
         e = ensure_entity(entity, StatementEntity, self.store.dataset)
         if self.store._enforce_dataset:
             e = apply_dataset(e, self.store.dataset, replace=True)
         for stmt in e.statements:
-            self.add_statement(stmt, origin)
+            if origin:
+                stmt.origin = origin
+            self.add_statement(stmt)
         if len(self.batch) >= self.BATCH_STATEMENTS:
             self.flush()
 

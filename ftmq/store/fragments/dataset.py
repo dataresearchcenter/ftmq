@@ -22,7 +22,7 @@ from sqlalchemy.exc import OperationalError
 
 from ftmq.store.fragments.loader import BulkLoader
 from ftmq.store.fragments.utils import NULL_ORIGIN
-from ftmq.types import OriginStatements
+from ftmq.types import Statements
 from ftmq.util import make_dataset
 
 log = logging.getLogger(__name__)
@@ -176,13 +176,13 @@ class Fragments(object):
         if entity is not None:
             yield entity
 
-    def origin_statements(
+    def statements(
         self,
         entity_ids: Iterable[str] | None = None,
         origin: str | None = None,
         since: datetime | None = None,
-    ) -> OriginStatements:
-        """Iterate unsorted statements with its origins: (Statement, origin)"""
+    ) -> Statements:
+        """Iterate unsorted statements with its fragment origins"""
         stmt = self.table.select()
         entity_ids = ensure_list(entity_ids)
         if len(entity_ids) == 1:
@@ -204,8 +204,10 @@ class Fragments(object):
                 )
                 for statement in entity.statements:
                     statement.last_seen = fragment.timestamp.isoformat()
-                    origin = fragment.origin if fragment.origin != NULL_ORIGIN else None
-                    yield statement, origin
+                    statement.origin = (
+                        fragment.origin if fragment.origin != NULL_ORIGIN else None
+                    )
+                    yield statement
         except Exception:
             self.reset()
             raise

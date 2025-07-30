@@ -19,7 +19,7 @@ class Dataset(BaseModel, _DatasetModel):
     maintainer: DataPublisher | None = None
     stats: DatasetStats = DatasetStats()
     git_repo: AnyUrl | None = None
-    content_type: ContentType | None = "structured"
+    content_type: ContentType | None = None
     uri: str | None = None
 
     def iterate(self) -> Entities:

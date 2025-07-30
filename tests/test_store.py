@@ -345,8 +345,8 @@ def test_store_fragments_to_lake(tmp_path):
     origins = set()
     schemata = set()
     ids = set()
-    for stmt, origin in fragments.origin_statements():
-        origins.add(origin)
+    for stmt in fragments.statements():
+        origins.add(stmt.origin)
         schemata.add(stmt.schema)
         ids.add(stmt.entity_id)
         assert stmt.last_seen is not None
@@ -355,8 +355,8 @@ def test_store_fragments_to_lake(tmp_path):
     assert ids == {"1", "2"}
 
     with lake.writer(origin="ingest") as bulk:
-        for stmt, origin in fragments.origin_statements():
-            bulk.add_statement(stmt, origin)
+        for stmt in fragments.statements():
+            bulk.add_statement(stmt)
     entities = list(lake.iterate())
     assert len(entities) == 2
     assert lake.get_origins() == {"ingest", "source1", "source2"}
