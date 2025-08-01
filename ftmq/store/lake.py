@@ -21,6 +21,7 @@ Layout:
 from functools import cache
 from pathlib import Path
 from typing import Any, Generator, Iterable
+from urllib.parse import urlparse
 
 import duckdb
 import numpy as np
@@ -57,19 +58,24 @@ from ftmq.util import apply_dataset, ensure_entity, get_scope_dataset
 
 log = get_logger(__name__)
 
-Z_ORDER = ["canonical_id", "schema", "prop", "value"]
+Z_ORDER = ["canonical_id", "entity_id", "schema"]
+TARGET_SIZE = 50 * 10_485_760  # 500 MB
 PARTITION_BY = ["dataset", "bucket", "origin"]
 DEFAULT_ORIGIN = "default"
 BUCKET_DOCUMENT = "document"
 BUCKET_INTERVAL = "interval"
 BUCKET_THING = "thing"
 BLOOM = ColumnProperties(bloom_filter_properties=BloomFilterProperties(True))
+STATISTICS = ColumnProperties(statistics_enabled="CHUNK", dictionary_enabled=True)
 WRITER = WriterProperties(
+    data_page_size_limit=64 * 1024,
+    dictionary_page_size_limit=512 * 1024,
+    max_row_group_size=100_000,
     compression="SNAPPY",
     column_properties={
-        "canonical_id": BLOOM,
-        "entity_id": BLOOM,
-        "schema": BLOOM,
+        "canonical_id": STATISTICS,
+        "entity_id": STATISTICS,
+        "schema": STATISTICS,
         "prop": BLOOM,
         "value": BLOOM,
     },
@@ -110,6 +116,13 @@ class StorageSettings(BaseSettings):
         if self.endpoint:
             return not self.endpoint.startswith("https")
         return False
+
+    @property
+    def duckdb_endpoint(self) -> str | None:
+        if not self.endpoint:
+            return
+        scheme = urlparse(self.endpoint).scheme
+        return self.endpoint[len(scheme) + len("://") :]
 
 
 storage_settings = StorageSettings()
@@ -162,7 +175,7 @@ def pack_statement(stmt: Statement) -> SDict:
 
 def pack_statements(statements: Iterable[Statement]) -> pd.DataFrame:
     df = pd.DataFrame(map(pack_statement, statements))
-    df = df.drop_duplicates().sort_values(Z_ORDER)
+    df = df.drop_duplicates()  # .sort_values(Z_ORDER)
     df = df.fillna(np.nan)
     return df
 
@@ -294,6 +307,8 @@ class LakeWriter(nk.Writer):
             if origin:
                 stmt.origin = origin
             self.add_statement(stmt)
+        # we check here instead of in `add_statement` as this will keep entities
+        # together in the same parquet files`
         if len(self.batch) >= self.BATCH_STATEMENTS:
             self.flush()
 
@@ -309,8 +324,10 @@ class LakeWriter(nk.Writer):
                     pack_statements(self.batch),
                     partition_by=self.store._partition_by,
                     mode="append",
-                    writer_properties=WRITER,
                     schema_mode="merge",
+                    writer_properties=WRITER,
+                    target_file_size=TARGET_SIZE,
+                    storage_options=storage_options(),
                 )
 
         self.batch = set()
@@ -331,7 +348,9 @@ class LakeWriter(nk.Writer):
         """
         Optimize the storage: Z-Ordering and compacting
         """
-        self.store.deltatable.optimize.z_order(Z_ORDER, writer_properties=WRITER)
+        self.store.deltatable.optimize.z_order(
+            Z_ORDER, writer_properties=WRITER, target_size=TARGET_SIZE
+        )
         if vacuum:
             self.store.deltatable.vacuum(
                 retention_hours=vacuum_keep_hours,
