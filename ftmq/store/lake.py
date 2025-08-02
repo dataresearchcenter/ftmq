@@ -70,7 +70,7 @@ STATISTICS = ColumnProperties(statistics_enabled="CHUNK", dictionary_enabled=Tru
 WRITER = WriterProperties(
     data_page_size_limit=64 * 1024,
     dictionary_page_size_limit=512 * 1024,
-    max_row_group_size=100_000,
+    max_row_group_size=500_000,
     compression="SNAPPY",
     column_properties={
         "canonical_id": STATISTICS,
