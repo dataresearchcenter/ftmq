@@ -58,14 +58,18 @@ from ftmq.util import apply_dataset, ensure_entity, get_scope_dataset
 
 log = get_logger(__name__)
 
-Z_ORDER = ["canonical_id", "entity_id", "schema"]
+Z_ORDER = ["canonical_id", "entity_id", "schema", "prop"]
 TARGET_SIZE = 50 * 10_485_760  # 500 MB
 PARTITION_BY = ["dataset", "bucket", "origin"]
 DEFAULT_ORIGIN = "default"
 BUCKET_DOCUMENT = "document"
 BUCKET_INTERVAL = "interval"
 BUCKET_THING = "thing"
-BLOOM = ColumnProperties(bloom_filter_properties=BloomFilterProperties(True))
+STATISTICS_BLOOM = ColumnProperties(
+    bloom_filter_properties=BloomFilterProperties(True),
+    statistics_enabled="CHUNK",
+    dictionary_enabled=True,
+)
 STATISTICS = ColumnProperties(statistics_enabled="CHUNK", dictionary_enabled=True)
 WRITER = WriterProperties(
     data_page_size_limit=64 * 1024,
@@ -76,8 +80,8 @@ WRITER = WriterProperties(
         "canonical_id": STATISTICS,
         "entity_id": STATISTICS,
         "schema": STATISTICS,
-        "prop": BLOOM,
-        "value": BLOOM,
+        "prop": STATISTICS_BLOOM,
+        "value": STATISTICS_BLOOM,
     },
 )
 
