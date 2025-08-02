@@ -32,7 +32,7 @@ from ftmq.enums import (
 from ftmq.filters import F
 
 if TYPE_CHECKING:
-    from ftmq.query import Q
+    from ftmq.query import Query
 
 
 Field: TypeAlias = Properties | PropertyTypes | Fields
@@ -50,10 +50,13 @@ class Sql:
         Comparators.lte: "__le__",
     }
 
-    def __init__(self, q: "Q") -> None:
+    def __init__(self, q: "Query") -> None:
         self.q = q
         self.metadata = MetaData()
-        self.table = make_statement_table(self.metadata)
+        if q.table is None:
+            self.table = make_statement_table(self.metadata)
+        else:
+            self.table = q.table
         self.META_COLUMNS = {
             "id": self.table.c.canonical_id,
             "dataset": self.table.c.dataset,

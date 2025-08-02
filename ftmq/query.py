@@ -4,6 +4,7 @@ from typing import Any, Self, TypeVar
 
 from banal import ensure_list, is_listish, is_mapping
 from followthemoney import registry
+from sqlalchemy import Table
 
 from ftmq.aggregations import Aggregation, Aggregator
 from ftmq.enums import Aggregations, Properties
@@ -58,12 +59,14 @@ class Query:
         aggregator: Aggregator | None = None,
         sort: Sort | None = None,
         slice: Slice | None = None,
+        table: Table | None = None,
     ):
         self.filters = set(ensure_list(filters))
         self.aggregations = set(ensure_list(aggregations))
         self.aggregator = aggregator
         self.sort = sort
         self.slice = slice
+        self.table = table
 
     def __getitem__(self, value: Any) -> Self:
         """

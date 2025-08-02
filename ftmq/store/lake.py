@@ -225,9 +225,10 @@ def ensure_schema_buckets(q: Query) -> Select:
 class LakeQueryView(SQLQueryView):
     def query(self, query: Query | None = None) -> StatementEntities:
         if query:
+            query.table = self.store.table
             query = self.ensure_scoped_query(query)
-            # sql = ensure_schema_buckets(query)
-            yield from self.store._iterate(query.sql.statements)
+            sql = ensure_schema_buckets(query)
+            yield from self.store._iterate(sql)
         else:
             yield from super().query(query)
 
