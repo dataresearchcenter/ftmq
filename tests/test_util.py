@@ -121,11 +121,14 @@ def test_util_fingerprints():
     assert util.make_fingerprint(None) is None
 
     fps = {"doe jane", "mrs. jane doe"}
-    assert util.make_fingerprints({model["Person"]}, ["Mrs. Jane Doe"]) == fps
+    assert util.make_fingerprints("Mrs. Jane Doe", schemata={model["Person"]}) == fps
     entity = util.make_entity(
         {"id": "jane", "schema": "Person", "properties": {"name": ["Mrs. Jane Doe"]}}
     )
     assert util.entity_fingerprints(entity) == fps
+
+    assert util.make_fingerprints("Українська") == {"ukraí̈nsʹka"}
+    assert util.make_fingerprints("乌克兰语") == {"乌克兰语"}
 
 
 def test_util_prop_is_numeric():

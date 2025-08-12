@@ -1,10 +1,10 @@
 from functools import cache, lru_cache
-from typing import Any, Generator, Iterable, Type
+from typing import Any, Generator, Type
 
 import pycountry
 from anystore.types import SDict
 from banal import ensure_list, is_listish
-from followthemoney import E
+from followthemoney import E, model
 from followthemoney.compare import _normalize_names
 from followthemoney.dataset import Dataset
 from followthemoney.entity import ValueEntity
@@ -12,7 +12,8 @@ from followthemoney.proxy import EntityProxy
 from followthemoney.schema import Schema
 from followthemoney.types import registry
 from followthemoney.util import make_entity_id, sanitize_text
-from normality import collapse_spaces, slugify
+from normality import collapse_spaces, latinize_text, slugify
+from rigour.text.scripts import can_latinize
 
 from ftmq.enums import Comparators
 from ftmq.types import Entity
@@ -377,18 +378,21 @@ def make_fingerprint(value: Any) -> str | None:
 
 
 def entity_fingerprints(entity: EntityProxy) -> set[str]:
-    """Get the set of entity name fingerprints"""
-    # FIXME private import
-    return set(_normalize_names(entity.schema, entity.names))
+    """Get the set of entity name fingerprints, latinized if the alphabet allows
+    it and with org / person tags removed depending on entity schema"""
+    return make_fingerprints(*entity.names, schemata={entity.schema})
 
 
-def make_fingerprints(schemata: set[Schema], names: Iterable[str]) -> set[str]:
-    """Mimic `fingerprints.generate`"""
+def make_fingerprints(*names: str, schemata: set[Schema] | None = None) -> set[str]:
+    """Get the set of name fingerprints, latinized if the alphabet allows
+    it and with org / person tags removed depending on given schemata"""
     # FIXME private import
+    schemata = schemata or {model["LegalEntity"]}
     fps: set[str] = set()
     for schema in schemata:
         fps.update(set(_normalize_names(schema, names)))
-    return fps
+    # add latinized if appropriate
+    return {latinize_text(fp) if can_latinize(fp) else fp for fp in fps}
 
 
 def make_string_id(*values: Any) -> str | None:
