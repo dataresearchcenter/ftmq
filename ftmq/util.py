@@ -2,7 +2,7 @@ from functools import cache, lru_cache
 from typing import Any, Generator, Type
 
 import pycountry
-from anystore.types import SDict
+from anystore.types import SDict, StrGenerator
 from banal import ensure_list, is_listish
 from followthemoney import E, model
 from followthemoney.compare import _normalize_names
@@ -13,6 +13,8 @@ from followthemoney.schema import Schema
 from followthemoney.types import registry
 from followthemoney.util import make_entity_id, sanitize_text
 from normality import collapse_spaces, latinize_text, slugify
+from rigour.names import Name, tag_org_name, tag_person_name
+from rigour.names.tokenize import normalize_name
 from rigour.text.scripts import can_latinize
 
 from ftmq.enums import Comparators
@@ -480,3 +482,36 @@ def must_str(value: Any) -> str:
     if not value:
         raise ValueError(f"Value invalid: `{value}`")
     return value
+
+
+def get_symbols(entity: EntityProxy) -> set[str]:
+    """Get the rigour names symbols for the given entity"""
+    symbols: set[str] = set()
+    if not entity.schema.is_a("LegalEntity"):
+        return symbols
+    taggers = [tag_person_name, tag_org_name]
+    if entity.schema.is_a("Person"):
+        taggers = [tag_person_name]
+    elif entity.schema.is_a("Organization"):
+        taggers = [tag_org_name]
+    for name in entity.names:
+        n = Name(name)
+        for tagger in taggers:
+            for symbol in tagger(n, normalize_name).symbols:
+                symbols.add(str(symbol.id))
+    return symbols
+
+
+def select_data(e: EntityProxy, prefix: str) -> StrGenerator:
+    """Select arbitrary stored data in `indexText` identified by given prefix"""
+    for text in e.get("indexText"):
+        if text.startswith(prefix):
+            yield text.replace(prefix, "").strip()
+
+
+def select_symbols(e: EntityProxy) -> set[str]:
+    """Select stored symbols in `indexText`"""
+    symbols: set[str] = set()
+    for data in select_data(e, "__symbols__"):
+        symbols.update(data.split(","))
+    return symbols

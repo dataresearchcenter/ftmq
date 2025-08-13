@@ -185,3 +185,11 @@ def test_util_apply_entity():
     assert entity.datasets == {"foo"}
     entity = util.apply_dataset(entity, "foo", replace=True)
     assert entity.datasets == {"foo"}
+
+
+def test_util_symbols():
+    entity = util.make_entity(
+        {"id": "j", "schema": "Person", "properties": {"name": ["Jane Doe"]}}
+    )
+    symbols = util.get_symbols(entity)
+    assert "1682564" in symbols
