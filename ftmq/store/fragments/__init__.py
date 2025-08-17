@@ -1,4 +1,4 @@
-from functools import cache
+from anystore.functools import weakref_cache as cache
 
 from ftmq.store.fragments.dataset import Fragments
 from ftmq.store.fragments.settings import Settings

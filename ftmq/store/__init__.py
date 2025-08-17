@@ -1,7 +1,7 @@
-from functools import cache
 from pathlib import Path
 from urllib.parse import urlparse
 
+from anystore.functools import weakref_cache as cache
 from anystore.types import Uri
 from followthemoney.dataset.dataset import Dataset
 from nomenklatura import Resolver, settings

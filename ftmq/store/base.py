@@ -1,7 +1,7 @@
-from functools import cache
 from typing import Generator, Iterable
 from urllib.parse import urlparse
 
+from anystore.functools import weakref_cache as cache
 from followthemoney import DefaultDataset
 from followthemoney.dataset.dataset import Dataset
 from nomenklatura import store as nk

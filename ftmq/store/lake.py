@@ -18,7 +18,6 @@ Layout:
     ```
 """
 
-from functools import cache
 from pathlib import Path
 from typing import Any, Generator, Iterable
 from urllib.parse import urlparse
@@ -26,6 +25,7 @@ from urllib.parse import urlparse
 import duckdb
 import numpy as np
 import pandas as pd
+from anystore.functools import weakref_cache as cache
 from anystore.lock import Lock
 from anystore.logging import get_logger
 from anystore.store.fs import Store as FSStore

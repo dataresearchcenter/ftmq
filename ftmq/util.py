@@ -1,7 +1,8 @@
-from functools import cache, lru_cache
+from functools import lru_cache
 from typing import Any, Generator, Type
 
 import pycountry
+from anystore.functools import weakref_cache as cache
 from anystore.types import SDict, StrGenerator
 from banal import ensure_list, is_listish
 from followthemoney import E, model
@@ -509,9 +510,21 @@ def select_data(e: EntityProxy, prefix: str) -> StrGenerator:
             yield text.replace(prefix, "").strip()
 
 
+SELECT_SYMBOLS = "__symbols__"
+SELECT_ANNOTATED = "__annotated__"
+
+
 def select_symbols(e: EntityProxy) -> set[str]:
     """Select stored symbols in `indexText`"""
     symbols: set[str] = set()
-    for data in select_data(e, "__symbols__"):
+    for data in select_data(e, SELECT_SYMBOLS):
+        symbols.update(data.split(","))
+    return symbols
+
+
+def select_annotations(e: EntityProxy) -> set[str]:
+    """Select stored annotations in `indexText`"""
+    symbols: set[str] = set()
+    for data in select_data(e, SELECT_ANNOTATED):
         symbols.update(data.split(","))
     return symbols
