@@ -485,22 +485,42 @@ def must_str(value: Any) -> str:
     return value
 
 
+SELECT_SYMBOLS = "__symbols__"
+SELECT_ANNOTATED = "__annotated__"
+
+
+def get_name_symbols(schema: Schema, names: list[str]) -> set[str]:
+    """Get the rigour names symbols for the given schema and list of names"""
+    symbols: set[str] = set()
+    if schema.is_a("Person"):
+        tagger = tag_person_name
+    elif schema.is_a("Organization"):
+        tagger = tag_org_name
+    else:
+        return symbols
+    for name in names:
+        n = Name(name)
+        for symbol in tagger(n, normalize_name).symbols:
+            symbols.add(str(symbol))
+    return symbols
+
+
 def get_symbols(entity: EntityProxy) -> set[str]:
     """Get the rigour names symbols for the given entity"""
-    symbols: set[str] = set()
     if not entity.schema.is_a("LegalEntity"):
-        return symbols
-    taggers = [tag_person_name, tag_org_name]
-    if entity.schema.is_a("Person"):
-        taggers = [tag_person_name]
-    elif entity.schema.is_a("Organization"):
-        taggers = [tag_org_name]
-    for name in entity.names:
-        n = Name(name)
-        for tagger in taggers:
-            for symbol in tagger(n, normalize_name).symbols:
-                symbols.add(str(symbol.id))
-    return symbols
+        return set()
+    names = entity.get_type_values(registry.name, matchable=True)
+    return get_name_symbols(entity.schema, names)
+
+
+def inline_symbols(entity: EntityProxy) -> None:
+    """Get the rigour names symbols for the given entity and write them to `indexText`"""
+    # clean up old symbols from indexText:
+    for text in entity.pop("indexText"):
+        if not text.startswith(SELECT_SYMBOLS):
+            entity.add("indexText", text)
+    symbols = get_symbols(entity)
+    entity.add("indexText", f"{SELECT_SYMBOLS} {','.join(symbols)}")
 
 
 def select_data(e: EntityProxy, prefix: str) -> StrGenerator:
@@ -508,10 +528,6 @@ def select_data(e: EntityProxy, prefix: str) -> StrGenerator:
     for text in e.get("indexText"):
         if text.startswith(prefix):
             yield text.replace(prefix, "").strip()
-
-
-SELECT_SYMBOLS = "__symbols__"
-SELECT_ANNOTATED = "__annotated__"
 
 
 def select_symbols(e: EntityProxy) -> set[str]:

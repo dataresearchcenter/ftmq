@@ -1,5 +1,5 @@
 import pytest
-from followthemoney import EntityProxy, StatementEntity, model
+from followthemoney import StatementEntity, model
 
 from ftmq.io import make_entity
 from ftmq.query import Query

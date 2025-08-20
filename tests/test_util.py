@@ -3,7 +3,7 @@ from datetime import datetime
 
 import cloudpickle
 import pytest
-from followthemoney import DefaultDataset, model
+from followthemoney import DefaultDataset, EntityProxy, model
 from followthemoney.dataset import Dataset
 from followthemoney.entity import ValueEntity
 from followthemoney.statement.entity import StatementEntity
@@ -192,4 +192,48 @@ def test_util_symbols():
         {"id": "j", "schema": "Person", "properties": {"name": ["Jane Doe"]}}
     )
     symbols = util.get_symbols(entity)
-    assert "1682564" in symbols
+    assert "[NAME:1682564]" in symbols
+    entity = util.make_entity(
+        {
+            "id": "Q1234",
+            "schema": "Company",
+            "properties": {
+                "name": ["Gazprom Bank OOO"],
+            },
+        }
+    )
+    symbols = util.get_symbols(entity)
+    assert "[ORGCLS:LLC]" in symbols
+    assert "[SYMBOL:BANK]" in symbols
+
+    entity.add("indexText", "foo")
+    util.inline_symbols(entity)
+    symbols = util.select_symbols(entity)
+    assert "[ORGCLS:LLC]" in symbols
+    assert "[SYMBOL:BANK]" in symbols
+    assert "foo" in entity.get("indexText")
+
+
+def test_util_make_entity():
+    entity = util.make_entity(
+        {"id": "j", "schema": "Person", "properties": {"name": ["Jane Doe"]}}
+    )
+    assert entity.__class__ == ValueEntity
+    assert entity.to_dict()
+    assert entity.to_full_dict()
+
+    entity = util.make_entity(
+        {"id": "j", "schema": "Person", "properties": {"name": ["Jane Doe"]}},
+        EntityProxy,
+    )
+    assert entity.__class__ == EntityProxy
+    assert entity.to_dict()
+    assert entity.to_full_dict()
+
+    entity = util.make_entity(
+        {"id": "j", "schema": "Person", "properties": {"name": ["Jane Doe"]}},
+        StatementEntity,
+    )
+    assert entity.__class__ == StatementEntity
+    assert entity.to_dict()
+    assert entity.to_full_dict()
