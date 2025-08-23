@@ -50,9 +50,12 @@ class BulkLoader(object):
         else:
             entity = dict(entity)
         id_ = entity.pop("id")
-        self.buffer[(id_, origin, fragment)] = entity
-        if len(self.buffer) >= self.size:
-            self.flush()
+        if id_:
+            self.buffer[(id_, origin, fragment)] = entity
+            if len(self.buffer) >= self.size:
+                self.flush()
+        else:
+            log.warning("Entity has no ID!")
 
     def _store_values(self, conn, values):
         table = self.dataset.table
