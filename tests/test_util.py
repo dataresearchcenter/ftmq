@@ -191,7 +191,7 @@ def test_util_symbols():
     entity = util.make_entity(
         {"id": "j", "schema": "Person", "properties": {"name": ["Jane Doe"]}}
     )
-    symbols = util.get_symbols(entity)
+    symbols = map(str, util.get_symbols(entity))
     assert "[NAME:1682564]" in symbols
     entity = util.make_entity(
         {
@@ -202,13 +202,13 @@ def test_util_symbols():
             },
         }
     )
-    symbols = util.get_symbols(entity)
+    symbols = list(map(str, util.get_symbols(entity)))
     assert "[ORGCLS:LLC]" in symbols
     assert "[SYMBOL:BANK]" in symbols
 
     entity.add("indexText", "foo")
     util.inline_symbols(entity)
-    symbols = util.select_symbols(entity)
+    symbols = list(map(str, util.select_symbols(entity)))
     assert "[ORGCLS:LLC]" in symbols
     assert "[SYMBOL:BANK]" in symbols
     assert "foo" in entity.get("indexText")

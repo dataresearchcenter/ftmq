@@ -14,7 +14,7 @@ from followthemoney.schema import Schema
 from followthemoney.types import registry
 from followthemoney.util import make_entity_id, sanitize_text
 from normality import collapse_spaces, latinize_text, slugify
-from rigour.names import Name, tag_org_name, tag_person_name
+from rigour.names import Name, Symbol, tag_org_name, tag_person_name
 from rigour.names.tokenize import normalize_name
 from rigour.text.scripts import can_latinize
 
@@ -489,28 +489,31 @@ SELECT_SYMBOLS = "__symbols__"
 SELECT_ANNOTATED = "__annotated__"
 
 
-def get_name_symbols(schema: Schema, names: list[str]) -> set[str]:
+def get_name_symbols(schema: Schema, *names: str) -> set[Symbol]:
     """Get the rigour names symbols for the given schema and list of names"""
-    symbols: set[str] = set()
+    symbols: set[Symbol] = set()
     if schema.is_a("Person"):
-        tagger = tag_person_name
+        taggers = [tag_person_name]
     elif schema.is_a("Organization"):
-        tagger = tag_org_name
+        taggers = [tag_org_name]
+    elif schema.is_a("LegalEntity"):
+        taggers = [tag_org_name, tag_person_name]
     else:
         return symbols
     for name in names:
         n = Name(name)
-        for symbol in tagger(n, normalize_name).symbols:
-            symbols.add(str(symbol))
+        for tagger in taggers:
+            for symbol in tagger(n, normalize_name).symbols:
+                symbols.add(symbol)
     return symbols
 
 
-def get_symbols(entity: EntityProxy) -> set[str]:
+def get_symbols(entity: EntityProxy) -> set[Symbol]:
     """Get the rigour names symbols for the given entity"""
     if not entity.schema.is_a("LegalEntity"):
         return set()
     names = entity.get_type_values(registry.name, matchable=True)
-    return get_name_symbols(entity.schema, names)
+    return get_name_symbols(entity.schema, *names)
 
 
 def inline_symbols(entity: EntityProxy) -> None:
@@ -520,7 +523,7 @@ def inline_symbols(entity: EntityProxy) -> None:
         if not text.startswith(SELECT_SYMBOLS):
             entity.add("indexText", text)
     symbols = get_symbols(entity)
-    entity.add("indexText", f"{SELECT_SYMBOLS} {','.join(symbols)}")
+    entity.add("indexText", f"{SELECT_SYMBOLS} {','.join(map(str, symbols))}")
 
 
 def select_data(e: EntityProxy, prefix: str) -> StrGenerator:
@@ -540,7 +543,4 @@ def select_symbols(e: EntityProxy) -> set[str]:
 
 def select_annotations(e: EntityProxy) -> set[str]:
     """Select stored annotations in `indexText`"""
-    symbols: set[str] = set()
-    for data in select_data(e, SELECT_ANNOTATED):
-        symbols.update(data.split(","))
-    return symbols
+    return {s for s in select_data(e, SELECT_ANNOTATED)}
