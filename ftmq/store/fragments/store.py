@@ -37,7 +37,17 @@ class Store(object):
         **config,
     ):
         self.database_uri = self._adjust_psycopg3_uri(database_uri)
-        # config.setdefault('pool_size', 1)
+
+        # Configure connection pooling for psycopg3
+        if self.database_uri.startswith("postgresql+psycopg://"):
+            config.setdefault("pool_size", 10)
+            config.setdefault("max_overflow", 20)
+            config.setdefault("pool_timeout", 30)
+            config.setdefault("pool_recycle", 3600)
+            config.setdefault("pool_pre_ping", True)
+        else:
+            config.setdefault("pool_size", 5)
+
         self.engine = create_engine(self.database_uri, future=True, **config)
         self.is_postgres = self.engine.dialect.name == "postgresql"
         self.meta = MetaData()
