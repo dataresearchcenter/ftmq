@@ -26,11 +26,16 @@ EXCEPTIONS = (
     TimeoutError,
 )
 try:
-    from psycopg2 import DatabaseError, OperationalError
+    from psycopg import DatabaseError, OperationalError
 
     EXCEPTIONS = (DatabaseError, OperationalError, *EXCEPTIONS)
 except ImportError:
-    pass
+    try:
+        from psycopg2 import DatabaseError, OperationalError
+
+        EXCEPTIONS = (DatabaseError, OperationalError, *EXCEPTIONS)
+    except ImportError:
+        pass
 
 log = logging.getLogger(__name__)
 

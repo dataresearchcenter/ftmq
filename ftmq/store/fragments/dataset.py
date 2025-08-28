@@ -28,11 +28,16 @@ from ftmq.util import make_dataset
 log = logging.getLogger(__name__)
 UNDEFINED = (OperationalError,)
 try:
-    from psycopg2.errors import UndefinedTable
+    from psycopg.errors import UndefinedTable
 
     UNDEFINED = (UndefinedTable, *UNDEFINED)
 except ImportError:
-    pass
+    try:
+        from psycopg2.errors import UndefinedTable
+
+        UNDEFINED = (UndefinedTable, *UNDEFINED)
+    except ImportError:
+        pass
 
 
 EntityFragments: TypeAlias = Generator[EntityProxy, None, None]

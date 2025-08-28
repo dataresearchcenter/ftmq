@@ -11,14 +11,34 @@ class Store(object):
 
     PREFIX = "ftm"
 
+    def _adjust_psycopg3_uri(self, database_uri: str) -> str:
+        """Adjust PostgreSQL URI to use psycopg3 dialect if psycopg is available."""
+        if database_uri.startswith(("postgresql://", "postgres://")):
+            try:
+                import psycopg  # noqa: F401
+
+                # Use psycopg3 dialect for better performance and compatibility
+                if database_uri.startswith("postgresql://"):
+                    return database_uri.replace(
+                        "postgresql://", "postgresql+psycopg://", 1
+                    )
+                elif database_uri.startswith("postgres://"):
+                    return database_uri.replace(
+                        "postgres://", "postgresql+psycopg://", 1
+                    )
+            except ImportError:
+                # Fall back to psycopg2 if psycopg3 is not available
+                pass
+        return database_uri
+
     def __init__(
         self,
         database_uri: str,
         **config,
     ):
-        self.database_uri = database_uri
+        self.database_uri = self._adjust_psycopg3_uri(database_uri)
         # config.setdefault('pool_size', 1)
-        self.engine = create_engine(database_uri, future=True, **config)
+        self.engine = create_engine(self.database_uri, future=True, **config)
         self.is_postgres = self.engine.dialect.name == "postgresql"
         self.meta = MetaData()
 
