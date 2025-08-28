@@ -528,7 +528,7 @@ def inline_symbols(entity: EntityProxy) -> None:
 
 def select_data(e: EntityProxy, prefix: str) -> StrGenerator:
     """Select arbitrary stored data in `indexText` identified by given prefix"""
-    for text in e.get("indexText"):
+    for text in e.get("indexText", quiet=True):
         if text.startswith(prefix):
             yield text.replace(prefix, "").strip()
 

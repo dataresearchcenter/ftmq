@@ -213,6 +213,10 @@ def test_util_symbols():
     assert "[SYMBOL:BANK]" in symbols
     assert "foo" in entity.get("indexText")
 
+    # no symbols for e.g. mention entity (invalid indexText prop)
+    entity = util.make_entity({"id": "m1", "schema": "Mention"})
+    assert util.select_symbols(entity) == set()
+
 
 def test_util_make_entity():
     entity = util.make_entity(
