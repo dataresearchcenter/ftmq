@@ -39,9 +39,9 @@ class Store(object):
         self.database_uri = self._adjust_psycopg3_uri(database_uri)
 
         # Configure connection pooling for psycopg3
-        config.setdefault("pool_size", 5)
+        config.setdefault("pool_size", 1)
         if self.database_uri.startswith("postgresql+psycopg://"):
-            config.setdefault("max_overflow", 10)
+            config.setdefault("max_overflow", 5)
             config.setdefault("pool_timeout", 60)
             config.setdefault("pool_recycle", 3600)
             config.setdefault("pool_pre_ping", True)
