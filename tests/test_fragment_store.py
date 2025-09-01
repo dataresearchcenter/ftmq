@@ -23,6 +23,13 @@ def test_fragment_store_settings(monkeypatch):
     assert dataset.store.database_uri == uri.replace("postgresql", "postgresql+psycopg")
     assert dataset.store.is_postgres
 
+    get_fragments.cache_clear()
+    uri = "sqlite:///:memory:"
+    monkeypatch.setenv("FTM_FRAGMENTS_URI", uri)
+    dataset = get_fragments("test")
+    assert dataset.store.database_uri == "sqlite:///:memory:"
+    assert not dataset.store.is_postgres
+
 
 def test_fragment_store_postgres():
     uri = os.environ.get("TESTING_FRAGMENTS_PSQL_URI")
