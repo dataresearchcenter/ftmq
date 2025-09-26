@@ -7,6 +7,7 @@ from ftmq.store.fragments import get_fragments
 
 
 def test_fragment_store_settings(monkeypatch):
+    get_fragments.cache_clear()
     dataset = get_fragments("test")
     assert dataset.store.database_uri == "sqlite:///ftm_fragments.db"  # default
 

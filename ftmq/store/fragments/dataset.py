@@ -1,4 +1,5 @@
 import logging
+from contextlib import contextmanager
 from datetime import datetime
 from typing import Generator, Iterable, TypeAlias
 
@@ -9,6 +10,7 @@ from normality import slugify
 from sqlalchemy import (
     JSON,
     Column,
+    Connection,
     DateTime,
     String,
     Table,
@@ -41,6 +43,27 @@ except ImportError:
 
 
 EntityFragments: TypeAlias = Generator[EntityProxy, None, None]
+
+
+@contextmanager
+def disable_timeout(conn: Connection, store):
+    # for long running iterations (e.g. re-index in OpenAleph), for postgres we
+    # don't want to get cancelled if a idle_in_transaction_timeout is configured
+    # on the server
+    if store.is_postgres:
+        raw_conn = conn.connection.driver_connection
+        with raw_conn.cursor() as cursor:
+            cursor.execute("SET idle_in_transaction_session_timeout = 0")
+    try:
+        yield conn
+    finally:
+        if store.is_postgres:
+            try:
+                raw_conn = conn.connection.driver_connection
+                with raw_conn.cursor() as cursor:
+                    cursor.execute("SET idle_in_transaction_session_timeout = DEFAULT")
+            except Exception:
+                pass  # Connection might be closed
 
 
 class Fragments(object):
@@ -123,12 +146,13 @@ class Fragments(object):
         # stmt = stmt.order_by(self.table.c.fragment)
         conn = self.store.engine.connect()
         try:
-            conn = conn.execution_options(stream_results=True)
-            for ent in conn.execute(stmt):
-                data = {"id": ent.id, "datasets": [self.name], **ent.entity}
-                if ent.origin != NULL_ORIGIN:
-                    data["origin"] = ent.origin
-                yield data
+            with disable_timeout(conn, self.store) as conn:
+                conn = conn.execution_options(stream_results=True)
+                for ent in conn.execute(stmt):
+                    data = {"id": ent.id, "datasets": [self.name], **ent.entity}
+                    if ent.origin != NULL_ORIGIN:
+                        data["origin"] = ent.origin
+                    yield data
         except Exception:
             self.reset()
             raise
