@@ -230,7 +230,7 @@ class Fragments(object):
         last_id = None
         while True:
             conn = self.store.engine.connect()
-            stmt = self.table.select().distinct(self.table.c.id)
+            stmt = select(self.table.c.id).distinct()
             if last_id is not None:
                 stmt = stmt.where(self.table.c.id > last_id)
             stmt = stmt.order_by(self.table.c.id).limit(batch_size)
