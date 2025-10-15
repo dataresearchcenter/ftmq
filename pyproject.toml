@@ -33,9 +33,9 @@ sql = ["sqlalchemy (>=2.0.36,<3.0.0)"]
 postgres = ["sqlalchemy (>=2.0.36,<3.0.0)", "psycopg[pool] (>=3.2.9,<4.0.0)"]
 redis = ["redis (>=5.2.1,<6.0.0)", "fakeredis (>=2.26.2,<3.0.0)"]
 lake = [
-    "duckdb (>=1.4.0,<2.0.0)",
-    "pandas (>=2.3.2,<3.0.0)",
-    "deltalake (>=1.1.4,<2.0.0)",
+    "duckdb (>=1.4.1,<2.0.0)",
+    "pandas (>=2.3.3,<3.0.0)",
+    "deltalake (>=1.2.0,<2.0.0)",
     "pyarrow (>=21.0.0,<22.0.0)",
 ]
 aleph = ["furl (>=2.1.4,<3.0.0)", "alephclient (>=2.6.0,<3.0.0)"]
