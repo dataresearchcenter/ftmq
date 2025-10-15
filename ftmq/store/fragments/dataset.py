@@ -18,6 +18,7 @@ from sqlalchemy import (
     distinct,
     func,
     select,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import OperationalError
@@ -95,6 +96,14 @@ class Fragments(object):
         self._table.create(bind=self.store.engine, checkfirst=True)
         return self._table
 
+    @property
+    def count_estimate(self) -> int:
+        if self.store.is_postgres:
+            stmt = text("SELECT reltuples::bigint FROM pg_class WHERE relname=:t")
+            with self.store.engine.connect() as conn:
+                return conn.execute(stmt, {"t": self.table.name}).scalar()
+        return 0
+
     def reset(self):
         self._table = None
 
@@ -170,6 +179,13 @@ class Fragments(object):
                 raise
 
     def iterate(self, entity_id=None, skip_errors=False) -> EntityFragments:
+        if entity_id is None and self.count_estimate > 1_000_000:
+            log.info(
+                "Using batched iteration as dataset contains "
+                f"estimated {self.count_estimate} rows."
+            )
+            yield from self.iterate_batched()
+            return
         entity = None
         invalid = None
         fragments = 1
@@ -204,6 +220,33 @@ class Fragments(object):
             fragments = 1
         if entity is not None:
             yield entity
+
+    def iterate_batched(self, skip_errors=False, batch_size=10_000) -> EntityFragments:
+        """
+        This is another approach to iterate through the complete dataset when it
+        has e.g. >500 mio fragment rows where the overall sort is not feasible
+        within postgres.
+        """
+        last_id = None
+        while True:
+            conn = self.store.engine.connect()
+            stmt = self.table.select().distinct(self.table.c.id)
+            if last_id is not None:
+                stmt = stmt.where(self.table.c.id > last_id)
+            stmt = stmt.order_by(self.table.c.id).limit(batch_size)
+            try:
+                res = conn.execute(stmt)
+                entity_ids = [r.id for r in res.fetchall()]
+                if not entity_ids:
+                    conn.close()
+                    return
+                yield from self.iterate(entity_id=entity_ids, skip_errors=skip_errors)
+                last_id = entity_ids[-1]
+            except Exception:
+                self.reset()
+                raise
+            finally:
+                conn.close()
 
     def statements(
         self,
