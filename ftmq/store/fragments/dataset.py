@@ -227,26 +227,33 @@ class Fragments(object):
         has e.g. >500 mio fragment rows where the overall sort is not feasible
         within postgres.
         """
+        for entity_ids in self.get_sorted_id_batches(batch_size):
+            yield from self.iterate(entity_id=entity_ids, skip_errors=skip_errors)
+
+    def get_sorted_id_batches(
+        self, batch_size=10_000
+    ) -> Generator[list[int], None, None]:
+        """
+        Get sorted ID batches, useful to parallelize processing of iterator Entities
+        """
         last_id = None
-        while True:
-            conn = self.store.engine.connect()
-            stmt = select(self.table.c.id).distinct()
-            if last_id is not None:
-                stmt = stmt.where(self.table.c.id > last_id)
-            stmt = stmt.order_by(self.table.c.id).limit(batch_size)
-            try:
-                res = conn.execute(stmt)
-                entity_ids = [r.id for r in res.fetchall()]
-                if not entity_ids:
-                    conn.close()
-                    return
-                yield from self.iterate(entity_id=entity_ids, skip_errors=skip_errors)
-                last_id = entity_ids[-1]
-            except Exception:
-                self.reset()
-                raise
-            finally:
-                conn.close()
+        with self.store.engine.connect() as conn:
+            while True:
+                stmt = select(self.table.c.id).distinct()
+                if last_id is not None:
+                    stmt = stmt.where(self.table.c.id > last_id)
+                stmt = stmt.order_by(self.table.c.id).limit(batch_size)
+                try:
+                    res = conn.execute(stmt)
+                    entity_ids = [r.id for r in res.fetchall()]
+                    if not entity_ids:
+                        conn.close()
+                        return
+                    yield entity_ids
+                    last_id = entity_ids[-1]
+                except Exception:
+                    self.reset()
+                    raise
 
     def statements(
         self,

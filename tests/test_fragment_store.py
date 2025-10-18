@@ -82,6 +82,7 @@ def test_fragment_store_postgres():
     assert len(list(dataset.fragments(entity_ids="key1"))) == 2
 
     assert len(list(dataset.iterate_batched(batch_size=2))) == 3
+    assert next(dataset.get_sorted_id_batches()) == ["key1", "key2", "key3"]
 
     entity = dataset.get("key3")
     assert entity.context.get("origin") == "test_o"
@@ -126,6 +127,7 @@ def test_fragment_store_sqlite():
     assert len(dataset.store) == 1
 
     assert len(list(dataset.iterate_batched(batch_size=2))) == 3
+    assert next(dataset.get_sorted_id_batches()) == ["key1", "key2", "key3"]
 
     entity = dataset.get("key3")
     assert entity.context.get("origin") == "test_o"
