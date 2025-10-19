@@ -18,7 +18,6 @@ from sqlalchemy import (
     distinct,
     func,
     select,
-    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import OperationalError
@@ -96,14 +95,6 @@ class Fragments(object):
         self._table.create(bind=self.store.engine, checkfirst=True)
         return self._table
 
-    @property
-    def count_estimate(self) -> int:
-        if self.store.is_postgres:
-            stmt = text("SELECT reltuples::bigint FROM pg_class WHERE relname=:t")
-            with self.store.engine.connect() as conn:
-                return conn.execute(stmt, {"t": self.table.name}).scalar()
-        return 0
-
     def reset(self):
         self._table = None
 
@@ -179,11 +170,8 @@ class Fragments(object):
                 raise
 
     def iterate(self, entity_id=None, skip_errors=False) -> EntityFragments:
-        if entity_id is None and self.count_estimate > 1_000_000:
-            log.info(
-                "Using batched iteration as dataset contains "
-                f"estimated {self.count_estimate} rows."
-            )
+        if entity_id is None:
+            log.info("Using batched iteration for complete dataset.")
             yield from self.iterate_batched()
             return
         entity = None
@@ -223,9 +211,8 @@ class Fragments(object):
 
     def iterate_batched(self, skip_errors=False, batch_size=10_000) -> EntityFragments:
         """
-        This is another approach to iterate through the complete dataset when it
-        has e.g. >500 mio fragment rows where the overall sort is not feasible
-        within postgres.
+        For large datasets an overall sort is not feasible, so we iterate in
+        sorted batched IDs.
         """
         for entity_ids in self.get_sorted_id_batches(batch_size):
             yield from self.iterate(entity_id=entity_ids, skip_errors=skip_errors)
@@ -234,7 +221,8 @@ class Fragments(object):
         self, batch_size=10_000
     ) -> Generator[list[str], None, None]:
         """
-        Get sorted ID batches, useful to parallelize processing of iterator Entities
+        Get sorted ID batches to speed up iteration and useful to parallelize
+        processing of iterator Entities
         """
         last_id = None
         with self.store.engine.connect() as conn:
@@ -247,7 +235,6 @@ class Fragments(object):
                     res = conn.execute(stmt)
                     entity_ids = [r.id for r in res.fetchall()]
                     if not entity_ids:
-                        conn.close()
                         return
                     yield entity_ids
                     last_id = entity_ids[-1]
