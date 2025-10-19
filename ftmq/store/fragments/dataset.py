@@ -232,7 +232,7 @@ class Fragments(object):
 
     def get_sorted_id_batches(
         self, batch_size=10_000
-    ) -> Generator[list[int], None, None]:
+    ) -> Generator[list[str], None, None]:
         """
         Get sorted ID batches, useful to parallelize processing of iterator Entities
         """
