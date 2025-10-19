@@ -11,6 +11,9 @@ from ftmq.model.dataset import Catalog, Dataset
 from ftmq.model.stats import Collector
 from ftmq.query import Query
 from ftmq.store import get_store
+from ftmq.store.fragments import get_fragments
+from ftmq.store.fragments import get_store as get_fragments_store
+from ftmq.store.fragments.settings import Settings as FragmentsSettings
 from ftmq.util import apply_dataset, parse_unknown_filters
 
 log = get_logger(__name__)
@@ -309,6 +312,61 @@ def store_iterate(
     """
     store = get_store(input_uri)
     smart_write_proxies(output_uri, store.iterate())
+
+
+@cli.group()
+def fragments():
+    pass
+
+
+fragments_settings = FragmentsSettings()
+
+
+@fragments.command("list-datasets")
+@click.option(
+    "-i",
+    "--input-uri",
+    default=fragments_settings.database_uri,
+    show_default=True,
+    help="input file or uri",
+)
+@click.option(
+    "-o", "--output-uri", default="-", show_default=True, help="output file or uri"
+)
+def fragments_list_datasets(
+    input_uri: str = fragments_settings.database_uri,
+    output_uri: str = "-",
+):
+    """
+    List datasets within a fragments store
+    """
+    store = get_fragments_store(input_uri)
+    datasets = [ds.name for ds in store.all()]
+    smart_write(output_uri, "\n".join(datasets).encode() + b"\n")
+
+
+@fragments.command("iterate")
+@click.option(
+    "-i",
+    "--input-uri",
+    default=fragments_settings.database_uri,
+    show_default=True,
+    help="fragments store input uri",
+)
+@click.option(
+    "-o", "--output-uri", default="-", show_default=True, help="output file or uri"
+)
+@click.option("-d", "--dataset", required=True, help="Dataset name to iterate")
+def fragments_iterate(
+    input_uri: str = fragments_settings.database_uri,
+    output_uri: str = "-",
+    dataset: str = None,
+):
+    """
+    Iterate all entities from a fragments dataset
+    """
+    fragments = get_fragments(dataset, database_uri=input_uri)
+    smart_write_proxies(output_uri, fragments.iterate())
 
 
 @cli.command("aggregate")
