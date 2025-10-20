@@ -1152,13 +1152,13 @@ pyflakes = ">=3.4.0,<3.5.0"
 
 [[package]]
 name = "followthemoney"
-version = "4.2.2"
+version = "4.3.0"
 description = "A data model for anti corruption data modeling and analysis."
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "followthemoney-4.2.2-py3-none-any.whl", hash = "sha256:8277a90cbbf566b2f7e63883d50ba5a6f1ab247c94c899b69deee219709df825"},
+    {file = "followthemoney-4.3.0-py3-none-any.whl", hash = "sha256:cc5c0d8957d4383dbaca6a88a1afd3e90f6bec19dd2611156618a78529209691"},
 ]
 
 [package.dependencies]
@@ -1174,9 +1174,9 @@ prefixdate = ">=0.5.0,<1.0.0"
 pydantic = ">=2.11.0,<3.0.0"
 pytz = ">=2021.1"
 pyyaml = ">=5.0.0,<7.0.0"
-rdflib = ">=6.2.0,<7.2.0"
+rdflib = ">=6.2.0,<7.3.0"
 requests = ">=2.21.0,<3.0.0"
-rigour = ">=1.3.1,<2.0.0"
+rigour = ">=1.3.13,<2.0.0"
 sqlalchemy = {version = ">=2.0.0,<3.0.0", extras = ["mypy"]}
 
 [package.extras]
@@ -4297,13 +4297,13 @@ jupyter = ["ipywidgets (>=7.5.1,<9)"]
 
 [[package]]
 name = "rigour"
-version = "1.3.11"
+version = "1.3.13"
 description = "Financial crime domain data validation and normalization library."
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "rigour-1.3.11-py3-none-any.whl", hash = "sha256:299cb8ac588ba25c5244269d5be36f90363026e59e96f64ddeb9f288b1510968"},
+    {file = "rigour-1.3.13-py3-none-any.whl", hash = "sha256:f2cf59f9b46b0ec0a1e220cddcd555deaf52547f253f0a71c0877fb279f1ea81"},
 ]
 
 [package.dependencies]
@@ -5185,4 +5185,4 @@ sql = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<4"
-content-hash = "ee83564038db3e89b761b6239c23dd3ef8b2a7bc598435385d2979dca32b496b"
+content-hash = "604889b9b29e837c503882b40f78f5c52e5eeaf9a16465adc6a04a190f370c63"
