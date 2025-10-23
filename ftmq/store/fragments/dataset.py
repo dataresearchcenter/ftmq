@@ -184,7 +184,7 @@ class Fragments(object):
                 if entity.id == partial.id:
                     fragments += 1
                     if fragments % 10000 == 0:
-                        log.debug(
+                        log.warning(
                             "[%s:%s] aggregated %d fragments...",
                             entity.schema.name,
                             entity.id,
