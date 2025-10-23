@@ -132,7 +132,7 @@ class Fragments(object):
     def bulk(self, size=1000):
         return BulkLoader(self, size)
 
-    def fragments(self, entity_ids=None, fragment=None):
+    def fragments(self, entity_ids=None, fragment=None, schema=None):
         stmt = self.table.select()
         entity_ids = ensure_list(entity_ids)
         if len(entity_ids) == 1:
@@ -141,6 +141,14 @@ class Fragments(object):
             stmt = stmt.where(self.table.c.id.in_(entity_ids))
         if fragment is not None:
             stmt = stmt.where(self.table.c.fragment == fragment)
+        if schema is not None:
+            if self.store.is_postgres:
+                stmt = stmt.where(self.table.c.entity["schema"].astext == schema)
+            else:
+                # SQLite JSON support - use json_extract function
+                stmt = stmt.where(
+                    func.json_extract(self.table.c.entity, "$.schema") == schema
+                )
         stmt = stmt.order_by(self.table.c.id)
         # stmt = stmt.order_by(self.table.c.origin)
         # stmt = stmt.order_by(self.table.c.fragment)
@@ -159,8 +167,10 @@ class Fragments(object):
         finally:
             conn.close()
 
-    def partials(self, entity_id=None, skip_errors=False) -> EntityFragments:
-        for fragment in self.fragments(entity_ids=entity_id):
+    def partials(
+        self, entity_id=None, skip_errors=False, schema=None
+    ) -> EntityFragments:
+        for fragment in self.fragments(entity_ids=entity_id, schema=schema):
             try:
                 yield EntityProxy.from_dict(fragment, cleaned=True)
             except Exception:
@@ -169,15 +179,19 @@ class Fragments(object):
                     continue
                 raise
 
-    def iterate(self, entity_id=None, skip_errors=False) -> EntityFragments:
+    def iterate(
+        self, entity_id=None, skip_errors=False, schema=None
+    ) -> EntityFragments:
         if entity_id is None:
             log.info("Using batched iteration for complete dataset.")
-            yield from self.iterate_batched()
+            yield from self.iterate_batched(skip_errors=skip_errors, schema=schema)
             return
         entity = None
         invalid = None
         fragments = 1
-        for partial in self.partials(entity_id=entity_id, skip_errors=skip_errors):
+        for partial in self.partials(
+            entity_id=entity_id, skip_errors=skip_errors, schema=schema
+        ):
             if partial.id == invalid:
                 continue
             if entity is not None:
@@ -209,16 +223,20 @@ class Fragments(object):
         if entity is not None:
             yield entity
 
-    def iterate_batched(self, skip_errors=False, batch_size=10_000) -> EntityFragments:
+    def iterate_batched(
+        self, skip_errors=False, batch_size=10_000, schema=None
+    ) -> EntityFragments:
         """
         For large datasets an overall sort is not feasible, so we iterate in
         sorted batched IDs.
         """
-        for entity_ids in self.get_sorted_id_batches(batch_size):
-            yield from self.iterate(entity_id=entity_ids, skip_errors=skip_errors)
+        for entity_ids in self.get_sorted_id_batches(batch_size, schema=schema):
+            yield from self.iterate(
+                entity_id=entity_ids, skip_errors=skip_errors, schema=schema
+            )
 
     def get_sorted_id_batches(
-        self, batch_size=10_000
+        self, batch_size=10_000, schema=None
     ) -> Generator[list[str], None, None]:
         """
         Get sorted ID batches to speed up iteration and useful to parallelize
@@ -230,6 +248,16 @@ class Fragments(object):
                 stmt = select(self.table.c.id).distinct()
                 if last_id is not None:
                     stmt = stmt.where(self.table.c.id > last_id)
+                if schema is not None:
+                    if self.store.is_postgres:
+                        stmt = stmt.where(
+                            self.table.c.entity["schema"].astext == schema
+                        )
+                    else:
+                        # SQLite JSON support - use json_extract function
+                        stmt = stmt.where(
+                            func.json_extract(self.table.c.entity, "$.schema") == schema
+                        )
                 stmt = stmt.order_by(self.table.c.id).limit(batch_size)
                 try:
                     res = conn.execute(stmt)
@@ -241,6 +269,13 @@ class Fragments(object):
                 except Exception:
                     self.reset()
                     raise
+
+    def get_sorted_ids(
+        self, batch_size=10_000, schema=None
+    ) -> Generator[str, None, None]:
+        """Get sorted IDs, optionally filtered by schema"""
+        for batch in self.get_sorted_id_batches(batch_size, schema):
+            yield from batch
 
     def statements(
         self,

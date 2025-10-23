@@ -70,6 +70,15 @@ def test_fragment_store_postgres():
     both = ["key1", "key3"]
     assert len(list(dataset.iterate(entity_id=both))) == 2
 
+    # Test schema filtering
+    # Note: schema filtering works at the fragment level
+    assert len(list(dataset.iterate(schema="Person"))) == 3
+    assert len(list(dataset.iterate(schema="LegalEntity"))) == 1
+    person_entities = list(dataset.iterate(schema="Person"))
+    assert all(e.schema.name == "Person" for e in person_entities)
+    legal_entities = list(dataset.iterate(schema="LegalEntity"))
+    assert all(e.schema.name == "LegalEntity" for e in legal_entities)
+
     dataset.delete(entity_id="key1")
     assert len(list(dataset.iterate(entity_id="key1"))) == 0
 
@@ -125,6 +134,15 @@ def test_fragment_store_sqlite():
     assert len(list(dataset.iterate(entity_id="key1"))) == 1
     assert len(list(dataset.iterate(entity_id="key3"))) == 1
     assert len(dataset.store) == 1
+
+    # Test schema filtering
+    # Note: schema filtering works at the fragment level
+    assert len(list(dataset.iterate(schema="Person"))) == 3
+    assert len(list(dataset.iterate(schema="LegalEntity"))) == 1
+    person_entities = list(dataset.iterate(schema="Person"))
+    assert all(e.schema.name == "Person" for e in person_entities)
+    legal_entities = list(dataset.iterate(schema="LegalEntity"))
+    assert all(e.schema.name == "LegalEntity" for e in legal_entities)
 
     assert len(list(dataset.iterate_batched(batch_size=2))) == 3
     assert next(dataset.get_sorted_id_batches()) == ["key1", "key2", "key3"]
