@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import click
 from anystore.io import smart_write, smart_write_json, smart_write_model
 from click_default_group import DefaultGroup
@@ -357,16 +359,37 @@ def fragments_list_datasets(
     "-o", "--output-uri", default="-", show_default=True, help="output file or uri"
 )
 @click.option("-d", "--dataset", required=True, help="Dataset name to iterate")
+@click.option("-s", "--schema", default=None, help="Filter by schema")
+@click.option(
+    "--since",
+    default=None,
+    help="Filter by timestamp (since), ISO format: YYYY-MM-DDTHH:MM:SS",
+)
+@click.option(
+    "--until",
+    default=None,
+    help="Filter by timestamp (until), ISO format: YYYY-MM-DDTHH:MM:SS",
+)
 def fragments_iterate(
     input_uri: str = fragments_settings.database_uri,
     output_uri: str = "-",
     dataset: str = None,
+    schema: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
 ):
     """
     Iterate all entities from a fragments dataset
     """
     fragments = get_fragments(dataset, database_uri=input_uri)
-    smart_write_proxies(output_uri, fragments.iterate())
+
+    # Parse timestamp strings to datetime objects
+    since_dt = datetime.fromisoformat(since) if since else None
+    until_dt = datetime.fromisoformat(until) if until else None
+
+    smart_write_proxies(
+        output_uri, fragments.iterate(schema=schema, since=since_dt, until=until_dt)
+    )
 
 
 @cli.command("aggregate")
