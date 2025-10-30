@@ -1,4 +1,6 @@
 import os
+import time
+from datetime import datetime, timedelta
 
 import pytest
 from followthemoney import EntityProxy
@@ -150,6 +152,174 @@ def test_fragment_store_sqlite():
     entity = dataset.get("key3")
     assert entity.context.get("origin") == "test_o"
     assert entity.to_dict()["origin"] == "test_o"
+
+    dataset.drop()
+    dataset.store.close()
+
+
+def test_fragment_store_timestamp_filter_sqlite():
+    """Test timestamp filtering with since and until parameters"""
+    uri = "sqlite://"
+    dataset = get_fragments("test_timestamp", database_uri=uri)
+    dataset.drop()  # Clean slate
+
+    # Record timestamps for filtering
+    before = datetime.utcnow()
+    time.sleep(0.01)  # Small delay to ensure timestamp differences
+
+    # Add first entity
+    entity1 = {"id": "key1", "schema": "Person", "properties": {"name": ["First"]}}
+    dataset.put(entity1)
+
+    time.sleep(0.01)
+    middle = datetime.utcnow()
+    time.sleep(0.01)
+
+    # Add second entity
+    entity2 = {"id": "key2", "schema": "Person", "properties": {"name": ["Second"]}}
+    dataset.put(entity2)
+
+    time.sleep(0.01)
+    after = datetime.utcnow()
+
+    # Test: no filters should return all entities
+    assert len(list(dataset.iterate())) == 2
+
+    # Test: since filter (only get entity2)
+    entities_since = list(dataset.iterate(since=middle))
+    assert len(entities_since) == 1
+    assert entities_since[0].id == "key2"
+
+    # Test: until filter (only get entity1)
+    entities_until = list(dataset.iterate(until=middle))
+    assert len(entities_until) == 1
+    assert entities_until[0].id == "key1"
+
+    # Test: both since and until (get entities in middle range)
+    entities_range = list(dataset.iterate(since=before, until=after))
+    assert len(entities_range) == 2
+
+    # Test: range that excludes everything
+    entities_empty = list(dataset.iterate(since=after, until=after))
+    assert len(entities_empty) == 0
+
+    # Test: fragments() method with timestamp filters
+    fragments_since = list(dataset.fragments(since=middle))
+    assert len(fragments_since) == 1
+    assert fragments_since[0]["id"] == "key2"
+
+    # Test: partials() method with timestamp filters
+    partials_until = list(dataset.partials(since=middle))
+    assert len(partials_until) == 1
+    assert partials_until[0].id == "key2"
+
+    # Test: iterate_batched() with timestamp filters
+    batched_since = list(dataset.iterate_batched(batch_size=1, since=middle))
+    assert len(batched_since) == 1
+    assert batched_since[0].id == "key2"
+
+    # Test: get_sorted_id_batches() with timestamp filters
+    id_batches = list(dataset.get_sorted_id_batches(batch_size=10, since=middle))
+    assert len(id_batches) == 1
+    assert id_batches[0] == ["key2"]
+
+    # Test: get_sorted_ids() with timestamp filters
+    sorted_ids = list(dataset.get_sorted_ids(since=middle))
+    assert sorted_ids == ["key2"]
+
+    # Test: statements() method with until filter
+    statements_until = list(dataset.statements(until=middle))
+    entity1_statements = [s for s in statements_until if s.entity_id == "key1"]
+    assert len(entity1_statements) > 0
+    entity2_statements = [s for s in statements_until if s.entity_id == "key2"]
+    assert len(entity2_statements) == 0
+
+    dataset.drop()
+    dataset.store.close()
+
+
+def test_fragment_store_timestamp_filter_postgres():
+    """Test timestamp filtering with since and until parameters on PostgreSQL"""
+    uri = os.environ.get("TESTING_FRAGMENTS_PSQL_URI")
+    if not uri:
+        print(
+            "Skipping psql timestamp filter test (no `TESTING_FRAGMENTS_PSQL_URI` env)"
+        )
+        return
+
+    dataset = get_fragments("test_timestamp_pg", database_uri=uri)
+    dataset.drop()  # Clean slate
+
+    # Record timestamps for filtering
+    before = datetime.utcnow()
+    time.sleep(0.01)  # Small delay to ensure timestamp differences
+
+    # Add first entity
+    entity1 = {"id": "key1", "schema": "Person", "properties": {"name": ["First"]}}
+    dataset.put(entity1)
+
+    time.sleep(0.01)
+    middle = datetime.utcnow()
+    time.sleep(0.01)
+
+    # Add second entity
+    entity2 = {"id": "key2", "schema": "Person", "properties": {"name": ["Second"]}}
+    dataset.put(entity2)
+
+    time.sleep(0.01)
+    after = datetime.utcnow()
+
+    # Test: no filters should return all entities
+    assert len(list(dataset.iterate())) == 2
+
+    # Test: since filter (only get entity2)
+    entities_since = list(dataset.iterate(since=middle))
+    assert len(entities_since) == 1
+    assert entities_since[0].id == "key2"
+
+    # Test: until filter (only get entity1)
+    entities_until = list(dataset.iterate(until=middle))
+    assert len(entities_until) == 1
+    assert entities_until[0].id == "key1"
+
+    # Test: both since and until (get entities in middle range)
+    entities_range = list(dataset.iterate(since=before, until=after))
+    assert len(entities_range) == 2
+
+    # Test: range that excludes everything
+    entities_empty = list(dataset.iterate(since=after, until=after))
+    assert len(entities_empty) == 0
+
+    # Test: fragments() method with timestamp filters
+    fragments_since = list(dataset.fragments(since=middle))
+    assert len(fragments_since) == 1
+    assert fragments_since[0]["id"] == "key2"
+
+    # Test: partials() method with timestamp filters
+    partials_until = list(dataset.partials(since=middle))
+    assert len(partials_until) == 1
+    assert partials_until[0].id == "key2"
+
+    # Test: iterate_batched() with timestamp filters
+    batched_since = list(dataset.iterate_batched(batch_size=1, since=middle))
+    assert len(batched_since) == 1
+    assert batched_since[0].id == "key2"
+
+    # Test: get_sorted_id_batches() with timestamp filters
+    id_batches = list(dataset.get_sorted_id_batches(batch_size=10, since=middle))
+    assert len(id_batches) == 1
+    assert id_batches[0] == ["key2"]
+
+    # Test: get_sorted_ids() with timestamp filters
+    sorted_ids = list(dataset.get_sorted_ids(since=middle))
+    assert sorted_ids == ["key2"]
+
+    # Test: statements() method with until filter
+    statements_until = list(dataset.statements(until=middle))
+    entity1_statements = [s for s in statements_until if s.entity_id == "key1"]
+    assert len(entity1_statements) > 0
+    entity2_statements = [s for s in statements_until if s.entity_id == "key2"]
+    assert len(entity2_statements) == 0
 
     dataset.drop()
     dataset.store.close()

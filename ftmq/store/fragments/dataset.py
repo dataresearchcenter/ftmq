@@ -132,7 +132,9 @@ class Fragments(object):
     def bulk(self, size=1000):
         return BulkLoader(self, size)
 
-    def fragments(self, entity_ids=None, fragment=None, schema=None):
+    def fragments(
+        self, entity_ids=None, fragment=None, schema=None, since=None, until=None
+    ):
         stmt = self.table.select()
         entity_ids = ensure_list(entity_ids)
         if len(entity_ids) == 1:
@@ -149,6 +151,10 @@ class Fragments(object):
                 stmt = stmt.where(
                     func.json_extract(self.table.c.entity, "$.schema") == schema
                 )
+        if since is not None:
+            stmt = stmt.where(self.table.c.timestamp >= since)
+        if until is not None:
+            stmt = stmt.where(self.table.c.timestamp <= until)
         stmt = stmt.order_by(self.table.c.id)
         # stmt = stmt.order_by(self.table.c.origin)
         # stmt = stmt.order_by(self.table.c.fragment)
@@ -168,9 +174,11 @@ class Fragments(object):
             conn.close()
 
     def partials(
-        self, entity_id=None, skip_errors=False, schema=None
+        self, entity_id=None, skip_errors=False, schema=None, since=None, until=None
     ) -> EntityFragments:
-        for fragment in self.fragments(entity_ids=entity_id, schema=schema):
+        for fragment in self.fragments(
+            entity_ids=entity_id, schema=schema, since=since, until=until
+        ):
             try:
                 yield EntityProxy.from_dict(fragment, cleaned=True)
             except Exception:
@@ -180,17 +188,23 @@ class Fragments(object):
                 raise
 
     def iterate(
-        self, entity_id=None, skip_errors=False, schema=None
+        self, entity_id=None, skip_errors=False, schema=None, since=None, until=None
     ) -> EntityFragments:
         if entity_id is None:
             log.info("Using batched iteration for complete dataset.")
-            yield from self.iterate_batched(skip_errors=skip_errors, schema=schema)
+            yield from self.iterate_batched(
+                skip_errors=skip_errors, schema=schema, since=since, until=until
+            )
             return
         entity = None
         invalid = None
         fragments = 1
         for partial in self.partials(
-            entity_id=entity_id, skip_errors=skip_errors, schema=schema
+            entity_id=entity_id,
+            skip_errors=skip_errors,
+            schema=schema,
+            since=since,
+            until=until,
         ):
             if partial.id == invalid:
                 continue
@@ -224,19 +238,25 @@ class Fragments(object):
             yield entity
 
     def iterate_batched(
-        self, skip_errors=False, batch_size=10_000, schema=None
+        self, skip_errors=False, batch_size=10_000, schema=None, since=None, until=None
     ) -> EntityFragments:
         """
         For large datasets an overall sort is not feasible, so we iterate in
         sorted batched IDs.
         """
-        for entity_ids in self.get_sorted_id_batches(batch_size, schema=schema):
+        for entity_ids in self.get_sorted_id_batches(
+            batch_size, schema=schema, since=since, until=until
+        ):
             yield from self.iterate(
-                entity_id=entity_ids, skip_errors=skip_errors, schema=schema
+                entity_id=entity_ids,
+                skip_errors=skip_errors,
+                schema=schema,
+                since=since,
+                until=until,
             )
 
     def get_sorted_id_batches(
-        self, batch_size=10_000, schema=None
+        self, batch_size=10_000, schema=None, since=None, until=None
     ) -> Generator[list[str], None, None]:
         """
         Get sorted ID batches to speed up iteration and useful to parallelize
@@ -258,6 +278,10 @@ class Fragments(object):
                         stmt = stmt.where(
                             func.json_extract(self.table.c.entity, "$.schema") == schema
                         )
+                if since is not None:
+                    stmt = stmt.where(self.table.c.timestamp >= since)
+                if until is not None:
+                    stmt = stmt.where(self.table.c.timestamp <= until)
                 stmt = stmt.order_by(self.table.c.id).limit(batch_size)
                 try:
                     res = conn.execute(stmt)
@@ -271,10 +295,10 @@ class Fragments(object):
                     raise
 
     def get_sorted_ids(
-        self, batch_size=10_000, schema=None
+        self, batch_size=10_000, schema=None, since=None, until=None
     ) -> Generator[str, None, None]:
         """Get sorted IDs, optionally filtered by schema"""
-        for batch in self.get_sorted_id_batches(batch_size, schema):
+        for batch in self.get_sorted_id_batches(batch_size, schema, since, until):
             yield from batch
 
     def statements(
@@ -282,6 +306,7 @@ class Fragments(object):
         entity_ids: Iterable[str] | None = None,
         origin: str | None = None,
         since: datetime | None = None,
+        until: datetime | None = None,
     ) -> Statements:
         """Iterate unsorted statements with its fragment origins"""
         stmt = self.table.select()
@@ -293,7 +318,9 @@ class Fragments(object):
         if origin is not None:
             stmt = stmt.where(self.table.c.origin == origin)
         if since is not None:
-            stmt = stmt.where(self.table.c.timestamp > since)
+            stmt = stmt.where(self.table.c.timestamp >= since)
+        if until is not None:
+            stmt = stmt.where(self.table.c.timestamp <= until)
         conn = self.store.engine.connect()
         default_dataset = make_dataset(self.name)
         try:
