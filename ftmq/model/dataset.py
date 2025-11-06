@@ -16,6 +16,7 @@ ContentType = Literal["documents", "structured", "mixed"]
 
 
 class Dataset(BaseModel, _DatasetModel):
+    prefix: str | None = None
     maintainer: DataPublisher | None = None
     stats: DatasetStats = DatasetStats()
     git_repo: AnyUrl | None = None

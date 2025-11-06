@@ -13,7 +13,7 @@ from followthemoney.proxy import EntityProxy
 from followthemoney.schema import Schema
 from followthemoney.types import registry
 from followthemoney.util import make_entity_id, sanitize_text
-from normality import collapse_spaces, latinize_text, slugify
+from normality import latinize_text, slugify, squash_spaces
 from rigour.names import Name, Symbol, tag_org_name, tag_person_name
 from rigour.names.tokenize import normalize_name
 from rigour.text.scripts import can_latinize
@@ -321,7 +321,7 @@ def clean_string(value: Any) -> str | None:
     value = sanitize_text(value)
     if value is None:
         return
-    return collapse_spaces(value)
+    return squash_spaces(value)
 
 
 def clean_name(value: Any) -> str | None:
