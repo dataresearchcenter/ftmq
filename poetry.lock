@@ -3699,13 +3699,13 @@ windows-terminal = ["colorama (>=0.4.6)"]
 
 [[package]]
 name = "pyicu"
-version = "2.15.3"
+version = "2.16"
 description = "Python extension wrapping the ICU C++ API"
 optional = false
 python-versions = "*"
 groups = ["main"]
 files = [
-    {file = "pyicu-2.15.3.tar.gz", hash = "sha256:f32e78e1cb64d0aeb14f027e037a8944861d3114548818a6adf0081ef51aefc3"},
+    {file = "pyicu-2.16.tar.gz", hash = "sha256:42b3a8062e3b23e927ca727e6b5e1730d86c70279834e4887152895d2eb012d9"},
 ]
 
 [[package]]
