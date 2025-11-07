@@ -1,6 +1,6 @@
 [project]
 name = "ftmq"
-version = "4.3.1"
+version = "4.3.2"
 description = "followthemoney query dsl and io helpers"
 authors = [{ name = "Simon Wörpel", email = "simon.woerpel@pm.me" }]
 license = "AGPLv3+"
