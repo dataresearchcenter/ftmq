@@ -4314,13 +4314,13 @@ jupyter = ["ipywidgets (>=7.5.1,<9)"]
 
 [[package]]
 name = "rigour"
-version = "1.4.0"
+version = "1.4.1"
 description = "Financial crime domain data validation and normalization library."
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "rigour-1.4.0-py3-none-any.whl", hash = "sha256:2aeb714da4e30667343aaa2cc1d0f233fc0fa67c163713ea09a4a2fcf118bb9a"},
+    {file = "rigour-1.4.1-py3-none-any.whl", hash = "sha256:6a01fd55093387fc3dce1a5720140b73c4123a36b318b7c71628c54032bc1401"},
 ]
 
 [package.dependencies]
