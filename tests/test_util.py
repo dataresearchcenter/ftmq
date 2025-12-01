@@ -158,7 +158,6 @@ def test_util_ensure_entity():
     entity = util.ensure_entity(data, ValueEntity)
     assert isinstance(entity, ValueEntity)
     assert entity.datasets == {"default"}
-    data.pop("datasets")
     entity = util.ensure_entity(data, ValueEntity, "foo")
     assert entity.datasets == {"foo"}
     # ValueEntity -> StatementEntity
@@ -204,13 +203,13 @@ def test_util_symbols():
     )
     symbols = list(map(str, util.get_symbols(entity)))
     assert "[ORGCLS:LLC]" in symbols
-    assert "[SYMBOL:BANK]" in symbols
+    assert "[DOMAIN:BANK]" in symbols
 
     entity.add("indexText", "foo")
     util.inline_symbols(entity)
     symbols = list(map(str, util.select_symbols(entity)))
     assert "[ORGCLS:LLC]" in symbols
-    assert "[SYMBOL:BANK]" in symbols
+    assert "[DOMAIN:BANK]" in symbols
     assert "foo" in entity.get("indexText")
 
     # no symbols for e.g. mention entity (invalid indexText prop)
