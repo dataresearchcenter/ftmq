@@ -62,6 +62,9 @@ Z_ORDER = ["canonical_id", "entity_id", "schema", "prop"]
 TARGET_SIZE = 50 * 10_485_760  # 500 MB
 PARTITION_BY = ["dataset", "bucket", "origin"]
 DEFAULT_ORIGIN = "default"
+BUCKET_MENTION = "mention"
+BUCKET_PAGE = "page"
+BUCKET_PAGES = "pages"
 BUCKET_DOCUMENT = "document"
 BUCKET_INTERVAL = "interval"
 BUCKET_THING = "thing"
@@ -164,6 +167,12 @@ def setup_duckdb_storage() -> None:
 @cache
 def get_schema_bucket(schema_name: str) -> str:
     s = model[schema_name]
+    if s.is_a("Mention"):
+        return BUCKET_MENTION
+    if s.is_a("Page"):
+        return BUCKET_PAGE
+    if s.is_a("Pages"):
+        return BUCKET_PAGES
     if s.is_a("Document"):
         return BUCKET_DOCUMENT
     if s.is_a("Interval"):
@@ -179,7 +188,7 @@ def pack_statement(stmt: Statement) -> SDict:
 
 def pack_statements(statements: Iterable[Statement]) -> pd.DataFrame:
     df = pd.DataFrame(map(pack_statement, statements))
-    df = df.drop_duplicates()  # .sort_values(Z_ORDER)
+    df = df.drop_duplicates().sort_values(Z_ORDER)
     df = df.fillna(np.nan)
     return df
 
@@ -313,7 +322,7 @@ class LakeWriter(nk.Writer):
                 stmt.origin = origin
             self.add_statement(stmt)
         # we check here instead of in `add_statement` as this will keep entities
-        # together in the same parquet files`
+        # together in the same parquet files
         if len(self.batch) >= self.BATCH_STATEMENTS:
             self.flush()
 
