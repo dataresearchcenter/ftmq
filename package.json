@@ -1,6 +1,6 @@
 {
   "name": "@investigativedata/ftmq",
-  "version": "4.3.2",
+  "version": "4.3.3",
   "description": "javascript interface for ftmq",
   "type": "module",
   "main": "dist/index.js",
