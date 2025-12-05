@@ -362,13 +362,14 @@ class LakeWriter(nk.Writer):
         """
         Optimize the storage: Z-Ordering and compacting
         """
-        self.store.deltatable.optimize.z_order(
-            Z_ORDER, writer_properties=WRITER, target_size=TARGET_SIZE
-        )
-        if vacuum:
-            self.store.deltatable.vacuum(
-                retention_hours=vacuum_keep_hours,
-                enforce_retention_duration=False,
-                dry_run=False,
-                full=True,
+        with self.store._lock:
+            self.store.deltatable.optimize.z_order(
+                Z_ORDER, writer_properties=WRITER, target_size=TARGET_SIZE
             )
+            if vacuum:
+                self.store.deltatable.vacuum(
+                    retention_hours=vacuum_keep_hours,
+                    enforce_retention_duration=False,
+                    dry_run=False,
+                    full=True,
+                )
