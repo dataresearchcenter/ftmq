@@ -1,7 +1,5 @@
-from functools import lru_cache
 from typing import Any, Generator, Type
 
-import pycountry
 from anystore.functools import weakref_cache as cache
 from anystore.types import SDict, StrGenerator
 from banal import ensure_list, is_listish
@@ -16,6 +14,7 @@ from followthemoney.util import make_entity_id, sanitize_text
 from normality import latinize_text, slugify, squash_spaces
 from rigour.names import Name, Symbol, tag_org_name, tag_person_name
 from rigour.names.tokenize import normalize_name
+from rigour.territories import lookup_territory
 from rigour.text.scripts import can_latinize
 
 from ftmq.enums import Comparators
@@ -149,7 +148,7 @@ def apply_dataset(entity: E, dataset: str | Dataset, replace: bool | None = Fals
 def get_country_name(code: str) -> str:
     """
     Get the (english) country name for the given 2-letter iso code via
-    [pycountry](https://pypi.org/project/pycountry/)
+    [rigour.territories](https://rigour.followthemoney.tech/territories/)
 
     Examples:
         >>> get_country_name("de")
@@ -165,22 +164,17 @@ def get_country_name(code: str) -> str:
     Returns:
         Either the country name for a valid code or the code as fallback.
     """
-    code_clean = get_country_code(code)
-    if code_clean is None:
-        code_clean = code.lower()
-    try:
-        country = pycountry.countries.get(alpha_2=code_clean)
-        if country is not None:
-            return country.name
-    except (LookupError, AttributeError):
-        return code
-    return code_clean
+    territory = lookup_territory(code)
+    if territory is not None:
+        return territory.name
+    return code
 
 
-@lru_cache(1024)
+@cache
 def get_country_code(value: Any, splitter: str | None = ",") -> str | None:
     """
-    Get the 2-letter iso country code for an arbitrary country name
+    Get the 2-letter iso country code for an arbitrary country name via
+    [rigour.territories](https://rigour.followthemoney.tech/territories/)
 
     Examples:
         >>> get_country_code("Germany")
@@ -201,15 +195,16 @@ def get_country_code(value: Any, splitter: str | None = ",") -> str | None:
     """
     value = clean_string(value)
     if not value:
-        return
-    code = registry.country.clean_text(value)
-    if code:
-        return code
-    for token in value.split(splitter):
-        code = registry.country.clean_text(token)
-        if code:
-            return code
-    return
+        return None
+    territory = lookup_territory(value)
+    if territory is not None:
+        return territory.ftm_country
+    if splitter:
+        for token in value.split(splitter):
+            territory = lookup_territory(token.strip())
+            if territory is not None:
+                return territory.ftm_country
+    return None
 
 
 def join_slug(

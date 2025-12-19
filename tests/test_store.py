@@ -101,7 +101,7 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
     q = Query().where(dataset="eu_authorities")
     stats = view.stats(q)
     assert [c.model_dump() for c in stats.things.countries] == [
-        {"code": "eu", "label": "eu", "count": 151}
+        {"code": "eu", "label": "European Union", "count": 151}
     ]
     assert stats.entity_count == 151
     assert [s.model_dump() for s in stats.things.schemata] == [
