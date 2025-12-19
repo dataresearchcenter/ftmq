@@ -19,7 +19,7 @@ Layout:
 """
 
 from pathlib import Path
-from typing import Any, Generator, Iterable
+from typing import Any, Generator
 from urllib.parse import urlparse
 
 import duckdb
@@ -96,6 +96,7 @@ TABLE = table(
     column("dataset"),
     column("bucket"),
     column("origin"),
+    column("source"),
     column("schema"),
     column("prop"),
     column("prop_type"),
@@ -180,17 +181,11 @@ def get_schema_bucket(schema_name: str) -> str:
     return BUCKET_THING
 
 
-def pack_statement(stmt: Statement) -> SDict:
+def pack_statement(stmt: Statement, source: str | None = None) -> SDict:
     data = stmt.to_db_row()
     data["bucket"] = get_schema_bucket(data["schema"])
+    data["source"] = source
     return data
-
-
-def pack_statements(statements: Iterable[Statement]) -> pd.DataFrame:
-    df = pd.DataFrame(map(pack_statement, statements))
-    df = df.drop_duplicates().sort_values(Z_ORDER)
-    df = df.fillna(np.nan)
-    return df
 
 
 def compile_query(q: Select) -> str:
@@ -252,9 +247,6 @@ class LakeStore(SQLStore):
         self._partition_by = kwargs.pop("partition_by", PARTITION_BY)
         self._lock: Lock = kwargs.pop("lock", Lock(self._backend))
         self._enforce_dataset = kwargs.pop("enforce_dataset", False)
-        assert isinstance(
-            self._backend, FSStore
-        ), f"Invalid store backend: `{self._backend.__class__}"
         kwargs["uri"] = "sqlite:///:memory:"  # fake it till you make it
         get_metadata.cache_clear()
         super().__init__(*args, **kwargs)
@@ -288,8 +280,10 @@ class LakeStore(SQLStore):
         scope = scope or self.dataset
         return LakeQueryView(self, scope, external)
 
-    def writer(self, origin: str | None = DEFAULT_ORIGIN) -> "LakeWriter":
-        return LakeWriter(self, origin=origin or DEFAULT_ORIGIN)
+    def writer(
+        self, origin: str | None = DEFAULT_ORIGIN, source: str | None = None
+    ) -> "LakeWriter":
+        return LakeWriter(self, origin=origin or DEFAULT_ORIGIN, source=source)
 
     def get_origins(self) -> set[str]:
         q = select(self.table.c.origin).distinct()
@@ -300,31 +294,49 @@ class LakeWriter(nk.Writer):
     store: LakeStore
     BATCH_STATEMENTS = 1_000_000
 
-    def __init__(self, store: Store, origin: str | None = DEFAULT_ORIGIN):
+    def __init__(
+        self,
+        store: Store,
+        origin: str | None = DEFAULT_ORIGIN,
+        source: str | None = None,
+    ):
         super().__init__(store)
-        self.batch: set[Statement] = set()
+        self.batch: dict[Statement, str | None] = {}
         self.origin = origin or DEFAULT_ORIGIN
+        self.source = source
 
-    def add_statement(self, stmt: Statement) -> None:
+    def add_statement(self, stmt: Statement, source: str | None = None) -> None:
         if stmt.entity_id is None:
             return
         stmt.origin = stmt.origin or self.origin
         canonical_id = self.store.linker.get_canonical(stmt.entity_id)
         stmt.canonical_id = canonical_id
-        self.batch.add(stmt)
+        self.batch[stmt] = source or self.source
 
-    def add_entity(self, entity: EntityProxy, origin: str | None = None) -> None:
+    def add_entity(
+        self,
+        entity: EntityProxy,
+        origin: str | None = None,
+        source: str | None = None,
+    ) -> None:
         e = ensure_entity(entity, StatementEntity, self.store.dataset)
         if self.store._enforce_dataset:
             e = apply_dataset(e, self.store.dataset, replace=True)
         for stmt in e.statements:
             if origin:
                 stmt.origin = origin
-            self.add_statement(stmt)
+            self.add_statement(stmt, source=source)
         # we check here instead of in `add_statement` as this will keep entities
         # together in the same parquet files
         if len(self.batch) >= self.BATCH_STATEMENTS:
             self.flush()
+
+    def _pack_statements(self) -> pd.DataFrame:
+        data = [pack_statement(stmt, source) for stmt, source in self.batch.items()]
+        df = pd.DataFrame(data)
+        df = df.drop_duplicates().sort_values(Z_ORDER)
+        df = df.fillna(np.nan)
+        return df
 
     def flush(self) -> None:
         if self.batch:
@@ -335,7 +347,7 @@ class LakeWriter(nk.Writer):
             with self.store._lock:
                 write_deltalake(
                     str(self.store.uri),
-                    pack_statements(self.batch),
+                    self._pack_statements(),
                     partition_by=self.store._partition_by,
                     mode="append",
                     schema_mode="merge",
@@ -344,7 +356,7 @@ class LakeWriter(nk.Writer):
                     storage_options=storage_options(),
                 )
 
-        self.batch = set()
+        self.batch = {}
 
     def pop(self, entity_id: str) -> list[Statement]:
         q = select(TABLE)

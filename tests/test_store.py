@@ -292,6 +292,47 @@ def test_store_lake(tmp_path, proxies):
     lake = LakeStore(uri=tmp_path)
     lake.writer().optimize(vacuum=True)
 
+    # test source property
+    from followthemoney import model
+
+    lake_path = tmp_path / "lake_source_test"
+    lake = LakeStore(uri=lake_path)
+
+    e1 = model.make_entity("Person")
+    e1.id = "person-1"
+    e1.add("name", "John Doe")
+
+    e2 = model.make_entity("Company")
+    e2.id = "company-1"
+    e2.add("name", "Acme Corp")
+
+    # test source at writer level
+    with lake.writer(origin="crawl", source="https://example.com/data.json") as bulk:
+        bulk.add_entity(e1)
+
+    # test source at entity level (overrides writer source)
+    with lake.writer(origin="crawl", source="https://default.com") as bulk:
+        bulk.add_entity(e2, source="https://specific.com/company.json")
+
+    # verify source column exists in data
+    # we can't use the store interface here as it returns Statement model which
+    # doesn't include that field
+    import duckdb
+
+    from ftmq.store.lake import setup_duckdb_storage
+
+    setup_duckdb_storage()
+    rel = duckdb.arrow(lake.deltatable.to_pyarrow_dataset())
+    df = rel.df()
+
+    person_rows = df[df["entity_id"] == "person-1"]
+    assert len(person_rows) > 0
+    assert person_rows["source"].iloc[0] == "https://example.com/data.json"
+
+    company_rows = df[df["entity_id"] == "company-1"]
+    assert len(company_rows) > 0
+    assert company_rows["source"].iloc[0] == "https://specific.com/company.json"
+
 
 def test_store_init(tmp_path):
     store = get_store()
