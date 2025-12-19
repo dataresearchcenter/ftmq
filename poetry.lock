@@ -308,14 +308,14 @@ trio = ["trio (>=0.31.0) ; python_version < \"3.10\"", "trio (>=0.32.0) ; python
 
 [[package]]
 name = "anystore"
-version = "0.4.1"
+version = "0.4.2"
 description = "Store and cache things anywhere"
 optional = false
 python-versions = "<4,>=3.11"
 groups = ["main"]
 files = [
-    {file = "anystore-0.4.1-py3-none-any.whl", hash = "sha256:de660ccb59738fbae080d68ec3a92e9edc5264af350f54bdbda83c7c7a5b2cb0"},
-    {file = "anystore-0.4.1.tar.gz", hash = "sha256:c7b196042b7e74bd9a6ca6df1068e7d1b8752c84d91df73b0f6dfd831cfdcf62"},
+    {file = "anystore-0.4.2-py3-none-any.whl", hash = "sha256:ffb9878af8aeb438842824f46fb637eb9fa5122a898b8b80da33f8d4db3c5c8f"},
+    {file = "anystore-0.4.2.tar.gz", hash = "sha256:5b78ed954a602261478207622c908cc64f3f5fbe0f471d54a707a3dd51ed9e00"},
 ]
 
 [package.dependencies]
@@ -5252,4 +5252,4 @@ sql = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<4"
-content-hash = "4dcf8330ddce3c25a1635a57e9928674bdb6cb2cc20f0d54070ec02df9f5c945"
+content-hash = "afd5c577ea868b9b91cfd1e862e0f1e57c12f252e25b9c3349d00690d564f824"
