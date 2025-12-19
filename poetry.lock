@@ -1161,13 +1161,13 @@ pyflakes = ">=3.4.0,<3.5.0"
 
 [[package]]
 name = "followthemoney"
-version = "4.3.4"
+version = "4.4.0"
 description = "A data model for anti corruption data modeling and analysis."
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "followthemoney-4.3.4-py3-none-any.whl", hash = "sha256:50dc1669287c5c5105c6e12febac9630b14490ee4a3818144a415171d3826879"},
+    {file = "followthemoney-4.4.0-py3-none-any.whl", hash = "sha256:3a0c491773dfe2b84b85caf53c57966a5e7c93d427debc5580433911fb80dd7a"},
 ]
 
 [package.dependencies]
@@ -1183,9 +1183,9 @@ prefixdate = ">=0.5.0,<1.0.0"
 pydantic = ">=2.11.0,<3.0.0"
 pytz = ">=2021.1"
 pyyaml = ">=5.0.0,<7.0.0"
-rdflib = ">=6.2.0,<7.5.0"
+rdflib = ">=6.2.0,<7.6.0"
 requests = ">=2.21.0,<3.0.0"
-rigour = ">=1.4.0,<2.0.0"
+rigour = ">=1.6.0,<2.0.0"
 sqlalchemy = {version = ">=2.0.0,<3.0.0", extras = ["mypy"]}
 
 [package.extras]
@@ -2733,24 +2733,24 @@ files = [
 
 [[package]]
 name = "nomenklatura"
-version = "4.3.2"
+version = "4.4.1"
 description = "Make record linkages in followthemoney data."
 optional = false
 python-versions = ">=3.11"
 groups = ["main"]
 files = [
-    {file = "nomenklatura-4.3.2-py3-none-any.whl", hash = "sha256:f429facbcf9b02742ef91dc8957729a96eb9b4484f0795d99aedbb8da878c7e0"},
+    {file = "nomenklatura-4.4.1-py3-none-any.whl", hash = "sha256:9dea9450445ccbd3d71385055e3704f076599fbb4d0b0c567bf833c117a94049"},
 ]
 
 [package.dependencies]
 click = "<9.0.0"
 duckdb = ">=1.2.0,<2.0.0"
 fingerprints = ">=1.3.1,<2.0.0"
-followthemoney = ">=4.1.1,<5.0.0"
+followthemoney = ">=4.4.0,<5.0.0"
 lxml = ">4.0.0,<7.0.0"
 pydantic = ">2.0.0,<3.0.0"
 rich = ">=13.0.0,<15.0.0"
-rigour = ">=1.5.0,<2.0.0"
+rigour = ">=1.6.0,<2.0.0"
 scikit-learn = "1.7.2"
 shortuuid = ">=1.0.11,<2.0.0"
 sqlalchemy = ">=2.0.0"
@@ -3979,6 +3979,13 @@ optional = false
 python-versions = ">=3.8"
 groups = ["main", "dev"]
 files = [
+    {file = "PyYAML-6.0.3-cp38-cp38-macosx_10_13_x86_64.whl", hash = "sha256:c2514fceb77bc5e7a2f7adfaa1feb2fb311607c9cb518dbc378688ec73d8292f"},
+    {file = "PyYAML-6.0.3-cp38-cp38-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:9c57bb8c96f6d1808c030b1687b9b5fb476abaa47f0db9c0101f5e9f394e97f4"},
+    {file = "PyYAML-6.0.3-cp38-cp38-manylinux2014_s390x.manylinux_2_17_s390x.manylinux_2_28_s390x.whl", hash = "sha256:efd7b85f94a6f21e4932043973a7ba2613b059c4a000551892ac9f1d11f5baf3"},
+    {file = "PyYAML-6.0.3-cp38-cp38-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:22ba7cfcad58ef3ecddc7ed1db3409af68d023b7f940da23c6c2a1890976eda6"},
+    {file = "PyYAML-6.0.3-cp38-cp38-musllinux_1_2_x86_64.whl", hash = "sha256:6344df0d5755a2c9a276d4473ae6b90647e216ab4757f8426893b5dd2ac3f369"},
+    {file = "PyYAML-6.0.3-cp38-cp38-win32.whl", hash = "sha256:3ff07ec89bae51176c0549bc4c63aa6202991da2d9a6129d7aef7f1407d3f295"},
+    {file = "PyYAML-6.0.3-cp38-cp38-win_amd64.whl", hash = "sha256:5cf4e27da7e3fbed4d6c3d8e797387aaad68102272f8f9752883bc32d61cb87b"},
     {file = "pyyaml-6.0.3-cp310-cp310-macosx_10_13_x86_64.whl", hash = "sha256:214ed4befebe12df36bcc8bc2b64b396ca31be9304b8f59e25c11cf94a4c033b"},
     {file = "pyyaml-6.0.3-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:02ea2dfa234451bbb8772601d7b8e426c2bfa197136796224e50e35a78777956"},
     {file = "pyyaml-6.0.3-cp310-cp310-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:b30236e45cf30d2b8e7b3e85881719e98507abed1011bf463a8fa23e9c3e98a8"},
@@ -4385,13 +4392,13 @@ jupyter = ["ipywidgets (>=7.5.1,<9)"]
 
 [[package]]
 name = "rigour"
-version = "1.5.0"
+version = "1.6.0"
 description = "Financial crime domain data validation and normalization library."
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "rigour-1.5.0-py3-none-any.whl", hash = "sha256:20f58993fbe415607bc782950aba6c3eeb9967078615b5349cd2d3558636d21e"},
+    {file = "rigour-1.6.0-py3-none-any.whl", hash = "sha256:29718f068cceba734910d6f58ce1a85e20d47e8cab00325bc6a3736c360f9eaa"},
 ]
 
 [package.dependencies]
@@ -4860,7 +4867,7 @@ description = "Provider of IANA time zone data"
 optional = false
 python-versions = ">=2"
 groups = ["main"]
-markers = "extra == \"postgres\" and sys_platform == \"win32\" or platform_system == \"Windows\" or extra == \"lake\""
+markers = "platform_system == \"Windows\" or extra == \"lake\" or extra == \"postgres\" and sys_platform == \"win32\""
 files = [
     {file = "tzdata-2025.3-py2.py3-none-any.whl", hash = "sha256:06a47e5700f3081aab02b2e513160914ff0694bce9947d6b76ebd6bf57cfc5d1"},
     {file = "tzdata-2025.3.tar.gz", hash = "sha256:de39c2ca5dc7b0344f2eba86f49d614019d29f060fc4ebc8a417896a620b56a7"},
