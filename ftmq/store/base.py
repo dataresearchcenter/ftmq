@@ -1,4 +1,4 @@
-from typing import Generator, Iterable
+from typing import Generator, Generic, Iterable, TypeVar
 from urllib.parse import urlparse
 
 from anystore.functools import weakref_cache as cache
@@ -20,6 +20,8 @@ log = get_logger(__name__)
 
 DEFAULT_ORIGIN = "default"
 
+V = TypeVar("V", bound="View")
+
 
 @cache
 def get_resolver(uri: str | None = None) -> Resolver[StatementEntity]:
@@ -28,7 +30,7 @@ def get_resolver(uri: str | None = None) -> Resolver[StatementEntity]:
     return Resolver.make_default(get_engine("sqlite:///:memory:"))
 
 
-class Store(nk.Store):
+class Store(nk.Store[Dataset, StatementEntity], Generic[V]):
     """
     Feature add-ons to `nomenklatura.store.Store`
     """
@@ -59,6 +61,12 @@ class Store(nk.Store):
         Return implicit `Dataset` computed from current datasets in store
         """
         raise NotImplementedError
+
+    def view(self, scope: Dataset | None = None, external: bool = False) -> V:
+        raise NotImplementedError
+
+    def default_view(self, external: bool = False) -> V:
+        return self.view(self.dataset, external)
 
     def iterate(self, dataset: str | Dataset | None = None) -> StatementEntities:
         """

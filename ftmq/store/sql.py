@@ -1,6 +1,7 @@
 import os
 from collections import defaultdict
 from decimal import Decimal
+from typing import Generic, TypeVar
 
 from anystore.util import clean_dict
 from followthemoney.dataset.dataset import Dataset
@@ -15,6 +16,8 @@ from ftmq.query import Query
 from ftmq.store.base import Store, View
 from ftmq.types import StatementEntities
 from ftmq.util import get_scope_dataset
+
+V = TypeVar("V", bound=View, default="SQLQueryView")
 
 MAX_SQL_AGG_GROUPS = int(os.environ.get("MAX_SQL_AGG_GROUPS", 10))
 
@@ -125,7 +128,7 @@ class SQLQueryView(View, nk.SQLView):
         return res
 
 
-class SQLStore(Store, nk.SQLStore):
+class SQLStore(Store[V], nk.SQLStore, Generic[V]):
     def __init__(self, *args, **kwargs) -> None:
         get_metadata.cache_clear()  # FIXME
         super().__init__(*args, **kwargs)
@@ -137,8 +140,6 @@ class SQLStore(Store, nk.SQLStore):
             names.add(row[0])
         return get_scope_dataset(*names)
 
-    def view(
-        self, scope: Dataset | None = None, external: bool = False
-    ) -> SQLQueryView:
+    def view(self, scope: Dataset | None = None, external: bool = False) -> V:
         scope = scope or self.dataset
-        return SQLQueryView(self, scope, external=external)
+        return SQLQueryView(self, scope, external=external)  # type: ignore[return-value]

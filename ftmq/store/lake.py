@@ -241,7 +241,7 @@ class LakeQueryView(SQLQueryView):
             yield from super().query(query)
 
 
-class LakeStore(SQLStore):
+class LakeStore(SQLStore[LakeQueryView]):
     def __init__(self, *args, **kwargs) -> None:
         self._backend: FSStore = FSStore(uri=kwargs.pop("uri"))
         self._partition_by = kwargs.pop("partition_by", PARTITION_BY)
@@ -276,7 +276,7 @@ class LakeStore(SQLStore):
 
     def view(
         self, scope: Dataset | None = None, external: bool = False
-    ) -> SQLQueryView:
+    ) -> LakeQueryView:
         scope = scope or self.dataset
         return LakeQueryView(self, scope, external)
 
