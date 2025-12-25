@@ -41,7 +41,7 @@ jobs:
     - name: set PY
       run: echo "PY=$(python -VV | sha256sum | cut -d' ' -f1)" >> $GITHUB_ENV
     - name: Set up poetry cache
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: .venv
         key: venv-${{ runner.os }}-${{ env.PY }}-${{ hashFiles('**/poetry.lock') }}
@@ -49,7 +49,7 @@ jobs:
       if: steps.cache.outputs.cache-hit == 'true'
       run: poetry run pip --version >/dev/null 2>&1 || rm -rf .venv
     - name: Set up pre-commit cache
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: ~/.cache/pre-commit
         key: pre-commit-${{ runner.os }}-${{ env.PY }}-${{ hashFiles('.pre-commit-config.yaml') }}
