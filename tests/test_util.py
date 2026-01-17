@@ -24,6 +24,7 @@ def test_util_make_dataset():
         "tags": [],
         "resources": [],
         "children": [],
+        "deprecated": False,
     }
 
 
