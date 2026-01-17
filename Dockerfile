@@ -1,4 +1,4 @@
-FROM python:3.14-slim
+FROM python:3.13-slim
 
 RUN apt-get -qq update && apt-get -qq -y upgrade
 RUN apt-get install -qq -y pkg-config libicu-dev libleveldb-dev build-essential
