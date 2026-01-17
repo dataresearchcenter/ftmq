@@ -14,6 +14,6 @@ WORKDIR /src
 
 RUN pip install --no-cache-dir -U pip setuptools
 RUN pip install --no-cache-dir -q --no-binary=:pyicu: pyicu
-RUN pip install --no-cache-dir ".[redis,clickhouse,level]"
+RUN pip install --no-cache-dir ".[redis,level]"
 
 ENTRYPOINT ["ftmq"]
