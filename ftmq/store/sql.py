@@ -1,13 +1,14 @@
 import os
 from collections import defaultdict
 from decimal import Decimal
-from typing import Generic, TypeVar
+from typing import Generic
 
 from anystore.util import clean_dict
 from followthemoney.dataset.dataset import Dataset
 from nomenklatura.db import get_metadata
 from nomenklatura.store import sql as nk
 from sqlalchemy import select
+from typing_extensions import TypeVar
 
 from ftmq.aggregations import AggregatorResult
 from ftmq.enums import Fields
