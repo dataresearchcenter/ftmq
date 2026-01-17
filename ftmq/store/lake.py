@@ -39,6 +39,7 @@ from deltalake import (
     write_deltalake,
 )
 from deltalake._internal import TableNotFoundError
+from deltalake.table import FilterConjunctionType
 from followthemoney import EntityProxy, StatementEntity, model
 from followthemoney.dataset.dataset import Dataset
 from followthemoney.statement import Statement
@@ -369,14 +370,37 @@ class LakeWriter(nk.Writer):
         return statements
 
     def optimize(
-        self, vacuum: bool | None = False, vacuum_keep_hours: int | None = 0
+        self,
+        vacuum: bool | None = False,
+        vacuum_keep_hours: int | None = 0,
+        dataset: str | None = None,
+        bucket: str | None = None,
+        origin: str | None = None,
     ) -> None:
         """
         Optimize the storage: Z-Ordering and compacting
+
+        Args:
+            vacuum: Run vacuum after optimization
+            vacuum_keep_hours: Retention hours for vacuum
+            dataset: Filter optimization to specific dataset partition
+            bucket: Filter optimization to specific bucket partition
+            origin: Filter optimization to specific origin partition
         """
+        filters: FilterConjunctionType = []
+        if dataset is not None:
+            filters.append(("dataset", "=", dataset))
+        if bucket is not None:
+            filters.append(("bucket", "=", bucket))
+        if origin is not None:
+            filters.append(("origin", "=", origin))
+
         with self.store._lock:
             self.store.deltatable.optimize.z_order(
-                Z_ORDER, writer_properties=WRITER, target_size=TARGET_SIZE
+                Z_ORDER,
+                writer_properties=WRITER,
+                target_size=TARGET_SIZE,
+                partition_filters=filters or None,
             )
             if vacuum:
                 self.store.deltatable.vacuum(
