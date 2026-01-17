@@ -2,8 +2,9 @@ from collections import Counter
 from datetime import datetime
 from typing import Any
 
+from anystore.model import BaseModel
 from followthemoney import model
-from pydantic import BaseModel, model_validator
+from pydantic import model_validator
 
 from ftmq.types import Entities, Entity
 from ftmq.util import get_country_name, get_year_from_iso
