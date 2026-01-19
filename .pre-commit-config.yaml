@@ -37,7 +37,7 @@ repos:
         args: ["--profile", "black"]
 
   - repo: https://github.com/psf/black
-    rev: 25.12.0
+    rev: 26.1.0
     hooks:
       - id: black
 
@@ -68,7 +68,7 @@ repos:
       - id: rst-inline-touching-normal
 
   - repo: https://github.com/python-poetry/poetry
-    rev: 2.2.1
+    rev: 2.3.0
     hooks:
       - id: poetry-check
       - id: poetry-lock
