@@ -153,17 +153,15 @@ def storage_options() -> SDict:
 @cache
 def setup_duckdb_storage() -> None:
     if storage_settings.secret:
-        duckdb.query(
-            f"""CREATE OR REPLACE SECRET secret (
+        duckdb.query(f"""CREATE OR REPLACE SECRET secret (
             TYPE s3,
             PROVIDER config,
             KEY_ID '{storage_settings.key}',
             SECRET '{storage_settings.secret}',
-            ENDPOINT '{storage_settings.endpoint}',
+            ENDPOINT '{storage_settings.duckdb_endpoint}',
             URL_STYLE 'path',
             USE_SSL '{not storage_settings.allow_http}'
-            );"""
-        )
+            );""")
 
 
 @cache
