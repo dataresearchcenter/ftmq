@@ -18,7 +18,7 @@ requires-python = ">=3.11,<3.14"
 dependencies = [
     "anystore (>=0.4.3,<0.5.0)",
     "followthemoney (>=4.5.0,<5.0.0)",
-    "nomenklatura (>=4.5.3,<5.0.0)",
+    "nomenklatura (>=4.6.0,<5.0.0)",
     "rigour (>=1.6.1,<2.0.0)",
     "click (>=8.2.1,<9.0.0)",
     "click-default-group (>=1.2.4,<2.0.0)",
