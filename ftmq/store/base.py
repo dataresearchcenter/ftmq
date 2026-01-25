@@ -2,6 +2,7 @@ from typing import Generator, Generic, Iterable, TypeVar
 from urllib.parse import urlparse
 
 from anystore.functools import weakref_cache as cache
+from anystore.logging import get_logger
 from followthemoney import DefaultDataset
 from followthemoney.dataset.dataset import Dataset
 from nomenklatura import store as nk
@@ -9,7 +10,6 @@ from nomenklatura.db import get_engine
 from nomenklatura.resolver import Resolver
 
 from ftmq.aggregations import AggregatorResult
-from ftmq.logging import get_logger
 from ftmq.model.stats import Collector, DatasetStats
 from ftmq.query import Query
 from ftmq.similar import get_similar

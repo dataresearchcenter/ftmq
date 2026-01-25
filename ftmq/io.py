@@ -2,10 +2,10 @@ from typing import Any, Iterable, Type
 
 import orjson
 from anystore.io import Uri, smart_open, smart_stream
+from anystore.logging import get_logger
 from banal import is_listish
 from followthemoney import E, StatementEntity, ValueEntity
 
-from ftmq.logging import get_logger
 from ftmq.query import Query
 from ftmq.store import Store, get_store
 from ftmq.types import Entities, Entity

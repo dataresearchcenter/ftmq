@@ -2,13 +2,13 @@ from datetime import datetime
 
 import click
 from anystore.io import smart_write, smart_write_json, smart_write_model
+from anystore.logging import configure_logging, get_logger
 from click_default_group import DefaultGroup
 from followthemoney import ValueEntity
 from nomenklatura import settings
 
 from ftmq.aggregate import aggregate
 from ftmq.io import smart_read_proxies, smart_write_proxies
-from ftmq.logging import configure_logging, get_logger
 from ftmq.model.dataset import Catalog, Dataset
 from ftmq.model.stats import Collector
 from ftmq.query import Query
