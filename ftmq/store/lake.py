@@ -59,7 +59,7 @@ from ftmq.util import apply_dataset, ensure_entity, get_scope_dataset
 
 log = get_logger(__name__)
 
-Z_ORDER = ["canonical_id", "entity_id", "schema", "prop"]
+Z_ORDER = ["canonical_id", "prop"]  # don't add more columns here
 TARGET_SIZE = 50 * 10_485_760  # 500 MB
 PARTITION_BY = ["dataset", "bucket", "origin"]
 DEFAULT_ORIGIN = "default"
@@ -86,6 +86,7 @@ WRITER = WriterProperties(
         "schema": STATISTICS,
         "prop": STATISTICS_BLOOM,
         "value": STATISTICS_BLOOM,
+        "last_seen": ColumnProperties(statistics_enabled="CHUNK"),
     },
 )
 
@@ -353,6 +354,7 @@ class LakeWriter(nk.Writer):
                     writer_properties=WRITER,
                     target_file_size=TARGET_SIZE,
                     storage_options=storage_options(),
+                    configuration={"delta.enableChangeDataFeed": "true"},
                 )
 
         self.batch = {}
