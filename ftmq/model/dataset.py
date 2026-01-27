@@ -2,10 +2,10 @@ from datetime import datetime
 from typing import Literal
 
 from anystore.io import logged_items
-from anystore.types import SDict
+from anystore.types import HttpUrlStr, SDict
 from followthemoney.dataset import DataPublisher
 from followthemoney.dataset.dataset import DatasetModel as _DatasetModel
-from pydantic import AnyUrl, HttpUrl
+from pydantic import AnyUrl
 from rigour.mime.types import FTM
 
 from ftmq.model.mixins import BaseModel
@@ -57,9 +57,9 @@ class Catalog(BaseModel):
     description: str | None = None
     maintainer: DataPublisher | None = None
     publisher: DataPublisher | None = None
-    url: HttpUrl | None = None
+    url: HttpUrlStr | None = None
     uri: str | None = None
-    logo_url: HttpUrl | None = None
+    logo_url: HttpUrlStr | None = None
     git_repo: AnyUrl | None = None
 
     def iterate(self) -> Entities:
