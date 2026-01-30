@@ -323,7 +323,7 @@ sql = ["sqlalchemy (>=2.0.36,<3.0.0)"]
 type = "git"
 url = "https://github.com/dataresearchcenter/anystore.git"
 reference = "chore/refactor"
-resolved_reference = "822accf3efba46ff9756c9b8ff860fb440fb47ae"
+resolved_reference = "0398b8e5142b983ab754f779f709c0663c81cedc"
 
 [[package]]
 name = "arro3-core"
