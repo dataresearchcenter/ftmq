@@ -23,8 +23,7 @@ from typing import Any, Generator
 from urllib.parse import urlparse
 
 import duckdb
-import numpy as np
-import pandas as pd
+import pyarrow as pa
 from anystore.functools import weakref_cache as cache
 from anystore.interface.lock import Lock
 from anystore.logging import get_logger
@@ -90,6 +89,11 @@ WRITER = WriterProperties(
     },
 )
 
+SA_TO_ARROW: dict[type, pa.DataType] = {
+    Boolean: pa.bool_(),
+    DateTime: pa.timestamp("us"),
+}
+
 TABLE = table(
     nks.STATEMENT_TABLE,
     column("id"),
@@ -108,6 +112,10 @@ TABLE = table(
     column("external", Boolean),
     column("first_seen", DateTime),
     column("last_seen", DateTime),
+)
+
+ARROW_SCHEMA = pa.schema(
+    [(col.name, SA_TO_ARROW.get(type(col.type), pa.string())) for col in TABLE.columns]
 )
 
 
@@ -301,7 +309,7 @@ class LakeWriter(nk.Writer):
         source: str | None = None,
     ):
         super().__init__(store)
-        self.batch: dict[Statement, str | None] = {}
+        self.batch: dict[str, tuple[Statement, str | None]] = {}
         self.origin = origin or DEFAULT_ORIGIN
         self.source = source
 
@@ -311,7 +319,8 @@ class LakeWriter(nk.Writer):
         stmt.origin = stmt.origin or self.origin
         canonical_id = self.store.linker.get_canonical(stmt.entity_id)
         stmt.canonical_id = canonical_id
-        self.batch[stmt] = source or self.source
+        key = f"{canonical_id}\t{stmt.id}"
+        self.batch[key] = (stmt, source or self.source)
 
     def add_entity(
         self,
@@ -331,12 +340,16 @@ class LakeWriter(nk.Writer):
         if len(self.batch) >= self.BATCH_STATEMENTS:
             self.flush()
 
-    def _pack_statements(self) -> pd.DataFrame:
-        data = [pack_statement(stmt, source) for stmt, source in self.batch.items()]
-        df = pd.DataFrame(data)
-        df = df.drop_duplicates().sort_values(Z_ORDER)
-        df = df.fillna(np.nan)
-        return df
+    def _pack_batches(self) -> Generator[pa.RecordBatch, None, None]:
+        batch: list[SDict] = []
+        for key in sorted(self.batch):
+            stmt, source = self.batch[key]
+            batch.append(pack_statement(stmt, source))
+            if len(batch) >= 100_000:
+                yield pa.RecordBatch.from_pylist(batch, schema=ARROW_SCHEMA)
+                batch = []
+        if batch:
+            yield pa.RecordBatch.from_pylist(batch, schema=ARROW_SCHEMA)
 
     def flush(self) -> None:
         if self.batch:
@@ -345,9 +358,12 @@ class LakeWriter(nk.Writer):
                 uri=self.store.uri,
             )
             with self.store._lock:
+                reader = pa.RecordBatchReader.from_batches(
+                    ARROW_SCHEMA, self._pack_batches()
+                )
                 write_deltalake(
                     str(self.store.uri),
-                    self._pack_statements(),
+                    reader,
                     partition_by=self.store._partition_by,
                     mode="append",
                     schema_mode="merge",
