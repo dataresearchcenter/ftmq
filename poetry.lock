@@ -952,20 +952,20 @@ files = [
 
 [[package]]
 name = "deltalake"
-version = "1.3.2"
+version = "1.4.1"
 description = "Native Delta Lake Python binding based on delta-rs with Pandas integration"
 optional = true
 python-versions = ">=3.10"
 groups = ["main"]
 markers = "extra == \"lake\""
 files = [
-    {file = "deltalake-1.3.2-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:6dcf29c6cbbbd15ecabe0013c99586f88b517988f5a2c385494b1477f5c62fad"},
-    {file = "deltalake-1.3.2-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:5881372d4588e936d2a0b38e02d120f18633de2fbaf7188a26cfe8caf679ce73"},
-    {file = "deltalake-1.3.2-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:a95048c15cc414c2d0eb06716839489b91989ec9b9bc68551ea83f2e10944b2d"},
-    {file = "deltalake-1.3.2-cp310-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:88ced2bbd7b08bc674d5e2fe1a8774465910c3d178a1756bfffd5065e73b22a5"},
-    {file = "deltalake-1.3.2-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:dc7b5837b7d2ad0b59b5272eef09c4c0aaa4b10e62d290ab6ee3dc808b9be5d2"},
-    {file = "deltalake-1.3.2-cp310-abi3-win_amd64.whl", hash = "sha256:f72131d7ddd8e25f84a53ac26028fbed143c66035639644d50603871cf606871"},
-    {file = "deltalake-1.3.2.tar.gz", hash = "sha256:ba3c569a6ac6e319487e47b6689c58ac2d51f74aab9c961e9b9d249b10a2fb6a"},
+    {file = "deltalake-1.4.1-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:dc7b6b99bd8a8d4949645b8f6073d0ced9dd06109fa9669b7802ddf8207291e1"},
+    {file = "deltalake-1.4.1-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:0d4c460a4fab802cf051ca66a49583d93a3490842eb849bd1aae7176b12b8030"},
+    {file = "deltalake-1.4.1-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:bcd312abe5928f0da3217901431f6f537da4d51162d23cd81fc3849559c5f5cc"},
+    {file = "deltalake-1.4.1-cp310-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:cc98a04918d0acd0a425ecaf33b6fbbbe458d395da31139554b97b7a62a045f9"},
+    {file = "deltalake-1.4.1-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:9a3af28f14535122395b89ff146c5acca4c00db63191c59c39a0ae30356030b6"},
+    {file = "deltalake-1.4.1-cp310-abi3-win_amd64.whl", hash = "sha256:4dd4648be88375b5dadd119cd2a45f481e3df6007da6a519d49646f202b036da"},
+    {file = "deltalake-1.4.1.tar.gz", hash = "sha256:0a7e7f2f0f60edab087087f0144e539428c8d5a0e6f80f86fe49db82499a50ab"},
 ]
 
 [package.dependencies]
