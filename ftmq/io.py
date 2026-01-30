@@ -14,8 +14,6 @@ from ftmq.util import ensure_entity, make_entity
 
 log = get_logger(__name__)
 
-DEFAULT_MODE = "rb"
-
 
 def smart_get_store(uri: Uri, **kwargs) -> Store | None:
     try:
