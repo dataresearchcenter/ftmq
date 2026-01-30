@@ -26,9 +26,9 @@ import duckdb
 import numpy as np
 import pandas as pd
 from anystore.functools import weakref_cache as cache
-from anystore.lock import Lock
+from anystore.interface.lock import Lock
 from anystore.logging import get_logger
-from anystore.store.fs import Store as FSStore
+from anystore.store import Store as FSStore
 from anystore.types import SDict
 from anystore.util import clean_dict
 from deltalake import (
@@ -243,7 +243,7 @@ class LakeQueryView(SQLQueryView):
 
 class LakeStore(SQLStore[LakeQueryView]):
     def __init__(self, *args, **kwargs) -> None:
-        self._backend: FSStore = FSStore(uri=kwargs.pop("uri"))
+        self._backend = FSStore(uri=kwargs.pop("uri"))
         self._partition_by = kwargs.pop("partition_by", PARTITION_BY)
         self._lock: Lock = kwargs.pop("lock", Lock(self._backend))
         self._enforce_dataset = kwargs.pop("enforce_dataset", False)

@@ -1,4 +1,4 @@
-from anystore.mixins import BaseModel as _BaseModel
+from anystore.model.base import BaseModel as _BaseModel
 from pydantic import Field
 
 
