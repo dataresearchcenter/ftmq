@@ -3,7 +3,7 @@ from datetime import datetime
 
 import cloudpickle
 import pytest
-from followthemoney import DefaultDataset, EntityProxy, model
+from followthemoney import EntityProxy, model
 from followthemoney.dataset import Dataset
 from followthemoney.entity import ValueEntity
 from followthemoney.statement.entity import StatementEntity
@@ -40,7 +40,6 @@ def test_util_ensure_dataset():
     ds = util.ensure_dataset()
     assert isinstance(ds, Dataset)
     assert ds.name == "default"
-    assert ds == DefaultDataset
 
 
 def test_util_str_enum():

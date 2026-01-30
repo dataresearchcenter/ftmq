@@ -3,7 +3,6 @@ from urllib.parse import urlparse
 
 from anystore.functools import weakref_cache as cache
 from anystore.logging import get_logger
-from followthemoney import DefaultDataset
 from followthemoney.dataset.dataset import Dataset
 from nomenklatura import store as nk
 from nomenklatura.db import get_engine
@@ -53,7 +52,7 @@ class Store(nk.Store[Dataset, StatementEntity], Generic[V]):
         linker = linker or get_resolver(kwargs.get("uri"))
         super().__init__(dataset=dataset, linker=linker, **kwargs)
         # implicit set all datasets as default store scope:
-        if dataset == DefaultDataset and not dataset.leaf_names:
+        if dataset.name == "default" and not dataset.leaf_names:
             self.dataset = self.get_scope()
 
     def get_scope(self) -> Dataset:
