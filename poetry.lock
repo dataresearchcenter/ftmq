@@ -323,7 +323,7 @@ sql = ["sqlalchemy (>=2.0.36,<3.0.0)"]
 type = "git"
 url = "https://github.com/dataresearchcenter/anystore.git"
 reference = "chore/refactor"
-resolved_reference = "dd4ae9cf5e8bc9eb0bb6dbd38ac18600e22c98e4"
+resolved_reference = "8e8c06c50f4548910a1cebf54f3851af81a36749"
 
 [[package]]
 name = "arro3-core"
@@ -3703,22 +3703,22 @@ files = [
 
 [[package]]
 name = "pyjwt"
-version = "2.10.1"
+version = "2.11.0"
 description = "JSON Web Token implementation in Python"
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
 markers = "extra == \"redis\""
 files = [
-    {file = "PyJWT-2.10.1-py3-none-any.whl", hash = "sha256:dcdd193e30abefd5debf142f9adfcdd2b58004e644f25406ffaebd50bd98dacb"},
-    {file = "pyjwt-2.10.1.tar.gz", hash = "sha256:3cc5772eb20009233caf06e9d8a0577824723b44e6648ee0a2aedb6cf9381953"},
+    {file = "pyjwt-2.11.0-py3-none-any.whl", hash = "sha256:94a6bde30eb5c8e04fee991062b534071fd1439ef58d2adc9ccb823e7bcd0469"},
+    {file = "pyjwt-2.11.0.tar.gz", hash = "sha256:35f95c1f0fbe5d5ba6e43f00271c275f7a1a4db1dab27bf708073b75318ea623"},
 ]
 
 [package.extras]
 crypto = ["cryptography (>=3.4.0)"]
-dev = ["coverage[toml] (==5.0.4)", "cryptography (>=3.4.0)", "pre-commit", "pytest (>=6.0.0,<7.0.0)", "sphinx", "sphinx-rtd-theme", "zope.interface"]
+dev = ["coverage[toml] (==7.10.7)", "cryptography (>=3.4.0)", "pre-commit", "pytest (>=8.4.2,<9.0.0)", "sphinx", "sphinx-rtd-theme", "zope.interface"]
 docs = ["sphinx", "sphinx-rtd-theme", "zope.interface"]
-tests = ["coverage[toml] (==5.0.4)", "pytest (>=6.0.0,<7.0.0)"]
+tests = ["coverage[toml] (==7.10.7)", "pytest (>=8.4.2,<9.0.0)"]
 
 [[package]]
 name = "pymdown-extensions"
@@ -4760,14 +4760,14 @@ files = [
 
 [[package]]
 name = "tqdm"
-version = "4.67.1"
+version = "4.67.2"
 description = "Fast, Extensible Progress Meter"
 optional = false
 python-versions = ">=3.7"
 groups = ["main"]
 files = [
-    {file = "tqdm-4.67.1-py3-none-any.whl", hash = "sha256:26445eca388f82e72884e0d580d5464cd801a3ea01e63e5601bdff9ba6a48de2"},
-    {file = "tqdm-4.67.1.tar.gz", hash = "sha256:f8aef9c52c08c13a65f30ea34f4e5aac3fd1a34959879d7e59e63027286627f2"},
+    {file = "tqdm-4.67.2-py3-none-any.whl", hash = "sha256:9a12abcbbff58b6036b2167d9d3853042b9d436fe7330f06ae047867f2f8e0a7"},
+    {file = "tqdm-4.67.2.tar.gz", hash = "sha256:649aac53964b2cb8dec76a14b405a4c0d13612cb8933aae547dd144eacc99653"},
 ]
 
 [package.dependencies]
@@ -4983,14 +4983,14 @@ watchmedo = ["PyYAML (>=3.10)"]
 
 [[package]]
 name = "wcwidth"
-version = "0.5.2"
+version = "0.5.3"
 description = "Measures the displayed width of unicode strings in a terminal"
 optional = false
 python-versions = ">=3.8"
 groups = ["dev"]
 files = [
-    {file = "wcwidth-0.5.2-py3-none-any.whl", hash = "sha256:46912178a64217749bf3426b21e36e849fbc46e05c949407b3e364d9f7ffcadf"},
-    {file = "wcwidth-0.5.2.tar.gz", hash = "sha256:c022c39a02a0134d1e10810da36d1f984c79648181efcc70a389f4569695f5ae"},
+    {file = "wcwidth-0.5.3-py3-none-any.whl", hash = "sha256:d584eff31cd4753e1e5ff6c12e1edfdb324c995713f75d26c29807bb84bf649e"},
+    {file = "wcwidth-0.5.3.tar.gz", hash = "sha256:53123b7af053c74e9fe2e92ac810301f6139e64379031f7124574212fb3b4091"},
 ]
 
 [[package]]
