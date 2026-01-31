@@ -51,7 +51,7 @@ from sqlalchemy import Boolean, DateTime, column, select, table
 from sqlalchemy.sql import Select
 
 from ftmq.query import Query
-from ftmq.store.base import Store
+from ftmq.store.base import DEFAULT_ORIGIN, Store
 from ftmq.store.sql import SQLQueryView, SQLStore
 from ftmq.types import StatementEntities
 from ftmq.util import apply_dataset, ensure_entity, get_scope_dataset
@@ -61,7 +61,6 @@ log = get_logger(__name__)
 Z_ORDER = ["canonical_id", "prop"]  # don't add more columns here
 TARGET_SIZE = 50 * 10_485_760  # 500 MB
 PARTITION_BY = ["dataset", "bucket", "origin"]
-DEFAULT_ORIGIN = "default"
 BUCKET_MENTION = "mention"
 BUCKET_PAGE = "page"
 BUCKET_PAGES = "pages"

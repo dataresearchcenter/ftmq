@@ -13,7 +13,7 @@ from ftmq.model.stats import Collector, DatasetStats
 from ftmq.query import Query
 from ftmq.similar import get_similar
 from ftmq.types import StatementEntities, StatementEntity
-from ftmq.util import ensure_dataset
+from ftmq.util import DEFAULT_DATASET, ensure_dataset
 
 log = get_logger(__name__)
 
@@ -52,7 +52,7 @@ class Store(nk.Store[Dataset, StatementEntity], Generic[V]):
         linker = linker or get_resolver(kwargs.get("uri"))
         super().__init__(dataset=dataset, linker=linker, **kwargs)
         # implicit set all datasets as default store scope:
-        if dataset.name == "default" and not dataset.leaf_names:
+        if dataset.name == DEFAULT_DATASET and not dataset.leaf_names:
             self.dataset = self.get_scope()
 
     def get_scope(self) -> Dataset:
