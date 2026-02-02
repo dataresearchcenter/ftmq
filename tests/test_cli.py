@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import orjson
+from anystore.logging import configure_logging
 from click.testing import CliRunner
 from followthemoney import ValueEntity
 from followthemoney.dataset.dataset import DatasetModel
@@ -18,6 +19,8 @@ def _get_lines(output: str) -> list[str]:
 
 
 def test_cli(fixtures_path: Path):
+    configure_logging()
+
     result = runner.invoke(cli, "--help")
     assert result.exit_code == 0
 
@@ -73,6 +76,8 @@ def test_cli(fixtures_path: Path):
 
 
 def test_cli_apply(fixtures_path: Path):
+    configure_logging()
+
     in_uri = str(fixtures_path / "eu_authorities.ftm.json")
 
     result = runner.invoke(
@@ -103,6 +108,8 @@ def test_cli_apply(fixtures_path: Path):
 
 
 def test_cli_stats(fixtures_path: Path):
+    configure_logging()
+
     in_uri = str(fixtures_path / "donations.ijson")
     result = runner.invoke(cli, ["-i", in_uri, "-o", "/dev/null", "--stats-uri", "-"])
     assert result.exit_code == 0
@@ -165,6 +172,8 @@ def test_cli_stats(fixtures_path: Path):
 
 
 def test_cli_aggregation(fixtures_path: Path):
+    configure_logging()
+
     in_uri = str(fixtures_path / "donations.ijson")
     result = runner.invoke(
         cli,
@@ -218,6 +227,8 @@ def test_cli_aggregation(fixtures_path: Path):
 
 
 def test_cli_generate(fixtures_path: Path):
+    configure_logging()
+
     # dataset
     uri = str(fixtures_path / "dataset.yml")
     res = runner.invoke(cli, ["dataset", "generate", "-i", uri])
