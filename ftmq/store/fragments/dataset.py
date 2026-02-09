@@ -263,36 +263,34 @@ class Fragments(object):
         processing of iterator Entities
         """
         last_id = None
-        with self.store.engine.connect() as conn:
-            while True:
-                stmt = select(self.table.c.id).distinct()
-                if last_id is not None:
-                    stmt = stmt.where(self.table.c.id > last_id)
-                if schema is not None:
-                    if self.store.is_postgres:
-                        stmt = stmt.where(
-                            self.table.c.entity["schema"].astext == schema
-                        )
-                    else:
-                        # SQLite JSON support - use json_extract function
-                        stmt = stmt.where(
-                            func.json_extract(self.table.c.entity, "$.schema") == schema
-                        )
-                if since is not None:
-                    stmt = stmt.where(self.table.c.timestamp >= since)
-                if until is not None:
-                    stmt = stmt.where(self.table.c.timestamp <= until)
-                stmt = stmt.order_by(self.table.c.id).limit(batch_size)
-                try:
+        while True:
+            stmt = select(self.table.c.id).distinct()
+            if last_id is not None:
+                stmt = stmt.where(self.table.c.id > last_id)
+            if schema is not None:
+                if self.store.is_postgres:
+                    stmt = stmt.where(self.table.c.entity["schema"].astext == schema)
+                else:
+                    # SQLite JSON support - use json_extract function
+                    stmt = stmt.where(
+                        func.json_extract(self.table.c.entity, "$.schema") == schema
+                    )
+            if since is not None:
+                stmt = stmt.where(self.table.c.timestamp >= since)
+            if until is not None:
+                stmt = stmt.where(self.table.c.timestamp <= until)
+            stmt = stmt.order_by(self.table.c.id).limit(batch_size)
+            try:
+                with self.store.engine.connect() as conn:
                     res = conn.execute(stmt)
                     entity_ids = [r.id for r in res.fetchall()]
-                    if not entity_ids:
-                        return
-                    yield entity_ids
-                    last_id = entity_ids[-1]
-                except Exception:
-                    self.reset()
-                    raise
+            except Exception:
+                self.reset()
+                raise
+            if not entity_ids:
+                return
+            yield entity_ids
+            last_id = entity_ids[-1]
 
     def get_sorted_ids(
         self, batch_size=10_000, schema=None, since=None, until=None
