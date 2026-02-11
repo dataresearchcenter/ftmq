@@ -4358,13 +4358,13 @@ jupyter = ["ipywidgets (>=7.5.1,<9)"]
 
 [[package]]
 name = "rigour"
-version = "1.6.2"
+version = "1.7.2"
 description = "Financial crime domain data validation and normalization library."
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "rigour-1.6.2-py3-none-any.whl", hash = "sha256:8f2fca963be2171c6fb8543c96d532ea948a452b2734eb61ff8a81b2f2ee773c"},
+    {file = "rigour-1.7.2-py3-none-any.whl", hash = "sha256:1e57c421f76df12f17aad89be7887f699deac97b9797b5e0fd92a8d13a2d9cc4"},
 ]
 
 [package.dependencies]
