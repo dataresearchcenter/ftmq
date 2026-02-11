@@ -265,11 +265,18 @@ class LakeStore(SQLStore[LakeQueryView]):
     def deltatable(self) -> DeltaTable:
         return DeltaTable(self.uri, storage_options=storage_options())
 
-    def _execute(self, q: Select, stream: bool = True) -> Generator[Any, None, None]:
+    @property
+    def exists(self) -> bool:
         try:
-            yield from stream_duckdb(q, self.deltatable)
+            self.deltatable
+            return True
         except TableNotFoundError:
-            pass
+            return False
+
+    def _execute(self, q: Select, stream: bool = True) -> Generator[Any, None, None]:
+        if not self.exists:
+            return
+        yield from stream_duckdb(q, self.deltatable)
 
     def get_scope(self) -> Dataset:
         if "dataset" not in self._partition_by:
