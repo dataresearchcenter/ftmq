@@ -268,7 +268,7 @@ class LakeStore(SQLStore[LakeQueryView]):
     @property
     def exists(self) -> bool:
         try:
-            self.deltatable
+            self.deltatable.version()
             return True
         except TableNotFoundError:
             return False
