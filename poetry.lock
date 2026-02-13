@@ -2657,13 +2657,13 @@ files = [
 
 [[package]]
 name = "nomenklatura"
-version = "4.6.3"
+version = "4.6.6"
 description = "Make record linkages in followthemoney data."
 optional = false
 python-versions = ">=3.11"
 groups = ["main"]
 files = [
-    {file = "nomenklatura-4.6.3-py3-none-any.whl", hash = "sha256:cd39c23d5ec58733fcd493a8d5f47bf9e8133a19454b2af16fe28041c62ef150"},
+    {file = "nomenklatura-4.6.6-py3-none-any.whl", hash = "sha256:a1d368e9cd152f3527ed313c7e11246a20e771f4cb576d3d4954f2b1cb940dca"},
 ]
 
 [package.dependencies]
