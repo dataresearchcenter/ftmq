@@ -334,7 +334,7 @@ sql = ["sqlalchemy (>=2.0.36,<3.0.0)"]
 type = "git"
 url = "https://github.com/dataresearchcenter/anystore.git"
 reference = "HEAD"
-resolved_reference = "971493138e99abc36a449b4a4798024ff1391a3e"
+resolved_reference = "173d1767bd135699f684b2e20d489a782eb6d017"
 
 [[package]]
 name = "arro3-core"
@@ -5466,4 +5466,4 @@ sql = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.14"
-content-hash = "fa3f175f70485fcc4ed64c1b447635af80498ebb953983d8b1218568d4e4003e"
+content-hash = "9c8500f9a260ba0baa483581e4dc17ab3818ed91d5201c47bcb693c41511f447"
