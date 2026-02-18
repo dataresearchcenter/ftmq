@@ -4016,14 +4016,14 @@ testing = ["process-tests", "pytest-xdist", "virtualenv"]
 
 [[package]]
 name = "pytest-env"
-version = "1.4.0"
+version = "1.5.0"
 description = "pytest plugin that allows you to add environment variables."
 optional = false
 python-versions = ">=3.10"
 groups = ["dev"]
 files = [
-    {file = "pytest_env-1.4.0-py3-none-any.whl", hash = "sha256:bbad94133b7ac4155061a18e44b476de4f3514ee7b0c7d1a4af3bd8f8053e43e"},
-    {file = "pytest_env-1.4.0.tar.gz", hash = "sha256:713e19187538c7286a30d3fddd08dcf27f2f979eafb2948c6f114b11b33f70d9"},
+    {file = "pytest_env-1.5.0-py3-none-any.whl", hash = "sha256:89a15686ac837c9cd009a8a2d52bd55865e2f23c82094247915dae4540c87161"},
+    {file = "pytest_env-1.5.0.tar.gz", hash = "sha256:db8994b9ce170f135a37acc09ac753a6fc697d15e691b576ed8d8ca261c40246"},
 ]
 
 [package.dependencies]
@@ -5466,4 +5466,4 @@ sql = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.14"
-content-hash = "fdd21a063a4f0738dc3065350ff230fb987e1218e7a32c81cdc27e3dfbd0f9d3"
+content-hash = "1fda0cc79040b21bece976d1f70585a5c23ed1c28e55e47ec9fd52aa96637490"
