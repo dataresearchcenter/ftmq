@@ -122,8 +122,8 @@ def test_cli_stats(fixtures_path: Path):
         test_result["things"]["schemata"], key=lambda x: x["name"]
     )
     assert test_result == {
-        "start": "2002-07-04T00:00:00",
-        "end": "2011-12-29T00:00:00",
+        "start": "2002-07-04",
+        "end": "2011-12-29",
         "countries": ["cy", "de", "gb", "lu"],
         "things": {
             "total": 184,

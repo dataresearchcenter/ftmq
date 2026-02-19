@@ -1,9 +1,9 @@
 from collections import Counter
-from datetime import datetime
 from typing import Any
 
 from anystore.model import BaseModel
 from followthemoney import model
+from followthemoney.dataset.util import PartialDate
 from pydantic import model_validator
 
 from ftmq.types import Entities, Entity
@@ -49,8 +49,8 @@ class DatasetStats(BaseModel):
     things: Schemata = Schemata()
     intervals: Schemata = Schemata()
     entity_count: int = 0
-    start: datetime | None = None
-    end: datetime | None = None
+    start: PartialDate | None = None
+    end: PartialDate | None = None
     countries: set[str] = set()
 
     @property
