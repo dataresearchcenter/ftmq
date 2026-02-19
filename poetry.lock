@@ -302,10 +302,12 @@ name = "anystore"
 version = "1.1.0"
 description = "Store and cache things anywhere"
 optional = false
-python-versions = ">=3.11,<4"
+python-versions = "<4,>=3.11"
 groups = ["main"]
-files = []
-develop = false
+files = [
+    {file = "anystore-1.1.0-py3-none-any.whl", hash = "sha256:8e635203dc059ab2ab7f6b4bca77d3acbea958d814e73ea22d303ba4ba6b3ba0"},
+    {file = "anystore-1.1.0.tar.gz", hash = "sha256:261e1e48a13f981fb372c2023effd11927ad5201325b400f86c2f1127e57d095"},
+]
 
 [package.dependencies]
 banal = ">=1.0.6,<2.0.0"
@@ -329,12 +331,6 @@ uuid7 = ">=0.1.0,<0.2.0"
 api = ["fastapi (>=0.115.0,<1.0.0)", "uvicorn (>=0.34.0,<1.0.0)"]
 redis = ["fakeredis (>=2.26.2,<3.0.0)", "redis (>=4.0.0)"]
 sql = ["sqlalchemy (>=2.0.36,<3.0.0)"]
-
-[package.source]
-type = "git"
-url = "https://github.com/dataresearchcenter/anystore.git"
-reference = "HEAD"
-resolved_reference = "9b864e7b0b7dbe23874f2f08e2bc1311d35070be"
 
 [[package]]
 name = "arro3-core"
@@ -5437,4 +5433,4 @@ sql = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.14"
-content-hash = "de9a44775183586b1d65edf146c6b2b5f124343e170ea1ebe31936daf7d3ec86"
+content-hash = "a240f1c2f5e9499162c9d7cbc292aa9289d25b32423fedce6fea06b31db89a93"
