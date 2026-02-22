@@ -1,6 +1,6 @@
+from functools import cache
 from typing import Any, Generator, Type
 
-from anystore.functools import weakref_cache as cache
 from anystore.types import SDict, StrGenerator
 from banal import ensure_list, is_listish
 from followthemoney import E, model

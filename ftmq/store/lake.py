@@ -18,13 +18,13 @@ Layout:
     ```
 """
 
+from functools import cache
 from pathlib import Path
 from typing import Any, Generator
 from urllib.parse import urlparse
 
 import duckdb
 import pyarrow as pa
-from anystore.functools import weakref_cache as cache
 from anystore.interface.lock import Lock
 from anystore.logging import get_logger
 from anystore.store import Store as FSStore
