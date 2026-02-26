@@ -299,14 +299,14 @@ files = [
 
 [[package]]
 name = "anystore"
-version = "1.1.1"
+version = "1.1.2"
 description = "Store and cache things anywhere"
 optional = false
 python-versions = "<4,>=3.11"
 groups = ["main"]
 files = [
-    {file = "anystore-1.1.1-py3-none-any.whl", hash = "sha256:322df8d7570c9b23b511f5b223aba43a9a90246ab7e517eb4dd918e404ddfc8f"},
-    {file = "anystore-1.1.1.tar.gz", hash = "sha256:e4d7e68da5926a91202fb1106fb6d43a87616d8813d502c99e246911788f1550"},
+    {file = "anystore-1.1.2-py3-none-any.whl", hash = "sha256:3fe59a74a74a45d3b3d81dc05d1a3abb6db6cec2a18a006d348afb9aa8d44c1d"},
+    {file = "anystore-1.1.2.tar.gz", hash = "sha256:3f2b7c93ce607012ef34da08ab255ca36c6518524f324556637fc1c59e472b2d"},
 ]
 
 [package.dependencies]
@@ -2880,13 +2880,13 @@ files = [
 
 [[package]]
 name = "nomenklatura"
-version = "4.6.9"
+version = "4.7.0"
 description = "Make record linkages in followthemoney data."
 optional = false
 python-versions = ">=3.11"
 groups = ["main"]
 files = [
-    {file = "nomenklatura-4.6.9-py3-none-any.whl", hash = "sha256:8d0fca04c5f0e2aad6189014cebc4ce1c0f95ad781b83dab7b071476ae2f533a"},
+    {file = "nomenklatura-4.7.0-py3-none-any.whl", hash = "sha256:d50d4f05786c25d0519a8d0a0671763dd4d0f0bd647498841ea366038feefe66"},
 ]
 
 [package.dependencies]
@@ -5464,4 +5464,4 @@ sql = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.14"
-content-hash = "db07343f72659943d3c1bdcf5df205989d4bec1ed8bffe7b9ea0d913d77e4c33"
+content-hash = "cfc407a8a71bff955dd50488ba8557484847e58193cd29ac08c25633bc15ea20"
