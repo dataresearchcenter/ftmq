@@ -157,6 +157,62 @@ def test_fragment_store_sqlite():
     dataset.store.close()
 
 
+def test_fragment_store_origin_filter_sqlite():
+    """Test origin filtering returns only fragments for the specified origin"""
+    uri = "sqlite://"
+    dataset = get_fragments("test_origin", database_uri=uri)
+    dataset.drop()
+
+    # Same entity, two fragments with different origins
+    dataset.put(
+        {"id": "p1", "schema": "Person", "properties": {"name": ["Alice"]}},
+        fragment="name",
+        origin="default",
+    )
+    dataset.put(
+        {"id": "p1", "schema": "Person", "properties": {"birthDate": ["1990-01-01"]}},
+        fragment="birth",
+        origin="test",
+    )
+    # A second entity only in "test" origin
+    dataset.put(
+        {"id": "p2", "schema": "Person", "properties": {"name": ["Bob"]}},
+        fragment="name",
+        origin="test",
+    )
+
+    # Without origin filter: p1 merges both fragments, p2 present
+    all_entities = {e.id: e for e in dataset.iterate()}
+    assert len(all_entities) == 2
+    assert "Alice" in all_entities["p1"].get("name")
+    assert "1990-01-01" in all_entities["p1"].get("birthDate")
+
+    # With origin="test": p1 must only have birthDate (no name), p2 present
+    test_entities = {e.id: e for e in dataset.iterate(origin="test")}
+    assert len(test_entities) == 2
+    assert test_entities["p1"].get("birthDate") == ["1990-01-01"]
+    assert test_entities["p1"].get("name") == []  # name was from "default" origin
+    assert "Bob" in test_entities["p2"].get("name")
+
+    # With origin="default": only p1 with name, no birthDate, no p2
+    default_entities = {e.id: e for e in dataset.iterate(origin="default")}
+    assert len(default_entities) == 1
+    assert "Alice" in default_entities["p1"].get("name")
+    assert default_entities["p1"].get("birthDate") == []
+
+    # get_sorted_ids respects origin
+    test_ids = list(dataset.get_sorted_ids(origin="test"))
+    assert test_ids == ["p1", "p2"]
+    default_ids = list(dataset.get_sorted_ids(origin="default"))
+    assert default_ids == ["p1"]
+
+    # Non-existent origin returns nothing
+    assert list(dataset.iterate(origin="nope")) == []
+
+    dataset.drop()
+    dataset.store.close()
+
+
 def test_fragment_store_timestamp_filter_sqlite():
     """Test timestamp filtering with since and until parameters"""
     uri = "sqlite://"

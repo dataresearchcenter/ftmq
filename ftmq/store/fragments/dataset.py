@@ -133,7 +133,13 @@ class Fragments(object):
         return BulkLoader(self, size)
 
     def fragments(
-        self, entity_ids=None, fragment=None, schema=None, since=None, until=None
+        self,
+        entity_ids=None,
+        fragment=None,
+        schema=None,
+        since=None,
+        until=None,
+        origin=None,
     ):
         stmt = self.table.select()
         entity_ids = ensure_list(entity_ids)
@@ -143,6 +149,8 @@ class Fragments(object):
             stmt = stmt.where(self.table.c.id.in_(entity_ids))
         if fragment is not None:
             stmt = stmt.where(self.table.c.fragment == fragment)
+        if origin is not None:
+            stmt = stmt.where(self.table.c.origin == origin)
         if schema is not None:
             if self.store.is_postgres:
                 stmt = stmt.where(self.table.c.entity["schema"].astext == schema)
@@ -174,10 +182,20 @@ class Fragments(object):
             conn.close()
 
     def partials(
-        self, entity_id=None, skip_errors=False, schema=None, since=None, until=None
+        self,
+        entity_id=None,
+        skip_errors=False,
+        schema=None,
+        since=None,
+        until=None,
+        origin=None,
     ) -> EntityFragments:
         for fragment in self.fragments(
-            entity_ids=entity_id, schema=schema, since=since, until=until
+            entity_ids=entity_id,
+            schema=schema,
+            since=since,
+            until=until,
+            origin=origin,
         ):
             try:
                 yield EntityProxy.from_dict(fragment, cleaned=True)
@@ -188,12 +206,22 @@ class Fragments(object):
                 raise
 
     def iterate(
-        self, entity_id=None, skip_errors=False, schema=None, since=None, until=None
+        self,
+        entity_id=None,
+        skip_errors=False,
+        schema=None,
+        since=None,
+        until=None,
+        origin=None,
     ) -> EntityFragments:
         if entity_id is None:
             log.info("Using batched iteration for complete dataset.")
             yield from self.iterate_batched(
-                skip_errors=skip_errors, schema=schema, since=since, until=until
+                skip_errors=skip_errors,
+                schema=schema,
+                since=since,
+                until=until,
+                origin=origin,
             )
             return
         entity = None
@@ -205,6 +233,7 @@ class Fragments(object):
             schema=schema,
             since=since,
             until=until,
+            origin=origin,
         ):
             if partial.id == invalid:
                 continue
@@ -238,14 +267,20 @@ class Fragments(object):
             yield entity
 
     def iterate_batched(
-        self, skip_errors=False, batch_size=10_000, schema=None, since=None, until=None
+        self,
+        skip_errors=False,
+        batch_size=10_000,
+        schema=None,
+        since=None,
+        until=None,
+        origin=None,
     ) -> EntityFragments:
         """
         For large datasets an overall sort is not feasible, so we iterate in
         sorted batched IDs.
         """
         for entity_ids in self.get_sorted_id_batches(
-            batch_size, schema=schema, since=since, until=until
+            batch_size, schema=schema, since=since, until=until, origin=origin
         ):
             yield from self.iterate(
                 entity_id=entity_ids,
@@ -253,10 +288,11 @@ class Fragments(object):
                 schema=schema,
                 since=since,
                 until=until,
+                origin=origin,
             )
 
     def get_sorted_id_batches(
-        self, batch_size=10_000, schema=None, since=None, until=None
+        self, batch_size=10_000, schema=None, since=None, until=None, origin=None
     ) -> Generator[list[str], None, None]:
         """
         Get sorted ID batches to speed up iteration and useful to parallelize
@@ -265,6 +301,8 @@ class Fragments(object):
         last_id = None
         while True:
             stmt = select(self.table.c.id).distinct()
+            if origin is not None:
+                stmt = stmt.where(self.table.c.origin == origin)
             if last_id is not None:
                 stmt = stmt.where(self.table.c.id > last_id)
             if schema is not None:
@@ -293,10 +331,12 @@ class Fragments(object):
             last_id = entity_ids[-1]
 
     def get_sorted_ids(
-        self, batch_size=10_000, schema=None, since=None, until=None
+        self, batch_size=10_000, schema=None, since=None, until=None, origin=None
     ) -> Generator[str, None, None]:
-        """Get sorted IDs, optionally filtered by schema"""
-        for batch in self.get_sorted_id_batches(batch_size, schema, since, until):
+        """Get sorted IDs, optionally filtered by schema or origin"""
+        for batch in self.get_sorted_id_batches(
+            batch_size, schema=schema, since=since, until=until, origin=origin
+        ):
             yield from batch
 
     def statements(
