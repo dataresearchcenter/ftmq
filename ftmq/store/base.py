@@ -1,5 +1,5 @@
 from functools import cache
-from typing import Generator, Generic, Iterable, TypeVar
+from typing import Generic, Iterable, TypeVar
 from urllib.parse import urlparse
 
 from anystore.logging import get_logger
@@ -11,7 +11,6 @@ from nomenklatura.resolver import Resolver
 from ftmq.aggregations import AggregatorResult
 from ftmq.model.stats import Collector, DatasetStats
 from ftmq.query import Query
-from ftmq.similar import get_similar
 from ftmq.types import StatementEntities, StatementEntity
 from ftmq.util import DEFAULT_DATASET, ensure_dataset
 
@@ -144,11 +143,3 @@ class View(nk.View):
             res = dict(query.aggregator.result)
             self._cache[key] = res
             return res
-
-    def similar(
-        self, entity_id: str, limit: int | None = None
-    ) -> Generator[tuple[StatementEntity, float], None, None]:
-        for candidate_id, score in get_similar(entity_id, self.store.linker, limit):
-            entity = self.get_entity(candidate_id)
-            if entity:
-                yield entity, score
