@@ -12,7 +12,7 @@ Layout:
     ./data/
         _delta_log/
             [ix].json
-        bucket=[bucket]/  # things, intervals, documents
+        bucket=[bucket]/  # things, intervals, documents, pages, page, mentions
             origin=[origin]/
                 [uid].parquet
     ```
@@ -49,6 +49,7 @@ from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import Boolean, DateTime, column, select, table
 from sqlalchemy.sql import Select
+from sqlalchemy.sql.elements import ColumnElement
 
 from ftmq.query import Query
 from ftmq.store.base import DEFAULT_ORIGIN, Store
@@ -119,7 +120,9 @@ ARROW_SCHEMA = pa.schema(
 
 
 class StorageSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", extra="ignore", secrets_dir="/run/secrets"
+    )
 
     key: str | None = Field(default=None, alias="aws_access_key_id")
     secret: str | None = Field(default=None, alias="aws_secret_access_key")
@@ -195,7 +198,9 @@ def pack_statement(stmt: Statement, source: str | None = None) -> SDict:
     return data
 
 
-def compile_query(q: Select) -> str:
+def compile_query(q: Select, view_filter: ColumnElement | None = None) -> str:
+    if view_filter is not None:
+        q = q.where(view_filter)
     table = nks.STATEMENT_TABLE
     sql = str(q.compile(compile_kwargs={"literal_binds": True}))
     return sql.replace(f"FROM {table}", f"FROM arrow as {table}")
@@ -215,14 +220,22 @@ class Row:
         return list(self.__iter__())[i]
 
 
-def query_duckdb(q: Select, table: DeltaTable) -> duckdb.DuckDBPyRelation:
+def query_duckdb(
+    q: Select,
+    table: DeltaTable,
+    view_filter: ColumnElement | None = None,
+) -> duckdb.DuckDBPyRelation:
     rel = duckdb.arrow(table.to_pyarrow_dataset())
-    query = compile_query(q)
+    query = compile_query(q, view_filter)
     return rel.query("arrow", query)
 
 
-def stream_duckdb(q: Select, table: DeltaTable) -> Generator[Any, None, None]:
-    res = query_duckdb(q, table)
+def stream_duckdb(
+    q: Select,
+    table: DeltaTable,
+    view_filter: ColumnElement | None = None,
+) -> Generator[Any, None, None]:
+    res = query_duckdb(q, table, view_filter)
     while rows := res.fetchmany(100_000):
         for row in rows:
             yield Row(dict(zip(res.columns, row)))
@@ -254,6 +267,7 @@ class LakeStore(SQLStore[LakeQueryView]):
         self._partition_by = kwargs.pop("partition_by", PARTITION_BY)
         self._lock: Lock = kwargs.pop("lock", Lock(self._backend))
         self._enforce_dataset = kwargs.pop("enforce_dataset", False)
+        self._view_filter: ColumnElement | None = kwargs.pop("view_filter", None)
         kwargs["uri"] = "sqlite:///:memory:"  # fake it till you make it
         get_metadata.cache_clear()
         super().__init__(*args, **kwargs)
@@ -276,7 +290,7 @@ class LakeStore(SQLStore[LakeQueryView]):
     def _execute(self, q: Select, stream: bool = True) -> Generator[Any, None, None]:
         if not self.exists:
             return
-        yield from stream_duckdb(q, self.deltatable)
+        yield from stream_duckdb(q, self.deltatable, self._view_filter)
 
     def get_scope(self) -> Dataset:
         if "dataset" not in self._partition_by:
