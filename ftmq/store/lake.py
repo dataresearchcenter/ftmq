@@ -287,9 +287,19 @@ class LakeStore(SQLStore[LakeQueryView]):
         except TableNotFoundError:
             return False
 
+    def _apply_filters(self, q: Select) -> Select:
+        """Hook for subclasses to inject additional WHERE clauses.
+
+        Called before every query execution. Override to add partition
+        filters, tenant scoping, etc. The default implementation is a
+        no-op — filters return the query unchanged.
+        """
+        return q
+
     def _execute(self, q: Select, stream: bool = True) -> Generator[Any, None, None]:
         if not self.exists:
             return
+        q = self._apply_filters(q)
         yield from stream_duckdb(q, self.deltatable, self._view_filter)
 
     def get_scope(self) -> Dataset:
