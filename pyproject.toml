@@ -18,7 +18,7 @@ requires-python = ">=3.11,<3.14"
 dependencies = [
     "anystore (>=1.1.5,<2.0.0)",
     "followthemoney (>=4.7.0,<5.0.0)",
-    "nomenklatura (>=4.7.1,<5.0.0)",
+    "nomenklatura (>=4.7.3,<5.0.0)",
     "rigour (>=1.7.5,<2.0.0)",
     "click (>=8.2.1,<9.0.0)",
     "click-default-group (>=1.2.4,<2.0.0)",
@@ -33,7 +33,7 @@ sql = ["sqlalchemy (>=2.0.36,<3.0.0)"]
 postgres = ["sqlalchemy (>=2.0.36,<3.0.0)", "psycopg[pool] (>=3.2.9,<4.0.0)"]
 redis = ["redis (>=5.2.1,<6.0.0)", "fakeredis (>=2.26.2,<3.0.0)"]
 lake = [
-    "duckdb (>=1.5.0,<2.0.0)",
+    "duckdb (>=1.5.1,<2.0.0)",
     "deltalake (>=1.5.0,<2.0.0)",
     "pyarrow (>=23.0.1,<24.0.0)",
     "pandas (>=3.0.1,<4.0.0)",
