@@ -25,6 +25,7 @@ from urllib.parse import urlparse
 
 import duckdb
 import pyarrow as pa
+import pyarrow.compute as pc
 from anystore.interface.lock import Lock
 from anystore.logging import get_logger
 from anystore.store import Store as FSStore
@@ -68,26 +69,49 @@ BUCKET_PAGES = "pages"
 BUCKET_DOCUMENT = "document"
 BUCKET_INTERVAL = "interval"
 BUCKET_THING = "thing"
-STATISTICS_BLOOM = ColumnProperties(
-    bloom_filter_properties=BloomFilterProperties(True),
+_STATS_BLOOM = ColumnProperties(
+    bloom_filter_properties=BloomFilterProperties(
+        set_bloom_filter_enabled=True, fpp=0.01
+    ),
     statistics_enabled="CHUNK",
     dictionary_enabled=True,
 )
-STATISTICS = ColumnProperties(statistics_enabled="CHUNK", dictionary_enabled=True)
-WRITER = WriterProperties(
-    data_page_size_limit=64 * 1024,
-    dictionary_page_size_limit=512 * 1024,
-    max_row_group_size=500_000,
-    compression="SNAPPY",
-    column_properties={
-        "canonical_id": STATISTICS,
-        "entity_id": STATISTICS,
-        "schema": STATISTICS,
-        "prop": STATISTICS_BLOOM,
-        "value": STATISTICS_BLOOM,
-        "last_seen": ColumnProperties(statistics_enabled="CHUNK"),
-    },
+_STATS = ColumnProperties(statistics_enabled="CHUNK", dictionary_enabled=True)
+_STATS_NO_DICT = ColumnProperties(statistics_enabled="CHUNK", dictionary_enabled=False)
+
+_COMMON_COLUMNS = {
+    "id": _STATS,
+    "canonical_id": _STATS,
+    "entity_id": _STATS,
+    "schema": _STATS,
+    "prop": _STATS_BLOOM,
+    "dataset": _STATS,
+    "lang": _STATS,
+    "first_seen": ColumnProperties(statistics_enabled="CHUNK"),
+    "last_seen": ColumnProperties(statistics_enabled="CHUNK"),
+}
+WRITER_SMALL = WriterProperties(
+    compression="ZSTD",
+    compression_level=6,
+    data_page_size_limit=2 * 1024 * 1024,
+    dictionary_page_size_limit=1 * 1024 * 1024,
+    max_row_group_size=1_000_000,
+    column_properties={**_COMMON_COLUMNS, "value": _STATS_BLOOM},
 )
+WRITER_LARGE = WriterProperties(
+    compression="ZSTD",
+    compression_level=6,
+    data_page_size_limit=2 * 1024 * 1024,
+    dictionary_page_size_limit=1 * 1024 * 1024,
+    max_row_group_size=500_000,
+    column_properties={**_COMMON_COLUMNS, "value": _STATS_NO_DICT},
+)
+LARGE_BUCKETS = frozenset({BUCKET_DOCUMENT, BUCKET_PAGE, BUCKET_PAGES})
+
+
+def writer_for_bucket(bucket: str) -> WriterProperties:
+    return WRITER_LARGE if bucket in LARGE_BUCKETS else WRITER_SMALL
+
 
 SA_TO_ARROW: dict[type, pa.DataType] = {
     Boolean: pa.bool_(),
@@ -370,39 +394,41 @@ class LakeWriter(nk.Writer):
         if len(self.batch) >= self.BATCH_STATEMENTS:
             self.flush()
 
-    def _pack_batches(self) -> Generator[pa.RecordBatch, None, None]:
-        batch: list[SDict] = []
+    def _build_table(self) -> pa.Table:
+        rows: list[SDict] = []
         for key in sorted(self.batch):
             stmt, source = self.batch[key]
-            batch.append(pack_statement(stmt, source))
-            if len(batch) >= 100_000:
-                yield pa.RecordBatch.from_pylist(batch, schema=ARROW_SCHEMA)
-                batch = []
-        if batch:
-            yield pa.RecordBatch.from_pylist(batch, schema=ARROW_SCHEMA)
+            rows.append(pack_statement(stmt, source))
+        return pa.Table.from_pylist(rows, schema=ARROW_SCHEMA)
 
     def flush(self) -> None:
-        if self.batch:
-            log.info(
-                f"Write {len(self.batch)} statements to deltalake ...",
-                uri=self.store.uri,
-            )
-            with self.store._lock:
-                reader = pa.RecordBatchReader.from_batches(
-                    ARROW_SCHEMA, self._pack_batches()
+        if not self.batch:
+            self.batch = {}
+            return
+        log.info(
+            f"Write {len(self.batch)} statements to deltalake ...",
+            uri=self.store.uri,
+        )
+        table = self._build_table()
+        with self.store._lock:
+            for bucket in table.column("bucket").unique().to_pylist():
+                split = table.filter(pc.equal(table.column("bucket"), bucket)).sort_by(
+                    [
+                        ("entity_id", "ascending"),
+                        ("prop", "ascending"),
+                    ]
                 )
                 write_deltalake(
                     str(self.store.uri),
-                    reader,
+                    split,
                     partition_by=self.store._partition_by,
                     mode="append",
                     schema_mode="merge",
-                    writer_properties=WRITER,
+                    writer_properties=writer_for_bucket(bucket),
                     target_file_size=TARGET_SIZE,
                     storage_options=storage_options(),
                     configuration={"delta.enableChangeDataFeed": "true"},
                 )
-
         self.batch = {}
 
     def pop(self, entity_id: str) -> list[Statement]:
@@ -433,21 +459,38 @@ class LakeWriter(nk.Writer):
             bucket: Filter optimization to specific bucket partition
             origin: Filter optimization to specific origin partition
         """
-        filters: FilterConjunctionType = []
+        base_filters: FilterConjunctionType = []
         if dataset is not None:
-            filters.append(("dataset", "=", dataset))
-        if bucket is not None:
-            filters.append(("bucket", "=", bucket))
+            base_filters.append(("dataset", "=", dataset))
         if origin is not None:
-            filters.append(("origin", "=", origin))
+            base_filters.append(("origin", "=", origin))
 
         with self.store._lock:
-            self.store.deltatable.optimize.z_order(
-                Z_ORDER,
-                writer_properties=WRITER,
-                target_size=TARGET_SIZE,
-                partition_filters=filters or None,
-            )
+            if bucket is not None:
+                filters = list(base_filters) + [("bucket", "=", bucket)]
+                self.store.deltatable.optimize.z_order(
+                    Z_ORDER,
+                    writer_properties=writer_for_bucket(bucket),
+                    target_size=TARGET_SIZE,
+                    partition_filters=filters or None,
+                )
+            else:
+                all_buckets = [
+                    BUCKET_THING,
+                    BUCKET_INTERVAL,
+                    BUCKET_MENTION,
+                    BUCKET_DOCUMENT,
+                    BUCKET_PAGE,
+                    BUCKET_PAGES,
+                ]
+                for b in all_buckets:
+                    filters = list(base_filters) + [("bucket", "=", b)]
+                    self.store.deltatable.optimize.z_order(
+                        Z_ORDER,
+                        writer_properties=writer_for_bucket(b),
+                        target_size=TARGET_SIZE,
+                        partition_filters=filters,
+                    )
             if vacuum:
                 self.store.deltatable.vacuum(
                     retention_hours=vacuum_keep_hours,
