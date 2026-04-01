@@ -124,6 +124,23 @@ class Fragments(object):
             self.reset()
             raise
 
+    def delete_many(self, entity_ids: list[str], origin: str | None = None):
+        if not entity_ids:
+            return
+
+        table = self.table
+        stmt = table.delete()
+        stmt = stmt.where(table.c.id.in_(entity_ids))
+        if origin is not None:
+            stmt = stmt.where(table.c.origin == origin)
+        try:
+            with self.store.engine.connect() as conn:
+                conn.execute(stmt)
+                conn.commit()
+        except UNDEFINED:
+            self.reset()
+            raise
+
     def put(self, entity, fragment=None, origin=None):
         bulk = self.bulk()
         bulk.put(entity, fragment=fragment, origin=origin)
