@@ -16,8 +16,8 @@ classifiers = [
 ]
 requires-python = ">=3.11,<3.14"
 dependencies = [
-    "anystore (>=1.1.5,<2.0.0)",
-    "followthemoney @ git+https://github.com/dataresearchcenter/followthemoney.git@fix/pickle",
+    "anystore (>=1.1.6,<2.0.0)",
+    "followthemoney (>=4.7.0,<5.0.0)",
     "nomenklatura (>=4.7.3,<5.0.0)",
     "rigour (>=1.7.5,<2.0.0)",
     "click (>=8.2.1,<9.0.0)",
@@ -25,7 +25,6 @@ dependencies = [
     "orjson (>=3.10.18,<4.0.0)",
     "pyicu (>=2.15.2,<3.0.0)",
     "pydantic (>=2.11.3,<3.0.0)",
-    "psycopg2 (>=2.9.11,<3.0.0)",
 ]
 
 [project.optional-dependencies]
@@ -37,7 +36,7 @@ lake = [
     "duckdb (>=1.5.1,<2.0.0)",
     "deltalake (>=1.5.0,<2.0.0)",
     "pyarrow (>=23.0.1,<24.0.0)",
-    "pandas (>=3.0.1,<4.0.0)",
+    "pandas (>=3.0.2,<4.0.0)",
 ]
 aleph = ["furl (>=2.1.4,<3.0.0)", "alephclient (>=2.6.0,<3.0.0)"]
 
