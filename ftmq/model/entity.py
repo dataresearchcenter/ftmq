@@ -3,7 +3,6 @@ from typing import Any, Iterable, Mapping, Self, Sequence, TypeAlias
 from followthemoney.entity import ValueEntity
 from followthemoney.types import registry
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from rigour.names import pick_name
 
 from ftmq.types import Entity
 from ftmq.util import make_entity, must_str
@@ -50,7 +49,15 @@ class EntityModel(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def get_caption(cls, data: Any) -> Any:
+        """Derive ``caption`` from the entity proxy if not provided.
+
+        Uses ``ValueEntity.caption`` (the proxy property) which walks
+        the schema's full caption property list — e.g. ``fileName`` or
+        ``title`` for documents, ``identifier`` for things — and falls
+        back to the schema label if no caption property has a value.
+        The result is therefore always a non-empty string.
+        """
         if data.get("caption") is None:
             entity = make_entity(data)
-            data["caption"] = pick_name(entity.get_type_values(registry.name))
+            data["caption"] = entity.caption
         return data

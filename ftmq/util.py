@@ -84,6 +84,13 @@ def make_entity(
     """
     Create a `Entity` from a json dict.
 
+    The input ``data`` dict is **not** mutated. The underlying
+    ``ValueEntity.__init__`` (and ``EntityProxy.__init__``) destructively
+    pop their well-known fields (``caption``, ``datasets``, ``referents``,
+    ``first_seen``, ``last_seen``, ``last_change``, ``statements``) off
+    the dict they are handed, so this helper hands them a shallow copy
+    instead.
+
     Args:
         data: followthemoney data dict that represents entity data.
         entity_type: The entity class to use (`StatementEntity` or `ValueEntity`)
@@ -95,6 +102,10 @@ def make_entity(
     etype = entity_type or ValueEntity
     if data.get("id") is None:
         raise ValueError("Entity has no ID.")
+    # Defensive shallow copy: ValueEntity / EntityProxy / StatementEntity
+    # all destructively pop top-level fields off the input dict during
+    # construction. Callers don't expect their input to be consumed.
+    data = dict(data)
     if etype == EntityProxy:
         return EntityProxy.from_dict(data)
     if etype == ValueEntity:
