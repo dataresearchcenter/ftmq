@@ -1,11 +1,12 @@
-from typing import Any, Iterable, Mapping, Self, Sequence, TypeAlias
+from typing import Any, Iterable, Mapping, Self, Sequence, Type, TypeAlias
 
+from followthemoney import E
 from followthemoney.entity import ValueEntity
 from followthemoney.types import registry
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ftmq.types import Entity
-from ftmq.util import make_entity, must_str
+from ftmq.util import DEFAULT_DATASET, make_entity, must_str
 
 Properties: TypeAlias = Mapping[str, Sequence["str | EntityModel"]]
 
@@ -14,6 +15,7 @@ class EntityModel(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     id: str = Field(..., examples=["NK-A7z...."])
+    dataset: str = DEFAULT_DATASET
     caption: str = Field(..., examples=["Jane Doe"])
     schema_: str = Field(..., examples=["LegalEntity"], alias="schema")
     properties: Properties = Field(..., examples=[{"name": ["Jane Doe"]}])
@@ -43,8 +45,10 @@ class EntityModel(BaseModel):
             referents=list(entity.referents),
         )
 
-    def to_proxy(self) -> Entity:
-        return make_entity(self.model_dump(by_alias=True), ValueEntity)
+    def to_proxy(
+        self, entity_type: Type[E] = ValueEntity, default_dataset: str | None = None
+    ) -> E:
+        return make_entity(self.model_dump(by_alias=True), entity_type, default_dataset)
 
     @model_validator(mode="before")
     @classmethod
