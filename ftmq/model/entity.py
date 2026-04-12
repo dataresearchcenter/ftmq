@@ -1,6 +1,6 @@
 from typing import Any, Iterable, Mapping, Self, Sequence, Type, TypeAlias
 
-from followthemoney import E
+from followthemoney import E, model
 from followthemoney.entity import ValueEntity
 from followthemoney.types import registry
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -9,6 +9,14 @@ from ftmq.types import Entity
 from ftmq.util import DEFAULT_DATASET, make_entity, must_str
 
 Properties: TypeAlias = Mapping[str, Sequence["str | EntityModel"]]
+
+
+def _extract_id(data: "str | dict | EntityModel") -> str:
+    if isinstance(data, str):
+        return data
+    if isinstance(data, dict):
+        return data["id"]
+    return data.id
 
 
 class EntityModel(BaseModel):
@@ -48,7 +56,17 @@ class EntityModel(BaseModel):
     def to_proxy(
         self, entity_type: Type[E] = ValueEntity, default_dataset: str | None = None
     ) -> E:
-        return make_entity(self.model_dump(by_alias=True), entity_type, default_dataset)
+        """Turn the payload into ``followthemoney.EntityProxy``. For this to
+        work, we first have to unnest resolved entity properties"""
+        schema = model[self.schema_]
+        data = self.model_dump(by_alias=True)
+        props = data.pop("properties", {})
+        for prop in props:
+            prop = schema.properties[prop]
+            if prop.type == registry.entity:
+                props[prop.name] = [_extract_id(v) for v in props[prop.name]]
+        data["properties"] = props
+        return make_entity(data, entity_type, default_dataset)
 
     @model_validator(mode="before")
     @classmethod
@@ -61,7 +79,8 @@ class EntityModel(BaseModel):
         back to the schema label if no caption property has a value.
         The result is therefore always a non-empty string.
         """
-        if data.get("caption") is None:
-            entity = make_entity(data)
-            data["caption"] = entity.caption
+        if isinstance(data, dict):
+            if data.get("caption") is None:
+                entity = make_entity(data)
+                data["caption"] = entity.caption
         return data
