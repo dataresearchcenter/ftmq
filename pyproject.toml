@@ -24,7 +24,7 @@ dependencies = [
     "click-default-group (>=1.2.4,<2.0.0)",
     "orjson (>=3.10.18,<4.0.0)",
     "pyicu (>=2.15.2,<3.0.0)",
-    "pydantic (>=2.11.3,<3.0.0)",
+    "pydantic (>=2.13.3,<3.0.0)",
 ]
 
 [project.optional-dependencies]
