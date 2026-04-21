@@ -299,14 +299,14 @@ files = [
 
 [[package]]
 name = "anystore"
-version = "1.1.6"
+version = "1.1.7"
 description = "Store and cache things anywhere"
 optional = false
 python-versions = "<4,>=3.11"
 groups = ["main"]
 files = [
-    {file = "anystore-1.1.6-py3-none-any.whl", hash = "sha256:b00d5f50949dc41bc859264d3e67677db795c80122205b6312ab380fcb36fee2"},
-    {file = "anystore-1.1.6.tar.gz", hash = "sha256:b6023897ffd7b48b28b633fb580d95961ac39aba4019f563088a00415b60ab87"},
+    {file = "anystore-1.1.7-py3-none-any.whl", hash = "sha256:84d6f99371ce98a2c3ef60b84d68a24774df54c5a33578d982f8c93a8d3635b4"},
+    {file = "anystore-1.1.7.tar.gz", hash = "sha256:3183228e559f0d28b23f11ab0ecefe5e8612bbc67e5d466abdd318774ee13184"},
 ]
 
 [package.dependencies]
@@ -320,7 +320,7 @@ pyaml = ">=25.5.0,<26.0.0"
 pydantic = ">=2.11.7,<3.0.0"
 pydantic-settings = ">=2.7.1,<3.0.0"
 rich = ">=10.0.0,<15.0.0"
-rigour = ">=1.0.0,<2.0.0"
+rigour = ">=1.8.2,<2.0.0"
 s3fs = ">2023.10,<2027"
 structlog = ">=22.0.0,<26.0.0"
 tqdm = ">=4.67.1,<5.0.0"
@@ -5489,4 +5489,4 @@ sql = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.14"
-content-hash = "ffba0ce658ebca80dcda05b874bfc776a60892951a26069f3a8a1998a0e6017f"
+content-hash = "f275419ce9d292223bd5066de41147f0e00577d6d8018f39cd95d897760b6e27"
