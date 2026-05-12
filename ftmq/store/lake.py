@@ -12,7 +12,7 @@ Layout:
     ./data/
         _delta_log/
             [ix].json
-        bucket=[bucket]/  # things, intervals, documents, pages, page, mentions
+        bucket=[bucket]/  # things, intervals, documents, mentions
             origin=[origin]/
                 [uid].parquet
     ```
@@ -64,8 +64,6 @@ Z_ORDER = ["canonical_id", "prop"]  # don't add more columns here
 TARGET_SIZE = 50 * 10_485_760  # 500 MB
 PARTITION_BY = ["dataset", "bucket", "origin"]
 BUCKET_MENTION = "mention"
-BUCKET_PAGE = "page"
-BUCKET_PAGES = "pages"
 BUCKET_DOCUMENT = "document"
 BUCKET_INTERVAL = "interval"
 BUCKET_THING = "thing"
@@ -101,16 +99,15 @@ WRITER_SMALL = WriterProperties(
 WRITER_LARGE = WriterProperties(
     compression="ZSTD",
     compression_level=6,
-    data_page_size_limit=2 * 1024 * 1024,
+    data_page_size_limit=16 * 1024 * 1024,
     dictionary_page_size_limit=1 * 1024 * 1024,
-    max_row_group_size=500_000,
+    max_row_group_size=10_000,
     column_properties={**_COMMON_COLUMNS, "value": _STATS_NO_DICT},
 )
-LARGE_BUCKETS = frozenset({BUCKET_DOCUMENT, BUCKET_PAGE, BUCKET_PAGES})
 
 
 def writer_for_bucket(bucket: str) -> WriterProperties:
-    return WRITER_LARGE if bucket in LARGE_BUCKETS else WRITER_SMALL
+    return WRITER_LARGE if bucket == BUCKET_DOCUMENT else WRITER_SMALL
 
 
 SA_TO_ARROW: dict[type, pa.DataType] = {
@@ -204,10 +201,6 @@ def get_schema_bucket(schema_name: str) -> str:
     s = model[schema_name]
     if s.is_a("Mention"):
         return BUCKET_MENTION
-    if s.is_a("Page"):
-        return BUCKET_PAGE
-    if s.is_a("Pages"):
-        return BUCKET_PAGES
     if s.is_a("Document"):
         return BUCKET_DOCUMENT
     if s.is_a("Interval"):
@@ -480,8 +473,6 @@ class LakeWriter(nk.Writer):
                     BUCKET_INTERVAL,
                     BUCKET_MENTION,
                     BUCKET_DOCUMENT,
-                    BUCKET_PAGE,
-                    BUCKET_PAGES,
                 ]
                 for b in all_buckets:
                     filters = list(base_filters) + [("bucket", "=", b)]
