@@ -212,6 +212,7 @@ def pack_statement(stmt: Statement, source: str | None = None) -> SDict:
     data = stmt.to_db_row()
     data["bucket"] = get_schema_bucket(data["schema"])
     data["source"] = source
+    data["origin"] = data["origin"] or DEFAULT_ORIGIN
     return data
 
 
