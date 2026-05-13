@@ -18,9 +18,10 @@ Layout:
     ```
 """
 
-from functools import cache
+from contextlib import contextmanager
+from functools import cache, cached_property
 from pathlib import Path
-from typing import Any, Generator
+from typing import Any, Callable, Generator, Iterator
 from urllib.parse import urlparse
 
 import duckdb
@@ -214,16 +215,36 @@ def pack_statement(stmt: Statement, source: str | None = None) -> SDict:
     return data
 
 
-def compile_query(q: Select, view_filter: ColumnElement | None = None) -> str:
-    if view_filter is not None:
-        q = q.where(view_filter)
-    table = nks.STATEMENT_TABLE
-    sql = str(q.compile(compile_kwargs={"literal_binds": True}))
-    return sql.replace(f"FROM {table}", f"FROM arrow as {table}")
+ViewSqlBuilder = Callable[[DeltaTable], str]
+"""Returns the SELECT body for a view registered on the LakeStore
+connection. The body will be wrapped as ``CREATE OR REPLACE VIEW <name>
+AS <body>`` at connection-init time."""
+
+
+def default_view_sql(dt: DeltaTable) -> str:
+    """Default ``view_sqls`` builder for the ``statement`` view.
+
+    Returns a plain ``SELECT * FROM delta_scan('<uri>')`` so the view
+    surfaces the raw Delta rows. Consumers that want a deduped view
+    (e.g. ``ftm_lakehouse``) pass their own builder via the
+    :class:`LakeStore` ``view_sqls`` kwarg.
+
+    Single quotes in the URI are doubled to keep the SQL literal safe
+    (the URI is interpolated rather than bound because DuckDB's
+    ``delta_scan`` does not accept parameter binding for its path
+    argument).
+    """
+    table_uri = dt.table_uri.replace("'", "''")
+    return f"SELECT * FROM delta_scan('{table_uri}')"
 
 
 class Row:
-    """Fake sqlalchemy row-like class"""
+    """Fake sqlalchemy row-like class yielded by :meth:`LakeStore._execute`.
+
+    Wraps a dict of column → value with both attribute and index access
+    so downstream code (built around sqlalchemy ``Row`` objects) keeps
+    working unchanged.
+    """
 
     def __init__(self, data: SDict) -> None:
         for key, value in data.items():
@@ -234,27 +255,6 @@ class Row:
 
     def __getitem__(self, i: int) -> Any:
         return list(self.__iter__())[i]
-
-
-def query_duckdb(
-    q: Select,
-    table: DeltaTable,
-    view_filter: ColumnElement | None = None,
-) -> duckdb.DuckDBPyRelation:
-    rel = duckdb.arrow(table.to_pyarrow_dataset())
-    query = compile_query(q, view_filter)
-    return rel.query("arrow", query)
-
-
-def stream_duckdb(
-    q: Select,
-    table: DeltaTable,
-    view_filter: ColumnElement | None = None,
-) -> Generator[Any, None, None]:
-    res = query_duckdb(q, table, view_filter)
-    while rows := res.fetchmany(100_000):
-        for row in rows:
-            yield Row(dict(zip(res.columns, row)))
 
 
 def ensure_schema_buckets(q: Query) -> Select:
@@ -284,6 +284,11 @@ class LakeStore(SQLStore[LakeQueryView]):
         self._lock: Lock = kwargs.pop("lock", Lock(self._backend))
         self._enforce_dataset = kwargs.pop("enforce_dataset", False)
         self._view_filter: ColumnElement | None = kwargs.pop("view_filter", None)
+        view_sqls: dict[str, ViewSqlBuilder] | None = kwargs.pop("view_sqls", None)
+        self._view_sqls: dict[str, ViewSqlBuilder] = view_sqls or {
+            nks.STATEMENT_TABLE: default_view_sql,
+        }
+        self._duckdb_config: dict[str, str] = kwargs.pop("duckdb_config", None) or {}
         kwargs["uri"] = "sqlite:///:memory:"  # fake it till you make it
         get_metadata.cache_clear()
         super().__init__(*args, **kwargs)
@@ -303,6 +308,46 @@ class LakeStore(SQLStore[LakeQueryView]):
         except TableNotFoundError:
             return False
 
+    @cached_property
+    def _duckdb(self) -> duckdb.DuckDBPyConnection:
+        """Persistent DuckDB connection with all configured views registered.
+
+        The Delta extension is auto-installed / auto-loaded on first
+        ``delta_scan`` use thanks to the connection-level flags; no
+        explicit ``INSTALL`` / ``LOAD`` is needed. Views in
+        :attr:`_view_sqls` are registered at first access of this
+        property and persist for the lifetime of the ``LakeStore``.
+
+        DuckDB connections are not thread-safe; callers must use
+        :meth:`cursor` to get a thread-isolated child connection that
+        shares the catalog and registered views.
+        """
+        config = {
+            "autoinstall_known_extensions": "true",
+            "autoload_known_extensions": "true",
+            **self._duckdb_config,
+        }
+        con = duckdb.connect(":memory:", config=config)
+        dt = self.deltatable
+        for name, builder in self._view_sqls.items():
+            con.sql(f"CREATE OR REPLACE VIEW {name} AS {builder(dt)}")
+        return con
+
+    @contextmanager
+    def cursor(self) -> Iterator[duckdb.DuckDBPyConnection]:
+        """Yield a thread-isolated cursor on :attr:`_duckdb`.
+
+        Use as ``with store.cursor() as cur:`` for any synchronous
+        query. Generators that need the cursor alive while streaming
+        must pin it in their closure so it isn't closed before
+        consumption finishes.
+        """
+        cur = self._duckdb.cursor()
+        try:
+            yield cur
+        finally:
+            cur.close()
+
     def _apply_filters(self, q: Select) -> Select:
         """Hook for subclasses to inject additional WHERE clauses.
 
@@ -316,7 +361,19 @@ class LakeStore(SQLStore[LakeQueryView]):
         if not self.exists:
             return
         q = self._apply_filters(q)
-        yield from stream_duckdb(q, self.deltatable, self._view_filter)
+        if self._view_filter is not None:
+            q = q.where(self._view_filter)
+        sql = str(q.compile(compile_kwargs={"literal_binds": True}))
+        with self.cursor() as cur:
+            res = cur.execute(sql)
+            cols = (
+                res.columns
+                if hasattr(res, "columns")
+                else [d[0] for d in res.description]
+            )
+            while rows := res.fetchmany(100_000):
+                for row in rows:
+                    yield Row(dict(zip(cols, row)))
 
     def get_scope(self) -> Dataset:
         if "dataset" not in self._partition_by:
@@ -341,7 +398,7 @@ class LakeStore(SQLStore[LakeQueryView]):
 
     def get_origins(self) -> set[str]:
         q = select(self.table.c.origin).distinct()
-        return set([r.origin for r in stream_duckdb(q, self.deltatable)])
+        return set([r.origin for r in self._execute(q)])
 
 
 class LakeWriter(nk.Writer):
