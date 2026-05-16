@@ -191,7 +191,7 @@ def test_util_symbols():
         {"id": "j", "schema": "Person", "properties": {"name": ["Jane Doe"]}}
     )
     symbols = map(str, util.get_symbols(entity))
-    assert "[NAME:1682564]" in symbols
+    assert "[NAME:Q1682564]" in symbols
     entity = util.make_entity(
         {
             "id": "Q1234",

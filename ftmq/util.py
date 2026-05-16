@@ -7,13 +7,13 @@ from followthemoney import E, model
 from followthemoney.compare import _normalize_names
 from followthemoney.dataset import Dataset
 from followthemoney.entity import ValueEntity
+from followthemoney.names import schema_type_tag
 from followthemoney.proxy import EntityProxy
 from followthemoney.schema import Schema
 from followthemoney.types import registry
 from followthemoney.util import make_entity_id, sanitize_text
 from normality import latinize_text, slugify, squash_spaces
-from rigour.names import Name, Symbol, tag_org_name, tag_person_name
-from rigour.names.tokenize import normalize_name
+from rigour.names import NameTypeTag, Symbol, analyze_names
 from rigour.territories import lookup_territory
 from rigour.text.scripts import can_latinize
 
@@ -497,20 +497,12 @@ SELECT_ANNOTATED = "__annotated__"
 
 def get_name_symbols(schema: Schema, *names: str) -> set[Symbol]:
     """Get the rigour names symbols for the given schema and list of names"""
+    type_tag = schema_type_tag(schema)
+    if type_tag in (NameTypeTag.UNK, NameTypeTag.OBJ):
+        return set()
     symbols: set[Symbol] = set()
-    if schema.is_a("Person"):
-        taggers = [tag_person_name]
-    elif schema.is_a("Organization"):
-        taggers = [tag_org_name]
-    elif schema.is_a("LegalEntity"):
-        taggers = [tag_org_name, tag_person_name]
-    else:
-        return symbols
-    for name in names:
-        n = Name(name)
-        for tagger in taggers:
-            for symbol in tagger(n, normalize_name).symbols:
-                symbols.add(symbol)
+    for name in analyze_names(type_tag, list(names)):
+        symbols.update(name.symbols)
     return symbols
 
 
