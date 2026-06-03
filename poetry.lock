@@ -2835,13 +2835,13 @@ files = [
 
 [[package]]
 name = "nomenklatura"
-version = "4.9.0"
+version = "4.9.1"
 description = "Make record linkages in followthemoney data."
 optional = false
 python-versions = ">=3.11"
 groups = ["main"]
 files = [
-    {file = "nomenklatura-4.9.0-py3-none-any.whl", hash = "sha256:a0683b284b06c99c45d023baec46ef2c09ba02a1d95f1839098d8262b5af0aa1"},
+    {file = "nomenklatura-4.9.1-py3-none-any.whl", hash = "sha256:8cedeeedf4aa36f9e9f8866e27a244ee8735a6d0061cb38e5d50bc6f55fe5194"},
 ]
 
 [package.dependencies]
@@ -2856,7 +2856,7 @@ rigour = ">=2.1.0,<3.0.0"
 scikit-learn = "1.7.2"
 shortuuid = ">=1.0.11,<2.0.0"
 sqlalchemy = ">=2.0.0"
-textual = ">=3.0.0,<7.0.0"
+textual = ">=3.0.0,<9.0.0"
 
 [package.extras]
 dev = ["build", "bump2version", "coverage (>=4.1)", "fakeredis", "flake8 (>=2.6.0)", "lxml-stubs", "mypy", "plyvel (<2.0.0)", "prek", "psycopg2-binary", "pytest", "pytest-cov", "redis (>5.0.0,<8.0.0)", "requests-mock", "twine", "types-pyyaml", "types-redis", "types-requests", "types-setuptools", "wheel (>=0.29.0)"]
@@ -5393,4 +5393,4 @@ sql = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.14"
-content-hash = "e460befd69f33503a53c990df0890867d4019be4829978560df67395bad6cb2f"
+content-hash = "4a10a8edb210e987d730c8ad7366dc8f13863cf7780b48e29d18e431bc39aa53"
