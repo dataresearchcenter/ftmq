@@ -58,3 +58,10 @@ def test_model_proxy():
     adjacents = [make_entity(address, ValueEntity)]
     entity = EntityModel.from_proxy(make_entity(data, ValueEntity), adjacents=adjacents)
     assert isinstance(entity.properties["addressEntity"][0], EntityModel)
+
+    # empty properties
+    data.pop("properties")
+    entity = EntityModel(**data)
+    assert entity.properties == {}
+    proxy = make_entity(data, ValueEntity)
+    assert entity.to_proxy() == proxy == EntityModel.from_proxy(proxy).to_proxy()

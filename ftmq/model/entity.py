@@ -26,7 +26,9 @@ class EntityModel(BaseModel):
     dataset: str = DEFAULT_DATASET
     caption: str = Field(..., examples=["Jane Doe"])
     schema_: str = Field(..., examples=["LegalEntity"], alias="schema")
-    properties: Properties = Field(..., examples=[{"name": ["Jane Doe"]}])
+    properties: Properties = Field(
+        default_factory=dict, examples=[{"name": ["Jane Doe"]}]
+    )
     datasets: list[str] = Field([], examples=[["us_ofac_sdn"]])
     referents: list[str] = Field([], examples=[["ofac-1234"]])
 
