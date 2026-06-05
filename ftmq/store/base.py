@@ -1,12 +1,16 @@
-from functools import cache
+from functools import cache, wraps
 from typing import Generic, Iterable, TypeVar
 from urllib.parse import urlparse
 
 from anystore.logging import get_logger
 from followthemoney.dataset.dataset import Dataset
+from nomenklatura import db as nk_db
 from nomenklatura import store as nk
 from nomenklatura.db import get_engine
 from nomenklatura.resolver import Resolver
+from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
+from sqlalchemy.pool import StaticPool
 
 from ftmq.aggregations import AggregatorResult
 from ftmq.model.stats import Collector, DatasetStats
@@ -21,11 +25,59 @@ DEFAULT_ORIGIN = "default"
 V = TypeVar("V", bound="View")
 
 
+def _memory_engine(url: str = "sqlite:///:memory:") -> Engine:
+    """A thread-safe in-memory sqlite engine.
+
+    One shared connection (``StaticPool``) reachable from any thread
+    (``check_same_thread=False``). nomenklatura's default factory omits both,
+    so under a threaded server (granian ``mt`` / the anyio threadpool) a
+    connection opened on one worker thread is closed on another and raises
+    ``sqlite3.ProgrammingError: SQLite objects created in a thread can only be
+    used in that same thread``. Mirrors the lakehouse ``SqlJournalStore``.
+    """
+    return create_engine(
+        url, connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+
+
+_PATCHED = False
+
+
+def _patch_nomenklatura_sqlite_engines() -> None:
+    """Route nomenklatura's in-memory sqlite engines through :func:`_memory_engine`.
+
+    The resolver and every ``LakeStore`` (via ``SQLStore.__init__`` →
+    ``get_engine(uri)``) share one process-cached engine per URL. ``LakeStore``
+    fakes ``sqlite:///:memory:`` and exposes no seam to configure that engine,
+    so the factory is wrapped once at import. Only ``:memory:`` URLs are
+    intercepted; file and postgres engines keep nomenklatura's behaviour.
+    """
+    global _PATCHED
+    if _PATCHED:
+        return
+    _orig = nk_db._make_engine
+    _engines: dict[str, Engine] = {}
+
+    @wraps(_orig)
+    def _make_engine(url: str) -> Engine:
+        if url.endswith(":memory:"):
+            if url not in _engines:
+                _engines[url] = _memory_engine(url)
+            return _engines[url]
+        return _orig(url)
+
+    nk_db._make_engine = _make_engine
+    _PATCHED = True
+
+
+_patch_nomenklatura_sqlite_engines()
+
+
 @cache
 def get_resolver(uri: str | None = None) -> Resolver[StatementEntity]:
     if uri and "sql" in urlparse(uri).scheme:
         return Resolver.make_default(get_engine(uri))
-    return Resolver.make_default(get_engine("sqlite:///:memory:"))
+    return Resolver.make_default(_memory_engine())
 
 
 class Store(nk.Store[Dataset, StatementEntity], Generic[V]):
