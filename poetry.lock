@@ -2912,7 +2912,7 @@ version = "2.4.6"
 description = "Fundamental package for array computing in Python"
 optional = false
 python-versions = ">=3.11"
-groups = ["main"]
+groups = ["main", "dev"]
 files = [
     {file = "numpy-2.4.6-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:0280e0356c0829a18d9de1cb7eee50ec22ca639878d7240307ca0943d73cd2c4"},
     {file = "numpy-2.4.6-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:110f8b71aacb688ec69062bb7f6938a0f8acb01b7c1c4beb453c65b6d234584d"},
@@ -3135,10 +3135,9 @@ lint = ["black"]
 name = "pandas"
 version = "3.0.3"
 description = "Powerful data structures for data analysis, time series, and statistics"
-optional = true
+optional = false
 python-versions = ">=3.11"
-groups = ["main"]
-markers = "extra == \"lake\""
+groups = ["dev"]
 files = [
     {file = "pandas-3.0.3-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:455f6f8139d4282188f526868dbc3c828470e88a3d9d59a891bd46a455f21b98"},
     {file = "pandas-3.0.3-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:4e15135e2ee5df1063313e2425ceef8ac0f4ae775893815b0923651b806a5639"},
@@ -5003,12 +5002,12 @@ version = "2026.2"
 description = "Provider of IANA time zone data"
 optional = false
 python-versions = ">=2"
-groups = ["main"]
-markers = "platform_system == \"Windows\" or extra == \"lake\" and (sys_platform == \"win32\" or sys_platform == \"emscripten\") or (extra == \"postgres\" or extra == \"lake\") and sys_platform == \"win32\""
+groups = ["main", "dev"]
 files = [
     {file = "tzdata-2026.2-py2.py3-none-any.whl", hash = "sha256:bbe9af844f658da81a5f95019480da3a89415801f6cc966806612cc7169bffe7"},
     {file = "tzdata-2026.2.tar.gz", hash = "sha256:9173fde7d80d9018e02a662e168e5a2d04f87c41ea174b139fbef642eda62d10"},
 ]
+markers = {main = "platform_system == \"Windows\" or extra == \"postgres\" and sys_platform == \"win32\"", dev = "sys_platform == \"win32\" or sys_platform == \"emscripten\""}
 
 [[package]]
 name = "tzlocal"
@@ -5381,7 +5380,7 @@ propcache = ">=0.2.1"
 
 [extras]
 aleph = ["alephclient", "furl"]
-lake = ["deltalake", "duckdb", "pandas", "pyarrow"]
+lake = ["deltalake", "duckdb", "pyarrow"]
 level = ["plyvel"]
 postgres = ["psycopg", "sqlalchemy"]
 redis = ["fakeredis", "redis"]
@@ -5390,4 +5389,4 @@ sql = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.14"
-content-hash = "012e90302c5d28259259bb966354fc27a2901864c1a2d00d807b10b94d9f20c3"
+content-hash = "2a0acbf88b196c7a42687109ed80f3a29afb3ef77b8a4b25a1b0082ac7c2013d"
