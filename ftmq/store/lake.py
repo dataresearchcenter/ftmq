@@ -321,6 +321,10 @@ class LakeStore(SQLStore[LakeQueryView]):
         DuckDB connections are not thread-safe; callers must use
         :meth:`cursor` to get a thread-isolated child connection that
         shares the catalog and registered views.
+
+        The session timezone is forced to UTC – DuckDB otherwise renders
+        TIMESTAMPTZ in the host timezone, leaking local-time datetimes to
+        consumers. Set GLOBAL so :meth:`cursor` sessions inherit it.
         """
         config = {
             "autoinstall_known_extensions": "true",
@@ -328,6 +332,8 @@ class LakeStore(SQLStore[LakeQueryView]):
             **self._duckdb_config,
         }
         con = duckdb.connect(":memory:", config=config)
+        # icu ships bundled with the duckdb wheel, so this works offline
+        con.execute("LOAD icu; SET GLOBAL TimeZone='UTC'")
         dt = self.deltatable
         for name, builder in self._view_sqls.items():
             con.sql(f"CREATE OR REPLACE VIEW {name} AS {builder(dt)}")
