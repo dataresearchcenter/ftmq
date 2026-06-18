@@ -34,7 +34,7 @@ sql = ["sqlalchemy (>=2.0.51,<3.0.0)"]
 postgres = ["sqlalchemy (>=2.0.51,<3.0.0)", "psycopg[pool] (>=3.2.9,<4.0.0)"]
 redis = ["redis (>=5.2.1,<6.0.0)", "fakeredis (>=2.36.2,<3.0.0)"]
 lake = [
-    "duckdb (>=1.5.3,<2.0.0)",
+    "duckdb (>=1.5.4,<2.0.0)",
     "deltalake (>=1.6.0,<2.0.0)",
     "pyarrow (>=24.0.0,<25.0.0)",
 ]
