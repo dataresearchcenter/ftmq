@@ -255,14 +255,14 @@ files = [
 
 [[package]]
 name = "anystore"
-version = "1.2.1"
+version = "1.2.2"
 description = "Store and cache things anywhere"
 optional = false
 python-versions = "<4,>=3.11"
 groups = ["main"]
 files = [
-    {file = "anystore-1.2.1-py3-none-any.whl", hash = "sha256:02c3b080ce06f7d14722fd6c06a0d82bf0bf3800a0603d990a89ae2f507df6fb"},
-    {file = "anystore-1.2.1.tar.gz", hash = "sha256:54eeca2977056d98a811dd16f3a2abcd4c7ead617d3175be35ba61d2eb5004fb"},
+    {file = "anystore-1.2.2-py3-none-any.whl", hash = "sha256:41982bffbae2fd8c45284a1352507a84ad528f6305849ca70c78e279a0936691"},
+    {file = "anystore-1.2.2.tar.gz", hash = "sha256:1f8128b2dcde45b138bea2b9f71c2babe78b8ee0a78c71f4cac92dbbee3a9105"},
 ]
 
 [package.dependencies]
@@ -285,8 +285,8 @@ uuid7 = ">=0.1.0,<0.2.0"
 
 [package.extras]
 api = ["fastapi (>=0.136.3,<1.0.0)", "uvicorn (>=0.48.0,<1.0.0)"]
-redis = ["fakeredis (>=2.36.1,<3.0.0)", "redis (>=4.0.0)"]
-sql = ["sqlalchemy (>=2.0.50,<3.0.0)"]
+redis = ["fakeredis (>=2.36.2,<3.0.0)", "redis (>=4.0.0)"]
+sql = ["sqlalchemy (>=2.0.51,<3.0.0)"]
 
 [[package]]
 name = "arro3-core"
@@ -5402,4 +5402,4 @@ sql = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.14"
-content-hash = "4fd17594bb44af3a79c82054059beb62fd0fe006182100434a9c172e40dbe21b"
+content-hash = "3f296bd494114ce20a25c8dfab2ffb7bc73197e9ccc9d3db9e049c86d5da19ec"
