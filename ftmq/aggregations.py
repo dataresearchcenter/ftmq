@@ -86,9 +86,9 @@ class Aggregation(BaseModel):
             for g, values in self.grouper[prop].items():
                 self.groups[prop][g] = self.get_value(values)
 
-    def dict(self, *args, **kwargs) -> dict[str, Any]:
+    def model_dump(self, *args, **kwargs) -> dict[str, Any]:
         self.__exit__()
-        return super().dict(*args, **kwargs)
+        return super().model_dump(*args, **kwargs)
 
 
 AggregatorResult: TypeAlias = dict[

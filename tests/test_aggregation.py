@@ -41,7 +41,9 @@ def test_agg_groupby(donations):
         assert isinstance(hash(agg), int)
         for proxy in donations:
             agg.collect(proxy)
-    assert agg.dict()["groups"] == {"country": {"de": 80, "cy": 1, "gb": 1, "lu": 1}}
+    assert agg.model_dump()["groups"] == {
+        "country": {"de": 80, "cy": 1, "gb": 1, "lu": 1}
+    }
 
     agg = Aggregator.from_dict({"count": ["name"], "groups": ["country"]})
     assert agg.to_dict() == {
