@@ -6,7 +6,7 @@ from anystore.logging import get_logger
 from followthemoney.dataset.dataset import Dataset
 from nomenklatura import db as nk_db
 from nomenklatura import store as nk
-from nomenklatura.db import get_engine
+from nomenklatura.db import Session, get_engine
 from nomenklatura.resolver import Resolver
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
@@ -76,8 +76,10 @@ _patch_nomenklatura_sqlite_engines()
 @cache
 def get_resolver(uri: str | None = None) -> Resolver[StatementEntity]:
     if uri and "sql" in urlparse(uri).scheme:
-        return Resolver.make_default(get_engine(uri))
-    return Resolver.make_default(_memory_engine())
+        engine = get_engine(uri)
+    else:
+        engine = _memory_engine()
+    return Resolver[StatementEntity](Session(engine), create=True)
 
 
 class Store(nk.Store[Dataset, StatementEntity], Generic[V]):
