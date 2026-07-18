@@ -21,7 +21,7 @@ Layout:
 from contextlib import contextmanager
 from functools import cache, cached_property
 from pathlib import Path
-from typing import Any, Callable, Generator, Iterator
+from typing import Any, Callable, Generator, Iterator, cast
 from urllib.parse import urlparse
 
 import duckdb
@@ -43,7 +43,7 @@ from deltalake._internal import TableNotFoundError
 from deltalake.table import FilterConjunctionType
 from followthemoney import EntityProxy, StatementEntity, model
 from followthemoney.dataset.dataset import Dataset
-from followthemoney.statement import Statement
+from followthemoney.statement import Statement, StatementDict
 from nomenklatura import settings as nks
 from nomenklatura import store as nk
 from nomenklatura.db import get_metadata
@@ -86,6 +86,7 @@ _COMMON_COLUMNS = {
     "prop": _STATS_BLOOM,
     "dataset": _STATS,
     "lang": _STATS,
+    "fragment": _STATS_BLOOM,
     "first_seen": ColumnProperties(statistics_enabled="CHUNK"),
     "last_seen": ColumnProperties(statistics_enabled="CHUNK"),
 }
@@ -132,11 +133,73 @@ TABLE = table(
     column("external", Boolean),
     column("first_seen", DateTime),
     column("last_seen", DateTime),
+    column("fragment"),
 )
 
 ARROW_SCHEMA = pa.schema(
     [(col.name, SA_TO_ARROW.get(type(col.type), pa.string())) for col in TABLE.columns]
 )
+
+
+class LakeStatement(Statement):
+    """A :class:`followthemoney.statement.Statement` extended with the lake
+    row field ``fragment`` – the supersession group key consumers key
+    merge-on-read semantics on (a later emission of the same ``(entity_id,
+    prop, fragment)`` replaces the earlier one). The empty string is the
+    "no fragment" sentinel everywhere – storage never holds NULL fragments.
+
+    Identity semantics (``__eq__`` / ``__hash__`` by ``id``) are unchanged:
+    the same content under two fragments is the same statement id, but two
+    distinct storage rows. ``clone()`` returns a plain ``Statement`` and
+    drops the fragment – re-stamp via :meth:`from_statement` after cloning.
+    """
+
+    __slots__ = ["fragment"]
+
+    def __init__(self, *args: Any, fragment: str | None = None, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.fragment = fragment or ""
+
+    @property
+    def dedupe_key(self) -> str:
+        """Stable sort/dedupe key: ``id`` and ``fragment``, tab-joined.
+
+        The same content-addressed ``id`` under distinct fragments is
+        distinct storage rows, so anything deduplicating or keying
+        statements downstream must key on both. Tab-joining follows the
+        :class:`LakeWriter` batch-key idiom and sorts a non-fragment row
+        before fragment rows of the same id.
+        """
+        return f"{self.id}\t{self.fragment}"
+
+    @classmethod
+    def from_statement(
+        cls, stmt: Statement, fragment: str | None = None
+    ) -> "LakeStatement":
+        """Upgrade ``stmt`` to a :class:`LakeStatement`, stamping ``fragment``.
+
+        ``None`` preserves the fragment of a passed ``LakeStatement`` (and
+        means non-fragment for a plain ``Statement``); pass a string –
+        including ``""`` – to set it explicitly. Plain statements are
+        copied, lake statements are stamped in place and returned as-is.
+        """
+        if isinstance(stmt, cls):
+            if fragment is not None:
+                stmt.fragment = fragment
+            return stmt
+        return cls(fragment=fragment, **stmt.to_dict())
+
+    @classmethod
+    def from_dict(cls, data: StatementDict) -> "LakeStatement":
+        stmt = cast("LakeStatement", super().from_dict(data))
+        stmt.fragment = cast(dict[str, Any], data).get("fragment") or ""
+        return stmt
+
+    @classmethod
+    def from_db_row(cls, row: Any) -> "LakeStatement":
+        stmt = cast("LakeStatement", super().from_db_row(row))
+        stmt.fragment = getattr(row, "fragment", None) or ""
+        return stmt
 
 
 class StorageSettings(BaseSettings):
@@ -212,6 +275,7 @@ def pack_statement(stmt: Statement, source: str | None = None) -> SDict:
     data["bucket"] = get_schema_bucket(data["schema"])
     data["source"] = source
     data["origin"] = data["origin"] or DEFAULT_ORIGIN
+    data["fragment"] = stmt.fragment if isinstance(stmt, LakeStatement) else ""
     return data
 
 
@@ -428,7 +492,8 @@ class LakeWriter(nk.Writer):
         stmt.origin = stmt.origin or self.origin
         canonical_id = self.store.linker.get_canonical(stmt.entity_id)
         stmt.canonical_id = canonical_id
-        key = f"{canonical_id}\t{stmt.id}"
+        dedupe = stmt.dedupe_key if isinstance(stmt, LakeStatement) else stmt.id
+        key = f"{canonical_id}\t{dedupe}"
         self.batch[key] = (stmt, source or self.source)
 
     def add_entity(
@@ -491,7 +556,7 @@ class LakeWriter(nk.Writer):
         q = q.where(TABLE.c.canonical_id == entity_id)
         statements: list[Statement] = []
         for row in self.store._execute(q):
-            statements.append(Statement.from_db_row(row))
+            statements.append(LakeStatement.from_db_row(row))
 
         self.store.deltatable.delete(f"canonical_id = '{entity_id}'")
         return statements

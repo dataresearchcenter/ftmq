@@ -334,6 +334,42 @@ def test_store_lake(tmp_path, proxies):
     assert company_rows["source"].iloc[0] == "https://specific.com/company.json"
 
 
+def test_store_lake_fragment(tmp_path):
+    from followthemoney.statement import Statement
+
+    from ftmq.store.lake import LakeStatement
+
+    lake = LakeStore(uri=tmp_path / "fragment_lake", dataset="test")
+    stmt = Statement(
+        entity_id="person-1",
+        prop="name",
+        schema="Person",
+        value="John Doe",
+        dataset="test",
+        last_seen="2024-01-01T00:00:00",
+    )
+    with lake.writer(origin="ingest") as bulk:
+        bulk.add_statement(LakeStatement.from_statement(stmt, "row-1"))
+        # same content under a second fragment: same id, distinct row –
+        # the batch keys on dedupe_key, not the bare statement id
+        bulk.add_statement(LakeStatement.from_statement(stmt, "row-2"))
+        bulk.add_statement(
+            stmt.clone(value="Jane Doe")  # plain statement -> empty sentinel
+        )
+
+    import duckdb
+
+    df = duckdb.arrow(lake.deltatable.to_pyarrow_dataset()).df()
+    assert sorted(df[df["value"] == "John Doe"]["fragment"]) == ["row-1", "row-2"]
+    assert list(df[df["value"] == "Jane Doe"]["fragment"]) == [""]
+
+    # pop reads rows back as LakeStatement, preserving fragment
+    statements = lake.writer().pop("person-1")
+    keys = {s.dedupe_key for s in statements}
+    assert len(statements) == 3
+    assert {k.split("\t")[1] for k in keys} == {"", "row-1", "row-2"}
+
+
 def test_store_init(tmp_path):
     store = get_store()
     assert isinstance(store, SQLStore)
