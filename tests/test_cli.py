@@ -240,3 +240,66 @@ def test_cli_generate(fixtures_path: Path):
     res = runner.invoke(cli, ["catalog", "generate", "-i", uri])
     res = orjson.loads(res.stdout.split("\n")[-1])  # FIXME logging
     assert Catalog(**res)
+
+
+def test_cli_fragments_iterate_fragments(tmp_path: Path):
+    from ftmq.store.fragments import get_fragments
+
+    configure_logging()
+
+    uri = f"sqlite:///{tmp_path / 'fragments.db'}"
+    get_fragments.cache_clear()
+    dataset = get_fragments("my_dataset", database_uri=uri)
+
+    # key1 has two un-merged fragments, key2 one, key3 one with a custom origin
+    dataset.put({"id": "key1", "schema": "Person", "properties": {"name": ["Alice"]}})
+    dataset.put(
+        {"id": "key1", "schema": "Person", "properties": {"lastName": ["Smith"]}},
+        fragment="f",
+    )
+    dataset.put({"id": "key2", "schema": "Person", "properties": {"name": ["Bob"]}})
+    dataset.put(
+        {"id": "key3", "schema": "Company", "properties": {"name": ["ACME"]}},
+        fragment="2",
+        origin="test_o",
+    )
+    dataset.store.close()
+    get_fragments.cache_clear()
+
+    result = runner.invoke(
+        cli, ["fragments", "iterate-fragments", "-i", uri, "-d", "my_dataset"]
+    )
+    assert result.exit_code == 0, result.output
+    lines = _get_lines(result.output)
+
+    # unaggregated: 4 raw fragments (key1 appears twice, not merged)
+    assert len(lines) == 4
+    fragments = [orjson.loads(li) for li in lines]
+    ids = sorted(f["id"] for f in fragments)
+    assert ids == ["key1", "key1", "key2", "key3"]
+    assert all(f["datasets"] == ["my_dataset"] for f in fragments)
+    assert {f["schema"] for f in fragments} == {"Company", "Person"}
+    assert {f["fragment"] for f in fragments} == {"2", "default", "f"}
+
+    # origin is passed through for the fragment that has one
+    by_id = {}
+    for f in fragments:
+        by_id.setdefault(f["id"], []).append(f)
+    assert by_id["key3"][0]["origin"] == "test_o"
+
+    # contrast: regular `iterate` aggregates key1's fragments into one entity
+    get_fragments.cache_clear()
+    result = runner.invoke(cli, ["fragments", "iterate", "-i", uri, "-d", "my_dataset"])
+    assert result.exit_code == 0, result.output
+    entities = []
+    for li in _get_lines(result.output):
+        try:
+            data = orjson.loads(li)
+        except orjson.JSONDecodeError:
+            continue  # skip interleaved log lines
+        if isinstance(data, dict) and data.get("id"):
+            entities.append(data)
+    assert sorted(e["id"] for e in entities) == ["key1", "key2", "key3"]
+    key1 = next(e for e in entities if e["id"] == "key1")
+    assert key1["properties"].get("name") == ["Alice"]
+    assert key1["properties"].get("lastName") == ["Smith"]

@@ -157,6 +157,8 @@ class Fragments(object):
         since=None,
         until=None,
         origin=None,
+        sort=True,
+        include_fragment=False,
     ):
         stmt = self.table.select()
         entity_ids = ensure_list(entity_ids)
@@ -180,7 +182,8 @@ class Fragments(object):
             stmt = stmt.where(self.table.c.timestamp >= since)
         if until is not None:
             stmt = stmt.where(self.table.c.timestamp <= until)
-        stmt = stmt.order_by(self.table.c.id)
+        if sort:
+            stmt = stmt.order_by(self.table.c.id)
         # stmt = stmt.order_by(self.table.c.origin)
         # stmt = stmt.order_by(self.table.c.fragment)
         conn = self.store.engine.connect()
@@ -191,6 +194,8 @@ class Fragments(object):
                     data = {"id": ent.id, "datasets": [self.name], **ent.entity}
                     if ent.origin != NULL_ORIGIN:
                         data["origin"] = ent.origin
+                    if include_fragment:
+                        data["fragment"] = ent.fragment
                     yield data
         except Exception:
             self.reset()

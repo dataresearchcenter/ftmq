@@ -392,6 +392,31 @@ def fragments_iterate(
     )
 
 
+@fragments.command("iterate-fragments")
+@click.option(
+    "-i",
+    "--input-uri",
+    default=fragments_settings.database_uri,
+    show_default=True,
+    help="fragments store input uri",
+)
+@click.option(
+    "-o", "--output-uri", default="-", show_default=True, help="output file or uri"
+)
+@click.option("-d", "--dataset", required=True, help="Dataset name to iterate")
+def fragments_iterate_unsorted(
+    input_uri: str = fragments_settings.database_uri,
+    output_uri: str = "-",
+    dataset: str = None,
+):
+    """
+    Iterate all fragments from a dataset, unsorted and not aggregated. Useful
+    for streaming into another storage that does dedupe by itself.
+    """
+    fragments = get_fragments(dataset, database_uri=input_uri)
+    smart_write_json(output_uri, fragments.fragments(sort=False, include_fragment=True))
+
+
 @cli.command("aggregate")
 @click.option(
     "-i", "--input-uri", default="-", show_default=True, help="input file or uri"
