@@ -12,7 +12,7 @@ from typing_extensions import TypeVar
 
 from ftmq.aggregations import AggregatorResult
 from ftmq.enums import Fields
-from ftmq.model.stats import Collector, DatasetStats
+from ftmq.model.stats import DatasetStats, compile_stats
 from ftmq.query import Query
 from ftmq.store.base import Store, View
 from ftmq.types import StatementEntities
@@ -51,31 +51,17 @@ class SQLQueryView(View, nk.SQLView):
         if key in self._cache:
             return self._cache[key]
 
-        c = Collector()
-        for schema, count in self.store._execute(query.sql.things, stream=False):
-            c.things[schema] = count
-        for schema, count in self.store._execute(query.sql.intervals, stream=False):
-            c.intervals[schema] = count
-        for country, count in self.store._execute(
-            query.sql.things_countries, stream=False
-        ):
-            if country is not None:
-                c.things_countries[country] = count
-        for country, count in self.store._execute(
-            query.sql.intervals_countries, stream=False
-        ):
-            if country is not None:
-                c.intervals_countries[country] = count
+        def ex(sub):
+            return self.store._execute(sub, stream=False)
 
-        stats = c.export()
-        for start, end in self.store._execute(query.sql.date_range, stream=False):
-            if start:
-                stats.start = start
-            if end:
-                stats.end = end
-            break
-
-        stats.entity_count = self.count(query)
+        stats = compile_stats(
+            things=ex(query.sql.things),
+            intervals=ex(query.sql.intervals),
+            things_countries=ex(query.sql.things_countries),
+            intervals_countries=ex(query.sql.intervals_countries),
+            date_range=next(iter(ex(query.sql.date_range)), None),
+            entity_count=self.count(query),
+        )
         self._cache[key] = stats
         return stats
 

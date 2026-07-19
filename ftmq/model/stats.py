@@ -1,5 +1,5 @@
 from collections import Counter
-from typing import Any
+from typing import Any, Iterable
 
 from anystore.model import BaseModel
 from followthemoney import model
@@ -131,3 +131,55 @@ class Collector:
         for proxy in proxies:
             self.collect(proxy)
         return self.export()
+
+
+def compile_stats(
+    things: Iterable[tuple[str, int]] = (),
+    intervals: Iterable[tuple[str, int]] = (),
+    things_countries: Iterable[tuple[str | None, int]] = (),
+    intervals_countries: Iterable[tuple[str | None, int]] = (),
+    date_range: tuple[Any, Any] | None = None,
+    entity_count: int | None = None,
+) -> DatasetStats:
+    """Compile a :class:`DatasetStats` from pre-computed aggregate result rows.
+
+    Agnostic of how the counts were obtained (a store's group-by sub-queries,
+    per-partition scans, ...): callers pass the grouped results and this folds
+    them into a :class:`DatasetStats` through a :class:`Collector`. This is the
+    computation the SQL store's ``stats`` runs inline, factored out so
+    partitioned backends can compile per-partition stats and merge them.
+
+    Args:
+        things: ``(schema, count)`` rows for Thing-bucket schemata.
+        intervals: ``(schema, count)`` rows for Interval-bucket schemata.
+        things_countries: ``(country, count)`` rows for Things.
+        intervals_countries: ``(country, count)`` rows for Intervals.
+        date_range: ``(start, end)`` coverage bounds, or ``None``.
+        entity_count: Distinct entity count; falls back to
+            ``things.total + intervals.total`` (via ``Collector.export``) when
+            ``None``.
+
+    Returns:
+        The compiled :class:`DatasetStats`.
+    """
+    c = Collector()
+    for schema, count in things:
+        c.things[schema] = count
+    for schema, count in intervals:
+        c.intervals[schema] = count
+    for country, count in things_countries:
+        if country is not None:
+            c.things_countries[country] = count
+    for country, count in intervals_countries:
+        if country is not None:
+            c.intervals_countries[country] = count
+    stats = c.export()
+    if date_range is not None:
+        start, end = date_range
+        if start:
+            stats.start = start
+        if end:
+            stats.end = end
+    if entity_count is not None:
+        stats.entity_count = entity_count
+    return stats
