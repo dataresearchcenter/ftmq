@@ -48,7 +48,7 @@ class SqlSource:
     against: the SQLAlchemy table (or view), the entity-identity column, and an
     optional partition-pruning rule.
 
-    Stores own one and pass it to [`Sql`][ftmq.sql.Sql] /
+    Stores own one and pass it to [`Sql`][ftmq.query.sql.Sql] /
     [`Query.compile`][ftmq.Query.compile], replacing the old
     `query.table` mutation. A downstream store with extra columns (a lake /
     sharded table) supplies its own `SqlSource` so the same `Query` compiles

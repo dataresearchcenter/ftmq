@@ -29,7 +29,7 @@ Minimum Python version: 3.11
 ### Command line
 
 ```bash
-cat entities.ftm.json | ftmq -s Company --country=de --incorporationDate__gte=2023 -o s3://data/entities-filtered.ftm.json
+cat entities.ftm.json | ftmq -s Company -p country=de -p incorporationDate__gte=2023 -o s3://data/entities-filtered.ftm.json
 ```
 
 ### Python Library

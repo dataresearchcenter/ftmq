@@ -21,45 +21,76 @@ Of course, the same is possible for output `-o`:
 
 ## Filter expressions
 
-Filter for a dataset:
+The CLI mirrors the [`Query` language](./query.md): the same `M` / `P` / `G` / `C`
+families, expressed either as typed flags or as an Aleph filter string.
+
+Filter for a dataset (a `-d` shortcut for `-m dataset=`):
 
 ```bash
 cat entities.ftm.json | ftmq -d ec_meetings
 ```
 
-Filter for a schema:
+Filter for a schema (`-s` shortcut for `-m schema=`):
 
 ```bash
 cat entities.ftm.json | ftmq -s Person
 ```
 
-Filter for a schema and all it's descendants or ancestors:
+Filter for a schema and all its descendants (the is-a `schemata` field):
 
 ```bash
 cat entities.ftm.json | ftmq -s LegalEntity --schema-include-descendants
-cat entities.ftm.json | ftmq -s LegalEntity --schema-include-ancestors
 ```
 
-Filter for properties:
+### Family flags
 
-[Properties](https://followthemoney.tech/explorer/) are cli options via `--<prop>=<value>`
+Each family has a repeatable flag taking a `field[__comparator]=value` argument:
+
+- `-m` / `--meta` - meta fields: `dataset`, `schema`, `schemata`, `id`, `entity_id`, `canonical_id`
+- `-p` / `--prop` - a specific [property](https://followthemoney.tech/explorer/)
+- `-g` / `--group` - a property-type group (`names`, `dates`, `countries`, `entities`, ...)
+- `-c` / `--context` - a context / provenance field (`origin`, ...)
 
 ```bash
-cat entities.ftm.json | ftmq -s Company --country=de
+# companies based in Germany (the literal `country` property)
+cat entities.ftm.json | ftmq -s Company -p country=de
+
+# any country-typed property equal to `de` (the `countries` group)
+cat entities.ftm.json | ftmq -g countries=de
+
+# by origin (context) and entity id prefix (meta)
+cat entities.ftm.json | ftmq -c origin=crawl -m id__startswith=de-
+
+# reverse lookup: entities pointing at an id (the `entities` group)
+cat entities.ftm.json | ftmq -g entities=some-entity-id
 ```
 
-### Comparison lookups for properties
+### Comparison lookups
+
+Any flag value may carry a `__<comparator>` suffix; `__in` / `__not_in` accept a
+comma-separated list:
 
 ```bash
-cat entities.ftm.json | ftmq -s Company --incorporationDate__gte=2020 --address__ilike=berlin
+cat entities.ftm.json | ftmq -s Company -p incorporationDate__gte=2020 -p address__ilike=berlin
+cat entities.ftm.json | ftmq -p firstName__in=Jane,Joe
 ```
 
 Possible lookups:
 
-- `gt` - greater than
-- `lt` - lower than
-- `gte` - greater or equal
-- `lte` - lower or equal
-- `like` - SQLish `LIKE` (use `%` placeholders)
-- `ilike` - SQLish `ILIKE`, case-insensitive (use `%` placeholders)
-- `not` - negative lookup
+- `gt` / `lt` / `gte` / `lte` - greater / lower (than or equal)
+- `like` / `ilike` - SQLish `LIKE` / case-insensitive `ILIKE` (use `%` placeholders)
+- `in` / `not_in` - value (not) in a comma-separated list
+- `not` - not equal
+- `null` - test for presence (`__null=true` / `__null=false`)
+
+### Aleph filter string
+
+Alternatively pass a full [Aleph](https://openaleph.org) filter string via `-q` /
+`--query` (parsed by [`Query.from_string`][ftmq.Query.from_string]); repeatable and
+combinable with the family flags:
+
+```bash
+cat entities.ftm.json | ftmq -q 'filter:schema=Person&filter:countries=de'
+cat entities.ftm.json | ftmq -q 'filter:properties.name=Jane&exclude:properties.country=ru'
+cat entities.ftm.json | ftmq -q 'filter:gte:properties.date=2020&empty:properties.deathDate'
+```

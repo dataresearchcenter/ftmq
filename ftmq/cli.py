@@ -11,12 +11,12 @@ from ftmq.aggregate import aggregate
 from ftmq.io import smart_read_proxies, smart_write_proxies
 from ftmq.model.dataset import Catalog, Dataset
 from ftmq.model.stats import Collector
-from ftmq.query import M, P, Query
+from ftmq.query import C, Expr, G, M, P, Query
 from ftmq.store import get_store
 from ftmq.store.fragments import get_fragments
 from ftmq.store.fragments import get_store as get_fragments_store
 from ftmq.store.fragments.settings import Settings as FragmentsSettings
-from ftmq.util import apply_dataset, parse_unknown_filters
+from ftmq.util import apply_dataset
 
 log = get_logger(__name__)
 
@@ -26,11 +26,19 @@ def cli() -> None:
     configure_logging()
 
 
-@cli.command(
-    context_settings=dict(
-        ignore_unknown_options=True,
-    ),
-)
+def _node(family: type[Expr], arg: str) -> Expr:
+    """Parse a `field[__op]=value` CLI argument into an `M`/`P`/`G`/`C` node.
+
+    For the `in` / `not_in` comparators the value is comma-split into a list.
+    """
+    key, _, value = arg.partition("=")
+    val: str | list[str] = (
+        value.split(",") if key.endswith(("__in", "__not_in")) else value
+    )
+    return family(**{key: val})
+
+
+@cli.command()
 @click.option(
     "-i", "--input-uri", default="-", show_default=True, help="input file or uri"
 )
@@ -44,6 +52,27 @@ def cli() -> None:
 )
 @click.option(
     "--schema-include-matchable", is_flag=True, default=False, show_default=True
+)
+@click.option(
+    "-q",
+    "--query",
+    multiple=True,
+    help="Aleph filter query string, e.g. 'filter:schema=Person&filter:countries=de'",
+)
+@click.option(
+    "-m",
+    "--meta",
+    multiple=True,
+    help="Meta filter, e.g. schema=Person, id__startswith=de-",
+)
+@click.option(
+    "-p", "--prop", multiple=True, help="Property filter, e.g. name__ilike=jane%"
+)
+@click.option(
+    "-g", "--group", multiple=True, help="Property-type group filter, e.g. countries=de"
+)
+@click.option(
+    "-c", "--context", multiple=True, help="Context filter, e.g. origin=crawl"
 )
 @click.option("--sort", help="Properties to sort for", multiple=True)
 @click.option(
@@ -79,7 +108,6 @@ def cli() -> None:
     show_default=True,
     help="If specified, print aggregation information to this uri",
 )
-@click.argument("properties", nargs=-1)
 def q(
     input_uri: str = "-",
     output_uri: str = "-",
@@ -87,9 +115,13 @@ def q(
     schema: tuple[str, ...] = (),
     schema_include_descendants: bool = False,
     schema_include_matchable: bool = False,
+    query: tuple[str, ...] = (),
+    meta: tuple[str, ...] = (),
+    prop: tuple[str, ...] = (),
+    group: tuple[str, ...] = (),
+    context: tuple[str, ...] = (),
     sort: tuple[str, ...] = (),
     sort_ascending: bool = True,
-    properties: tuple[str, ...] = (),
     stats_uri: str | None = None,
     store_dataset: str | None = None,
     sum: tuple[str, ...] = (),
@@ -104,14 +136,21 @@ def q(
     Apply ftmq filter to a json stream of ftm entities.
     """
     q = Query()
+    # -q: Aleph filter query string(s), merged in via the Aleph bridge
+    for value in query:
+        sub = Query.from_string(value).q
+        if sub is not None:
+            q = q.where(sub)
     for value in dataset:
         q = q.where(M(dataset=value))
     # both legacy schema-expansion flags map to the `schemata` (is-a) field
     schema_isa = schema_include_descendants or schema_include_matchable
     for value in schema:
         q = q.where(M(schemata=value) if schema_isa else M(schema=value))
-    for prop, value, op in parse_unknown_filters(properties):
-        q = q.where(P(**{f"{prop}__{op}": value}))
+    # family-prefixed filter flags: -m meta, -p property, -g group, -c context
+    for family, args in ((M, meta), (P, prop), (G, group), (C, context)):
+        for arg in args:
+            q = q.where(_node(family, arg))
     if len(sort):
         q = q.order_by(*sort, ascending=sort_ascending)
 

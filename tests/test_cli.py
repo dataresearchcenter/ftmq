@@ -43,21 +43,21 @@ def test_cli(fixtures_path: Path):
     assert len(lines) == 151
 
     result = runner.invoke(
-        cli, ["-i", in_uri, "-s", "PublicBody", "--jurisdiction", "eu"]
+        cli, ["-i", in_uri, "-s", "PublicBody", "-p", "jurisdiction=eu"]
     )
     assert result.exit_code == 0
     lines = _get_lines(result.output)
     assert len(lines) == 151
 
     result = runner.invoke(
-        cli, ["-i", in_uri, "-s", "PublicBody", "--jurisdiction", "fr"]
+        cli, ["-i", in_uri, "-s", "PublicBody", "-p", "jurisdiction=fr"]
     )
     assert result.exit_code == 0
     lines = _get_lines(result.output)
     assert len(lines) == 0
 
     in_uri = str(fixtures_path / "donations.ijson")
-    result = runner.invoke(cli, ["-i", in_uri, "-s", "Payment", "--date__gte", "2010"])
+    result = runner.invoke(cli, ["-i", in_uri, "-s", "Payment", "-p", "date__gte=2010"])
     assert result.exit_code == 0
     lines = _get_lines(result.output)
     assert len(lines) == 49

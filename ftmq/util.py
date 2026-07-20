@@ -1,8 +1,7 @@
 from functools import cache
-from typing import Any, Generator, Type
+from typing import Any, Type
 
 from anystore.types import SDict, StrGenerator
-from banal import ensure_list, is_listish
 from followthemoney import E, model
 from followthemoney.compare import _normalize_names
 from followthemoney.dataset import Dataset
@@ -52,28 +51,6 @@ def parse_comparator(key: str) -> tuple[str, Comparators]:
     else:
         comparator = Comparators["eq"]
     return key, comparator
-
-
-def parse_unknown_filters(
-    filters: tuple[str, ...],
-) -> Generator[tuple[str, str | list[str], str], None, None]:
-    _filters = (f for f in filters)
-    for prop in _filters:
-        prop = prop.lstrip("-")
-        if "=" in prop:  # 'country=de'
-            prop, value = prop.split("=")
-        else:  # ("country", "de"):
-            value = next(_filters)
-
-        prop, *op = prop.split("__")
-        op = op[0] if op else Comparators.eq
-        if op == Comparators["in"]:
-            # de,fr or ["de", "fr"]
-            if is_listish(value):
-                value = ensure_list(value)
-            else:
-                value = value.split(",")
-        yield prop, value, op
 
 
 def make_entity(
