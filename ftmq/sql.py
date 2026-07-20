@@ -29,7 +29,7 @@ from ftmq.enums import (
     PropertyTypesMap,
     Things,
 )
-from ftmq.filters import F
+from ftmq.query.filters import F
 
 if TYPE_CHECKING:
     from ftmq.query import Query

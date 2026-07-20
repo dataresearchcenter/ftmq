@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 ftmq is a Python library for querying and filtering [Follow The Money](https://followthemoney.tech) (FTM) entities. It provides:
-- A `Query` DSL for filtering entities by schema, dataset, properties, and comparators
+- A composable `Query` language (`M` / `P` / `G` nodes composed with `&` / `|` / `~`) for filtering entities by meta fields, properties, and property-type groups
 - Smart I/O helpers for reading/writing FTM entities from various sources (files, S3, databases)
 - Multiple storage backends via nomenklatura stores (memory, LevelDB, Redis, SQL, Aleph, Delta Lake)
 - CLI for piping and filtering FTM JSON streams
@@ -27,7 +27,7 @@ make test
 .venv/bin/pytest tests/test_query.py -v
 
 # Run a specific test
-.venv/bin/pytest tests/test_query.py::test_query_lookups -v
+.venv/bin/pytest tests/test_query.py::test_apply_meta -v
 
 # Lint
 make lint
@@ -43,13 +43,43 @@ make pre-commit
 
 ### Core Components
 
-**Query (`ftmq/query.py`)**: The central DSL class. Chainable methods `.where()`, `.order_by()`, `.aggregate()` build filter pipelines. Supports slicing syntax `q[10:20]` for pagination. Filters are applied via `q.apply(entity)` or `q.apply_iter(entities)`.
-
-**Filters (`ftmq/filters.py`)**: Filter classes for each lookup type:
-- `DatasetFilter`, `SchemaFilter`, `PropertyFilter`, `ReverseFilter`, `IdFilter`, `OriginFilter`
-- Comparators: `eq`, `in`, `not`, `not_in`, `gt`, `gte`, `lt`, `lte`, `like`, `ilike`, `startswith`, `endswith`, `null`
+**Query (`ftmq/query/`)**: The central query language (see [Query language](#query-language-ftmqquery) below). Chainable `.where()`, `.order_by()`, `.aggregate()`; slicing `q[10:20]`; applied via `q.apply(entity)` / `q.apply_iter(entities)`.
 
 **I/O (`ftmq/io.py`)**: `smart_read_proxies()` and `smart_write_proxies()` auto-detect source type (file, URL, store URI) and handle streaming.
+
+### Query language (`ftmq/query/`)
+
+`Query` is built from three composable node constructors, split by the statement-table column they target:
+
+- **`M(**meta)`** - meta fields: `dataset`, `schema` (exact match), `schemata` (is-a: entity *is-a* X, i.e. `model[X] in entity.schema.schemata`), `origin`, `id` / `entity_id` / `canonical_id`.
+- **`P(**props)`** - a specific FtM property (the `prop` column), e.g. `P(name="Jane")`, `P(amountEur__gte=1000)`.
+- **`G(**groups)`** - a followthemoney property-type group (the `prop_type` column, keyed by `registry.groups`: `names`, `dates`, `countries`, `entities`, ...). `G(entities=<id>)` is the reverse lookup (replaces the old `reverse`); `P(<edgeProp>=<id>)` is the narrow form.
+
+Nodes compose with `&`, `|`, `~` into arbitrary boolean trees. `Query.where(*nodes)` AND-combines positional nodes; chained `.where()` also ANDs. Lookups are `field__comparator=value` (comparators defined in `ftmq/enums.py`). Invalid queries raise `QueryError` (subclass of `ValueError`).
+
+```python
+from ftmq import Query, M, P, G
+
+q = Query().where(M(schema="Person"), P(name__ilike="jane%"))
+q = q.where(G(countries="de") | G(countries="at"))
+q = q.order_by("name")[:10]
+```
+
+Package layout: `nodes.py` (`Expr` tree + `M`/`P`/`G` + `combine`), `leaves.py` (leaf classes + factories + `LeafDict`), `aleph.py` (Aleph URL-param bridge), `main.py` (`Query` + `Sort`), `exceptions.py` (`QueryError`), `filters.py` (legacy leaf layer, reused by import). `__init__.py` only re-exports.
+
+`Query` is the canonical query IR with three serialization surfaces:
+- `to_dict()` / `from_dict()` - lossless nested tree (any tree).
+- `to_params()` / `from_params()` - Aleph `filter:`/`exclude:`/`empty:` MultiDict (the flat subset; raises `QueryError` for cross-field OR / negated groups).
+- `to_string()` / `from_string()` - Aleph URL query string.
+
+The Aleph bridge maps `M`→`filter:schema|schemata|dataset|...`, `P`→`filter:properties.<name>`, `G`→`filter:<group>`, `~`→`exclude:`, `__null`→`empty:`. Goal: bidirectional interop with openaleph-search's `SearchQueryParser` (Aleph params can query ftmq stores and vice versa).
+
+### Query language refactor status
+
+The query language is mid-refactor from the legacy hand-made `.where(**kwargs)` DSL to the `M`/`P`/`G` grammar. **No backward compatibility** (major-version break).
+
+- **Done (phase 1)**: the grammar + `Expr` tree, the in-memory evaluator (`apply`/`apply_iter`, correct AND/OR/NOT, is-a `schemata`, correct `null`), all three serialization surfaces, and the `ftmq/query/` package. Covered by `tests/test_query.py`; the new modules are `mypy --strict` clean (the moved legacy `filters.py` is not).
+- **Pending (phase 2)**: `ftmq/sql.py` still consumes the query's tree-walking collectors and is only correct for flat `is_and_only()` queries (no OR/NOT). Consumers still on the removed kwargs API and failing until migrated: `ftmq/cli.py`, the `ftmq/io.py` docstring, the SQL/Lake stores, and `tests/test_proxy.py` / `tests/test_sql.py` / `tests/test_store.py` / `tests/test_cli.py`. Aggregations (`ftmq/aggregations.py`, `Query.aggregate`) are unchanged.
 
 ### Store Backends (`ftmq/store/`)
 
@@ -74,7 +104,7 @@ get_store("lake+s3://bucket/path")
 
 ### SQL Integration (`ftmq/sql.py`)
 
-The `Sql` class translates Query filters into SQLAlchemy clauses for SQL and Lake stores. Accessed via `query.sql`.
+The `Sql` class translates Query filters into SQLAlchemy clauses for SQL and Lake stores. Accessed via `query.sql`. **Not yet updated for the `M`/`P`/`G` refactor** (phase 2): it reads the query's tree-walking collectors and is only correct for flat `is_and_only()` queries. See [refactor status](#query-language-refactor-status).
 
 ### CLI (`ftmq/cli.py`)
 
@@ -95,3 +125,7 @@ Subcommands: `dataset`, `catalog`, `store`, `fragments`, `aggregate`, `apply-dat
 ## Testing
 
 Tests use fixtures in `tests/fixtures/` (`eu_authorities.ftm.json`, `donations.ijson`). A local HTTP server is spawned for URL-based tests. Environment variables for tests are configured in `pyproject.toml` under `[tool.pytest_env]`.
+
+## Conventions
+
+- Never use em-dashes (`—`) in prose (docstrings, comments, docs, commit messages, PR text). Use a normal hyphen (`-`) or restructure the sentence.

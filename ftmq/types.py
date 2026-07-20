@@ -1,6 +1,7 @@
-from typing import Generator, TypeAlias, TypeVar
+from typing import Generator, Iterable, TypeAlias, TypeVar
 
 from followthemoney import Statement, StatementEntity, ValueEntity
+from followthemoney.proxy import EntityProxy
 
 # property multi-value
 Value: TypeAlias = list[str]
@@ -8,6 +9,9 @@ Value: TypeAlias = list[str]
 
 Entity = TypeVar("Entity", StatementEntity, ValueEntity)
 """Generic type used mostly in ftmq"""
+
+EntityProxies: TypeAlias = Iterable[EntityProxy]
+"""An iterable of the followthemoney `EntityProxy` base class"""
 
 # entity generators
 Entities: TypeAlias = Generator[Entity, None, None]
