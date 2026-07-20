@@ -29,9 +29,9 @@ proxies = store.iterate()
 Filter entities with a [`Query`](./query.md) object using a [store view][ftmq.store.base.View]:
 
 ```python
-from ftmq import Query
+from ftmq import Query, M
 
-q = Query().where(dataset="my_dataset", schema="Person")
+q = Query().where(M(dataset="my_dataset"), M(schema="Person"))
 view = store.default_view()
 proxies = store.query(q)
 ```

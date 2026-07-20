@@ -14,7 +14,7 @@ This library provides methods to query and filter entities formatted as [Follow 
 
 It also provides a `Query` class that can be used in other libraries to work with SQL store queries or api queries.
 
-`ftmq` is the base layer for [investigativedata.io's](https://investigativedata.io) libraries and applications dealing with [Follow The Money](https://followthemoney.tech) data.
+`ftmq.Query` is the central query hub of the [OpenAleph](https://openaleph.org) ecosystem: one backend-agnostic query object that filters FtM streams and stores, translates to SQL, and bridges to the OpenAleph API.
 
 To get familiar with the _Follow The Money_ ecosystem, you can have a look at [this pad here](https://pad.investigativedata.org/s/0qKuBEcsM#).
 
@@ -35,12 +35,17 @@ cat entities.ftm.json | ftmq -s Company --country=de --incorporationDate__gte=20
 ### Python Library
 
 ```python
-from ftmq import Query, smart_read_proxies
+from ftmq import Query, M, P, G, smart_read_proxies
 
-q = Query() \
-    .where(dataset="ec_meetings", date__lte=2020) \
-    .where(schema="Event") \
-    .order_by("date", ascending=False)
+# Legal entities in the `companies` dataset that are based in Germany, or in
+# Austria and incorporated since 2020, but never the dissolved ones, return the
+# 5 most recent incorporated ones:
+q = Query().where(
+    M(dataset="companies"),
+    M(schemata="LegalEntity"),
+    G(countries="de") | (G(countries="at") & P(incorporationDate__gte=2020)),
+    ~P(status__ilike="%dissolved%"),
+).order_by("incorporationDate", ascending=False)[:5]
 
 for proxy in smart_read_proxies("s3://data/entities.ftm.json"):
     if q.apply(proxy):
