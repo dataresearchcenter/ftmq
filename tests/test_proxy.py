@@ -2,7 +2,7 @@ import pytest
 from followthemoney import StatementEntity, model
 
 from ftmq.io import make_entity
-from ftmq.query import Query
+from ftmq.query import G, M, P, Query
 
 
 def test_proxy_composite():
@@ -40,117 +40,110 @@ def test_proxy_filter_dataset(proxies):
     result = list(filter(q.apply, proxies))
     assert len(result) == len(proxies)
 
-    q = q.where(dataset="eu_authorities")
+    q = q.where(M(dataset="eu_authorities"))
     result = list(filter(q.apply, proxies))
     assert len(result) == 151
 
 
 def test_proxy_filter_schema(proxies):
-    q = Query().where(schema="Payment")
+    q = Query().where(M(schema="Payment"))
     result = list(filter(q.apply, proxies))
     assert len(result) == 290
 
-    q = Query().where(schema="Organization")
+    q = Query().where(M(schema="Organization"))
     result = list(filter(q.apply, proxies))
     assert len(result) == 17
 
-    q = Query().where(schema__in=["Payment", "Organization"])
+    q = Query().where(M(schema__in=["Payment", "Organization"]))
     result = list(filter(q.apply, proxies))
     assert len(result) == 290 + 17
 
-    q = Query().where(schema="Organization", schema_include_matchable=True)
+    # is-a (schemata) matches the schema and its descendants
+    q = Query().where(M(schemata="Organization"))
     result = list(filter(q.apply, proxies))
     assert len(result) == 224
 
-    # FIXME
-    # q = Query().where(schema__not="Organization", schema_include_matchable=True)
-    # result = list(filter(q.apply, proxies))
-    # assert len(result) == len(proxies) - 224
-
-    q = Query().where(schema="LegalEntity")
+    q = Query().where(M(schema="LegalEntity"))
     result = list(filter(q.apply, proxies))
     assert len(result) == 0
 
-    q = Query().where(schema="LegalEntity", schema_include_matchable=True)
+    q = Query().where(M(schemata="LegalEntity"))
     result = list(filter(q.apply, proxies))
     assert len(result) == 246
 
-    q = Query().where(schema="LegalEntity", schema_include_descendants=True)
-    result = list(filter(q.apply, proxies))
-    assert len(result) == 246
-
-    q = Query().where(schema=model.get("Person"))
+    q = Query().where(M(schema=model.get("Person")))
     result = list(filter(q.apply, proxies))
     assert len(result) == 22
 
-    q = Query().where(schema__startswith="Pers")
+    q = Query().where(M(schema__startswith="Pers"))
     result = list(filter(q.apply, proxies))
     assert len(result) == 22
 
     # invalid
     with pytest.raises(ValueError):
-        q = Query().where(schema="Invalid schema")
+        q = Query().where(M(schema="Invalid schema"))
 
 
 def test_proxy_filter_property(proxies):
-    q = Query().where(prop="country", value="cy")
+    q = Query().where(P(country="cy"))
     result = list(filter(q.apply, proxies))
     assert len(result) == 2
 
-    q = Query().where(prop="date", value="2010", comparator="gte")
+    q = Query().where(P(date__gte="2010"))
     result = list(filter(q.apply, proxies))
     assert len(result) == 49
 
-    q = Query().where(prop="date", value="2010", comparator="gt")
+    q = Query().where(P(date__gt="2010"))
     result = list(filter(q.apply, proxies))
     assert len(result) == 49
 
     # chained same props as AND
-    q = q.where(prop="date", value="2011", comparator="lt")
+    q = q.where(P(date__lt="2011"))
     result = list(filter(q.apply, proxies))
     assert len(result) == 28
 
-    q = Query().where(prop="date", value=2011, comparator="gte")
+    q = Query().where(P(date__gte=2011))
     result = list(filter(q.apply, proxies))
     assert len(result) == 21
 
-    q = Query().where(prop="date", value=True, comparator="null")
+    # `null` tests for presence: True -> without the property, False -> with it
+    q = Query().where(P(date__null=True))
+    result = list(filter(q.apply, proxies))
+    assert len(result) == 335
+
+    q = Query().where(P(date__null=False))
     result = list(filter(q.apply, proxies))
     assert len(result) == 290
 
-    q = Query().where(prop="date", value=False, comparator="null")
-    result = list(filter(q.apply, proxies))
-    assert len(result) == 290
-
-    q = Query().where(prop="full", value="Am ", comparator="startswith")
+    q = Query().where(P(full__startswith="Am "))
     result = list(filter(q.apply, proxies))
     assert len(result) == 2
 
-    q = Query().where(prop="city", value="Hamburg", comparator="endswith")
+    q = Query().where(P(city__endswith="Hamburg"))
     result = list(filter(q.apply, proxies))
     assert len(result) == 8
 
-    q = Query().where(prop="country", value="de", comparator="not")
+    q = Query().where(P(country__not="de"))
     result = list(filter(q.apply, proxies))
     assert len(result) == 7
 
 
 def test_proxy_filters_combined(proxies):
-    q = Query().where(prop="country", value="de")
-    q = q.where(schema="Event")
+    q = Query().where(P(country="de"))
+    q = q.where(M(schema="Event"))
     result = list(filter(q.apply, proxies))
     assert len(result) == 0
 
 
 def test_proxy_sort(proxies):
     tested = False
-    q = Query().where(schema="Person").order_by("name")
+    q = Query().where(M(schema="Person")).order_by("name")
     for proxy in q.apply_iter(proxies):
         assert proxy.caption == "Dr.-Ing. E. h. Martin Herrenknecht"
         tested = True
         break
     assert tested
-    q = Query().where(schema="Person").order_by("name", ascending=False)
+    q = Query().where(M(schema="Person")).order_by("name", ascending=False)
     for proxy in q.apply_iter(proxies):
         assert proxy.caption == "Johanna Quandt"
         tested = True
@@ -159,13 +152,13 @@ def test_proxy_sort(proxies):
 
     # numeric sort
     tested = False
-    q = Query().where(schema="Payment").order_by("amountEur")
+    q = Query().where(M(schema="Payment")).order_by("amountEur")
     for proxy in q.apply_iter(proxies):
         assert proxy.get("amountEur") == ["50000"]
         tested = True
         break
     tested = False
-    q = Query().where(schema="Payment").order_by("amountEur", ascending=False)
+    q = Query().where(M(schema="Payment")).order_by("amountEur", ascending=False)
     for proxy in q.apply_iter(proxies):
         assert proxy.get("amountEur") == ["2334526"]
         tested = True
@@ -179,7 +172,7 @@ def test_proxy_slice(proxies):
     q = Query()[10:20]
     res = [p for p in q.apply_iter(proxies)]
     assert len(res) == 10
-    q = Query().where(schema="Person").order_by("name")[0]
+    q = Query().where(M(schema="Person")).order_by("name")[0]
     res = [p for p in q.apply_iter(proxies)]
     assert len(res) == 1
     assert res[0].caption == "Dr.-Ing. E. h. Martin Herrenknecht"
@@ -188,7 +181,7 @@ def test_proxy_slice(proxies):
 def test_proxy_filter_reverse(proxies):
     # here: reverse payments
     entity_id = "783d918df9f9178400d6b3386439ab3b3679979c"
-    q = Query().where(reverse=entity_id)
+    q = Query().where(G(entities=entity_id))
     res = [p for p in q.apply_iter(proxies)]
     assert len(res) == 53
     tested = False
@@ -197,24 +190,24 @@ def test_proxy_filter_reverse(proxies):
         tested = True
     assert tested
 
-    q = Query().where(reverse=entity_id, schema="Payment")
-    q = q.where(prop="date", value=2007, comparator="gte")
+    q = Query().where(G(entities=entity_id), M(schema="Payment"))
+    q = q.where(P(date__gte=2007))
     res = [p for p in q.apply_iter(proxies)]
     assert len(res) == 37
-    q = Query().where(reverse=entity_id, schema="Person")
+    q = Query().where(G(entities=entity_id), M(schema="Person"))
     res = [p for p in q.apply_iter(proxies)]
     assert len(res) == 0
 
 
 def test_proxy_filter_ids(eu_authorities):
-    q = Query().where(entity_id="eu-authorities-chafea")
+    q = Query().where(M(entity_id="eu-authorities-chafea"))
     res = [p for p in q.apply_iter(eu_authorities)]
     assert len(res) == 1
     assert res[0].id == "eu-authorities-chafea"
-    q = q.where(dataset="gdho")
+    q = q.where(M(dataset="gdho"))
     res = [p for p in q.apply_iter(eu_authorities)]
     assert len(res) == 0
-    q = Query().where(entity_id__startswith="eu-authorities")
+    q = Query().where(M(entity_id__startswith="eu-authorities"))
     res = [p for p in q.apply_iter(eu_authorities)]
     assert len(res) == len(eu_authorities)
 
@@ -228,11 +221,11 @@ def test_proxy_filter_origin():
     }
     entity = make_entity(JANE)
     assert entity.context["origin"] == ["test"]
-    q = Query().where(origin="yolo")
+    q = Query().where(M(origin="yolo"))
     assert not q.apply(entity)
-    q = Query().where(origin="test")
+    q = Query().where(M(origin="test"))
     assert q.apply(entity)
-    _q = Query().where(origin__startswith="te")
+    _q = Query().where(M(origin__startswith="te"))
     assert _q.apply(entity)
 
     entity = make_entity(JANE, StatementEntity)
