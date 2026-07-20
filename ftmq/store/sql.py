@@ -13,7 +13,7 @@ from typing_extensions import TypeVar
 from ftmq.aggregations import AggregatorResult
 from ftmq.enums import Fields
 from ftmq.model.stats import DatasetStats, compile_stats
-from ftmq.query import Query
+from ftmq.query import M, Query
 from ftmq.store.base import Store, View
 from ftmq.types import StatementEntities
 from ftmq.util import get_scope_dataset
@@ -32,7 +32,7 @@ def clean_agg_value(value: str | Decimal) -> str | float | int | None:
 class SQLQueryView(View, nk.SQLView):
     def ensure_scoped_query(self, query: Query) -> Query:
         if not query.datasets:
-            return query.where(dataset__in=self.dataset_names)
+            return query.where(M(dataset__in=self.dataset_names))
         if query.dataset_names - self.dataset_names:
             raise ValueError("Query datasets outside view scope")
         return query

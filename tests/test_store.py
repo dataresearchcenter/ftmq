@@ -1,6 +1,6 @@
 from followthemoney import EntityProxy, StatementEntity
 
-from ftmq.query import Query
+from ftmq.query import G, M, P, Query
 from ftmq.store import MemoryStore, Store, get_store
 from ftmq.store.aleph import AlephStore, parse_uri
 from ftmq.store.base import get_resolver
@@ -74,31 +74,28 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
     assert len([e for e in view.entities()]) == 151
 
     view = store.default_view()
-    q = Query().where(dataset="eu_authorities")
+    q = Query().where(M(dataset="eu_authorities"))
     res = [e for e in view.query(q)]
     assert len(res) == 151
     assert "eu_authorities" in res[0].datasets
-    q = Query().where(schema="Payment", prop="date", value=2011, comparator="gte")
+    q = Query().where(M(schema="Payment"), P(date__gte=2011))
     res = [e for e in view.query(q)]
     assert all(r.schema.name == "Payment" for r in res)
     assert len(res) == 21
 
-    # schemata filters
-    q = Query().where(schema="Organization", schema_include_matchable=True)
+    # schemata (is-a) filters
+    q = Query().where(M(schemata="Organization"))
     res = [e for e in view.query(q)]
     assert len(res) == 224
-    q = Query().where(schema="LegalEntity")
+    q = Query().where(M(schema="LegalEntity"))
     res = [e for e in view.query(q)]
     assert len(res) == 0
-    q = Query().where(schema="LegalEntity", schema_include_matchable=True)
-    res = [e for e in view.query(q)]
-    assert len(res) == 246
-    q = Query().where(schema="LegalEntity", schema_include_descendants=True)
+    q = Query().where(M(schemata="LegalEntity"))
     res = [e for e in view.query(q)]
     assert len(res) == 246
 
     # stats
-    q = Query().where(dataset="eu_authorities")
+    q = Query().where(M(dataset="eu_authorities"))
     stats = view.stats(q)
     assert [c.model_dump() for c in stats.things.countries] == [
         {"code": "eu", "label": "European Union", "count": 151}
@@ -115,7 +112,7 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
     assert view.count(q) == 151
 
     # ordering
-    q = Query().where(schema="Payment", prop="date", value=2011, comparator="gte")
+    q = Query().where(M(schema="Payment"), P(date__gte=2011))
     q = q.order_by("amountEur")
     res = [e for e in view.query(q)]
     assert len(res) == 21
@@ -126,14 +123,14 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
     assert res[0].get("amountEur") == ["320000"]
 
     # slice
-    q = Query().where(schema="Payment", prop="date", value=2011, comparator="gte")
+    q = Query().where(M(schema="Payment"), P(date__gte=2011))
     q = q.order_by("amountEur")
     q = q[:10]
     res = [e for e in view.query(q)]
     assert len(res) == 10
     assert res[0].get("payer") == ["efccc434cdf141c7ba6f6e539bb6b42ecd97c368"]
 
-    q = Query().where(schema="Person").order_by("name")[0]
+    q = Query().where(M(schema="Person")).order_by("name")[0]
     res = [e for e in view.query(q)]
     assert len(res) == 1
     assert res[0].caption == "Dr.-Ing. E. h. Martin Herrenknecht"
@@ -155,7 +152,7 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
 
     q = (
         Query()
-        .where(dataset="donations")
+        .where(M(dataset="donations"))
         .aggregate("sum", "amountEur", groups="beneficiary")
     )
     res = view.aggregations(q)
@@ -181,7 +178,11 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
         },
         "sum": {"amountEur": 40589689.15},
     }
-    q = Query().where(dataset="donations").aggregate("sum", "amountEur", groups="year")
+    q = (
+        Query()
+        .where(M(dataset="donations"))
+        .aggregate("sum", "amountEur", groups="year")
+    )
     res = view.aggregations(q)
     assert res == {
         "groups": {
@@ -205,13 +206,13 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
         "sum": {"amountEur": 40589689.15},
     }
 
-    q = Query().where(dataset="donations").aggregate("avg", "amountEur")
+    q = Query().where(M(dataset="donations")).aggregate("avg", "amountEur")
     res = view.aggregations(q)
     assert res == {"avg": {"amountEur": 139964.44534482757}}
 
-    # reversed
+    # reverse lookup (the `entities` group)
     entity_id = "783d918df9f9178400d6b3386439ab3b3679979c"
-    q = Query().where(reverse=entity_id)
+    q = Query().where(G(entities=entity_id))
     res = [p for p in view.query(q)]
     assert len(res) == 53
     tested = False
@@ -220,31 +221,31 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
         tested = True
     assert tested
 
-    q = Query().where(reverse=entity_id, schema="Payment")
-    q = q.where(prop="date", value=2007, comparator="gte")
+    q = Query().where(G(entities=entity_id), M(schema="Payment"))
+    q = q.where(P(date__gte=2007))
     res = [p for p in q.apply_iter(proxies)]
     assert len(res) == 37
-    q = Query().where(reverse=entity_id, schema="Person")
+    q = Query().where(G(entities=entity_id), M(schema="Person"))
     res = [p for p in q.apply_iter(proxies)]
     assert len(res) == 0
 
     # ids
-    q = Query().where(entity_id="eu-authorities-chafea")
+    q = Query().where(M(entity_id="eu-authorities-chafea"))
     res = [p for p in view.query(q)]
     assert len(res) == 1
-    q = Query().where(canonical_id="eu-authorities-chafea")
+    q = Query().where(M(canonical_id="eu-authorities-chafea"))
     res = [p for p in view.query(q)]
     assert len(res) == 1
-    q = Query().where(entity_id="eu-authorities-chafea", dataset="donations")
+    q = Query().where(M(entity_id="eu-authorities-chafea", dataset="donations"))
     res = [p for p in view.query(q)]
     assert len(res) == 0
-    q = Query().where(canonical_id="eu-authorities-chafea", dataset="donations")
+    q = Query().where(M(canonical_id="eu-authorities-chafea", dataset="donations"))
     res = [p for p in view.query(q)]
     assert len(res) == 0
-    q = Query().where(entity_id__startswith="eu-authorities-")
+    q = Query().where(M(entity_id__startswith="eu-authorities-"))
     res = [p for p in view.query(q)]
     assert len(res) == 151
-    q = Query().where(canonical_id__startswith="eu-authorities-")
+    q = Query().where(M(canonical_id__startswith="eu-authorities-"))
     res = [p for p in view.query(q)]
     assert len(res) == 151
 
@@ -257,7 +258,7 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
         assert len(statements) == 0
 
     # origin
-    q = Query().where(origin="test")
+    q = Query().where(M(origin="test"))
     res = [p for p in view.query(q)]
     assert len(res) == 0
 

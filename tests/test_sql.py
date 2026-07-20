@@ -1,7 +1,7 @@
 import pytest
 from sqlalchemy.sql.selectable import Select
 
-from ftmq.query import Query
+from ftmq.query import G, M, P, Query
 
 
 def _compare_str(s1, s2) -> bool:
@@ -11,9 +11,9 @@ def _compare_str(s1, s2) -> bool:
 def test_sql():
     q = (
         Query()
-        .where(dataset="test")
-        .where(dataset="other", schema="Event")
-        .where(prop="date", value=2023, comparator="gte")
+        .where(M(dataset="test"))
+        .where(M(dataset="other"), M(schema="Event"))
+        .where(P(date__gte=2023))
     )
     whereclause = """WHERE (test_table.dataset = :dataset_1 OR test_table.dataset = :dataset_2)
     AND test_table.schema = :schema_1
@@ -177,9 +177,9 @@ def test_sql():
     # order by creates a join
     q = (
         Query()
-        .where(dataset="test")
-        .where(dataset="other", schema="Event")
-        .where(prop="date", value=2023, comparator="gte")
+        .where(M(dataset="test"))
+        .where(M(dataset="other"), M(schema="Event"))
+        .where(P(date__gte=2023))
         .order_by("name", ascending=False)
     )
     assert isinstance(q.sql.statements, Select)
@@ -211,9 +211,9 @@ def test_sql():
     # slice
     q = (
         Query()
-        .where(dataset="test")
-        .where(dataset="other", schema="Event")
-        .where(prop="date", value=2023, comparator="gte")
+        .where(M(dataset="test"))
+        .where(M(dataset="other"), M(schema="Event"))
+        .where(P(date__gte=2023))
     )
     assert str(q[:10].sql.canonical_ids).endswith("LIMIT :param_1")
     assert str(q[1:10].sql.canonical_ids).endswith("LIMIT :param_1 OFFSET :param_2")
@@ -221,9 +221,9 @@ def test_sql():
     # ordered slice
     q = (
         Query()
-        .where(dataset="test")
-        .where(dataset="other", schema="Event")
-        .where(prop="date", value=2023, comparator="gte")
+        .where(M(dataset="test"))
+        .where(M(dataset="other"), M(schema="Event"))
+        .where(P(date__gte=2023))
         .order_by("name")
     )
     assert not str(q[:10].sql.canonical_ids).endswith("LIMIT :param_1")
@@ -261,7 +261,7 @@ def test_sql():
     q = str(q.sql.aggregations)
     assert "SELECT 'location', 'count', count(DISTINCT test_table.value) AS count" in q
 
-    q = Query().where(date=2023)
+    q = Query().where(P(date=2023))
     q = q.sql.get_group_counts("country")
     res = q.compile(compile_kwargs={"literal_binds": True})
     assert _compare_str(
@@ -277,7 +277,7 @@ def test_sql():
 
     q = (
         Query()
-        .where(dataset="test", schema="Project")
+        .where(M(dataset="test"), M(schema="Project"))
         .aggregate("max", "amountEur", groups="country")
     )
     assert q.sql.group_props == {"country"}
@@ -298,7 +298,7 @@ def test_sql():
     )
     q = (
         Query()
-        .where(dataset="test", schema="Project")
+        .where(M(dataset="test"), M(schema="Project"))
         .aggregate("max", "amountEur", groups=["country", "year", "dataset"])
     )
     assert q.sql.group_props == {"country", "year", "dataset"}
@@ -319,7 +319,7 @@ def test_sql():
     )
 
     # reversed
-    q = Query().where(reverse="my_id").where(date=2023, schema="Event")
+    q = Query().where(G(entities="my_id")).where(P(date=2023), M(schema="Event"))
     assert _compare_str(
         str(q.sql.statements.compile(compile_kwargs={"literal_binds": True})),
         f"""
@@ -342,7 +342,7 @@ def test_sql():
         SELECT {fields} FROM test_table ORDER BY test_table.canonical_id
         """,
     )
-    q = Query().where(dataset="foo", schema="Person")
+    q = Query().where(M(dataset="foo"), M(schema="Person"))
     assert _compare_str(
         q.sql.statements,
         f"""
@@ -357,12 +357,12 @@ def test_sql():
 
 
 def test_sql_ids():
-    q = Query().where(entity_id="eu-authorities-chafea")
+    q = Query().where(M(entity_id="eu-authorities-chafea"))
     assert "WHERE test_table.entity_id = :entity_id_1" in str(q.sql.statements)
-    q = Query().where(canonical_id="eu-authorities-chafea")
+    q = Query().where(M(canonical_id="eu-authorities-chafea"))
     assert "WHERE test_table.canonical_id = :canonical_id_1" in str(q.sql.statements)
     q = Query().where(
-        canonical_id="eu-authorities-chafea", canonical_id__startswith="e"
+        M(canonical_id="eu-authorities-chafea", canonical_id__startswith="e")
     )
     # FIXME ordering of filters
     # assert (
@@ -383,5 +383,5 @@ def test_sql_ids():
 
 
 def test_sql_origins():
-    q = Query().where(origin="test")
+    q = Query().where(M(origin="test"))
     assert "WHERE test_table.origin = :origin_1" in str(q.sql.statements)

@@ -29,7 +29,7 @@ from ftmq.enums import (
     PropertyTypesMap,
     Things,
 )
-from ftmq.query.filters import F
+from ftmq.query.leaves import Leaf, SchemataLeaf
 
 if TYPE_CHECKING:
     from ftmq.query import Query
@@ -63,7 +63,7 @@ class Sql:
             "schema": self.table.c.schema,
         }
 
-    def get_expression(self, column: Column, f: F):
+    def get_expression(self, column: Column, f: Leaf):
         value = f.value
         if f.comparator in (Comparators.ilike, Comparators.like):
             value = f"%{value}%"
@@ -95,6 +95,17 @@ class Sql:
                     for f in sorted(self.q.schemata)
                 )
             )
+        # is-a schema filters (`M(schemata=...)`): expand to the schema plus its
+        # non-abstract descendants and match on the `schema` column
+        for f in sorted(s for s in self.q._leaves if isinstance(s, SchemataLeaf)):
+            names: set[str] = set()
+            for schema in f.schemata:
+                names.add(schema.name)
+                names.update(d.name for d in schema.descendants if not d.abstract)
+            if str(f.comparator) in ("not", "not_in"):
+                clauses.append(self.table.c.schema.not_in(names))
+            else:
+                clauses.append(self.table.c.schema.in_(names))
         if self.q.origins:
             clauses.append(
                 or_(
@@ -102,13 +113,15 @@ class Sql:
                     for f in sorted(self.q.origins)
                 )
             )
-        if self.q.reversed:
+        # reverse lookup: `G(entities=...)`, i.e. the `entity` prop-type group
+        entity_groups = sorted(f for f in self.q.groups if f.key == "entities")
+        if entity_groups:
             rclause = or_(
                 and_(
                     self.table.c.prop_type == str(registry.entity),
                     self.get_expression(self.table.c.value, f),
                 )
-                for f in sorted(self.q.reversed)
+                for f in entity_groups
             )
             rq = select(self.table.c.canonical_id.distinct()).where(
                 and_(rclause, *clauses)
@@ -124,13 +137,26 @@ class Sql:
                     for f in sorted(self.q.properties)
                 )
             )
+        # other prop-type groups (`G(countries=...)`, `G(dates=...)`, ...)
+        other_groups = sorted(f for f in self.q.groups if f.key != "entities")
+        if other_groups:
+            clauses.append(
+                or_(
+                    and_(
+                        self.table.c.prop_type == str(f.prop_type),
+                        self.get_expression(self.table.c.value, f),
+                    )
+                    for f in other_groups
+                )
+            )
         return and_(*clauses)
 
     @cached_property
     def canonical_ids(self) -> Select:
         q = select(self.table.c.canonical_id.distinct()).where(self.clause)
         if self.q.sort is None:
-            q = q.limit(self.q.limit).offset(self.q.offset)
+            # offset 0 (a start-less slice) is redundant; omit it from the SQL
+            q = q.limit(self.q.limit).offset(self.q.offset or None)
         return q
 
     @cached_property
@@ -140,7 +166,7 @@ class Sql:
     @cached_property
     def _unsorted_statements(self) -> Select:
         where = self.clause
-        if self.q.properties or self.q.reversed or self.q.limit:
+        if self.q.properties or self.q.groups or self.q.limit:
             where = self.table.c.canonical_id.in_(self.canonical_ids)
         return select(self.table).where(where).order_by(self.table.c.canonical_id)
 
@@ -169,7 +195,7 @@ class Sql:
                 )
                 .group_by(self.table.c.canonical_id)
                 .limit(self.q.limit)
-                .offset(self.q.offset)
+                .offset(self.q.offset or None)
             )
 
             order_by = "sortable_value"
