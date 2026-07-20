@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any, Iterable, Self, cast
 from banal import ensure_list, hash_data
 from followthemoney.proxy import EntityProxy
 from followthemoney.types import registry
-from sqlalchemy import Table
 
 from ftmq.aggregations import Aggregation, Aggregator
 from ftmq.query.aleph import (
@@ -32,7 +31,9 @@ from ftmq.types import EntityProxies
 from ftmq.util import prop_is_numeric
 
 if TYPE_CHECKING:
-    from ftmq.sql import Sql
+    from sqlalchemy import Select
+
+    from ftmq.query.sql import Sql, SqlSource
 
 
 def _make_slice(limit: int | None, offset: int | None) -> slice | None:
@@ -114,14 +115,12 @@ class Query:
         aggregator: Aggregator | None = None,
         sort: Sort | None = None,
         slice: slice | None = None,
-        table: Table | None = None,
     ):
         self.q: Expr | None = q if q is not None else combine(*nodes)
         self.aggregations: set[Aggregation] = set(aggregations or [])
         self.aggregator = aggregator
         self.sort = sort
         self.slice = slice
-        self.table = table
 
     def __getitem__(self, value: Any) -> Self:
         """
@@ -177,7 +176,6 @@ class Query:
             aggregator=self.aggregator,
             sort=self.sort,
             slice=self.slice,
-            table=self.table,
         )
         data.update(kwargs)
         return self.__class__(**data)
@@ -187,19 +185,6 @@ class Query:
     @property
     def _leaves(self) -> list[Leaf]:
         return list(self.q.iter_leaves()) if self.q else []
-
-    @property
-    def lookups(self) -> dict[str, Any]:
-        """
-        The current filter lookups as dictionary
-
-        A flat, best-effort view (lossy for non-conjunctive queries); the
-        lossless form is [`to_dict`][ftmq.Query.to_dict].
-        """
-        data: dict[str, Any] = {}
-        for f in self._leaves:
-            data.update(f.to_dict())
-        return data
 
     @property
     def limit(self) -> int | None:
@@ -228,11 +213,30 @@ class Query:
     @property
     def sql(self) -> "Sql":
         """
-        An object of this query used for sql interfaces
+        An adapter of this query for sql interfaces, against the default
+        nomenklatura statement table. For a custom / extended table pass a
+        [`SqlSource`][ftmq.query.sql.SqlSource] to [`compile`][ftmq.Query.compile] or
+        build `Sql(query, source)` directly.
         """
-        from ftmq.sql import Sql
+        from ftmq.query.sql import Sql
 
         return Sql(self)
+
+    def compile(self, source: "SqlSource | None" = None) -> "Select[Any]":
+        """
+        Compile this query to a SQLAlchemy `Select` of statements against a
+        [`SqlSource`][ftmq.query.sql.SqlSource] (a store's table descriptor).
+
+        Args:
+            source: The SQL source to compile against (default: the base
+                nomenklatura statement table).
+
+        Returns:
+            The statements `Select`.
+        """
+        from ftmq.query.sql import Sql
+
+        return Sql(self, source).statements
 
     @property
     def ids(self) -> set[IdLeaf]:

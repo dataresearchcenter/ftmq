@@ -103,15 +103,6 @@ class Expr:
             elif cls is None or isinstance(child, cls):
                 yield child
 
-    def is_and_only(self) -> bool:
-        """True if the whole tree is a plain conjunction (no `OR`, no negated
-        node anywhere), the shape today's SQL layer can consume."""
-        if self.connector == OR or self.negated:
-            return False
-        return all(
-            child.is_and_only() for child in self.children if isinstance(child, Expr)
-        )
-
     def to_dict(self) -> dict[str, Any]:
         """Serialize the tree to a nested, canonically-ordered dict.
 

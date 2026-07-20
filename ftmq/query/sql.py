@@ -1,6 +1,6 @@
 from collections import defaultdict
 from functools import cached_property
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING, Any, Callable, TypeAlias
 
 from followthemoney.types import PropertyType, registry
 from nomenklatura.db import make_statement_table
@@ -34,10 +34,47 @@ from ftmq.query.exceptions import QueryError
 from ftmq.query.leaves import ContextLeaf, Leaf, SchemataLeaf
 
 if TYPE_CHECKING:
-    from ftmq.query import Query
+    from ftmq.query.main import Query
 
 
 Field: TypeAlias = Properties | PropertyTypes | Fields
+
+# a schema-value -> partition-value function (e.g. schema name -> `bucket`)
+PruneFn: TypeAlias = "Callable[[str], str]"
+
+
+class SqlSource:
+    """Describes the SQL statement source a [`Query`][ftmq.Query] compiles
+    against: the SQLAlchemy table (or view), the entity-identity column, and an
+    optional partition-pruning rule.
+
+    Stores own one and pass it to [`Sql`][ftmq.sql.Sql] /
+    [`Query.compile`][ftmq.Query.compile], replacing the old
+    `query.table` mutation. A downstream store with extra columns (a lake /
+    sharded table) supplies its own `SqlSource` so the same `Query` compiles
+    against it unchanged.
+
+    Args:
+        table: The SQLAlchemy `Table` / `TableClause` to query.
+        id_column: The entity-identity column name (default `canonical_id`).
+        prune: Optional `{meta_field: fn}` mapping folding a partition filter
+            into every compiled query - e.g. `{"schema": get_schema_bucket}`
+            maps a schema/schemata filter to a `prune_column IN (...)` predicate.
+        prune_column: The partition column the `prune` values target
+            (e.g. `bucket`).
+    """
+
+    def __init__(
+        self,
+        table: "Any",
+        id_column: str = "canonical_id",
+        prune: "dict[str, PruneFn] | None" = None,
+        prune_column: str | None = None,
+    ) -> None:
+        self.table = table
+        self.id_column = id_column
+        self.prune = prune or {}
+        self.prune_column = prune_column
 
 
 class Sql:
@@ -52,15 +89,16 @@ class Sql:
         Comparators.lte: "__le__",
     }
 
-    def __init__(self, q: "Query") -> None:
+    def __init__(self, q: "Query", source: "SqlSource | None" = None) -> None:
         self.q = q
         self.metadata = MetaData()
-        if q.table is None:
-            self.table = make_statement_table(self.metadata)
-        else:
-            self.table = q.table
+        if source is None:
+            source = SqlSource(make_statement_table(self.metadata))
+        self.source = source
+        self.table = source.table
+        self.id_col = self.table.c[source.id_column]
         self.META_COLUMNS = {
-            "id": self.table.c.canonical_id,
+            "id": self.id_col,
             "dataset": self.table.c.dataset,
             "schema": self.table.c.schema,
         }
@@ -144,15 +182,25 @@ class Sql:
                 for f in sorted(self.q.groups)
             )
             clauses.append(
-                self.table.c.canonical_id.in_(
-                    select(self.table.c.canonical_id.distinct()).where(gclause)
-                )
+                self.id_col.in_(select(self.id_col.distinct()).where(gclause))
             )
+        # partition pruning: a schema/schemata filter narrows to the matching
+        # partition values (e.g. the lake `bucket` column), folded into every
+        # compiled query - so `count` prunes partitions too, not just statements
+        prune_fn = self.source.prune.get("schema")
+        if (
+            prune_fn is not None
+            and self.source.prune_column
+            and self.q.schemata_names
+            and self.source.prune_column in self.table.c
+        ):
+            values = {prune_fn(s) for s in self.q.schemata_names}
+            clauses.append(self.table.c[self.source.prune_column].in_(values))
         return and_(*clauses)
 
     @cached_property
     def canonical_ids(self) -> Select:
-        q = select(self.table.c.canonical_id.distinct()).where(self.clause)
+        q = select(self.id_col.distinct()).where(self.clause)
         if self.q.sort is None:
             # offset 0 (a start-less slice) is redundant; omit it from the SQL
             q = q.limit(self.q.limit).offset(self.q.offset or None)
@@ -166,8 +214,8 @@ class Sql:
     def _unsorted_statements(self) -> Select:
         where = self.clause
         if self.q.properties or self.q.groups or self.q.context or self.q.limit:
-            where = self.table.c.canonical_id.in_(self.canonical_ids)
-        return select(self.table).where(where).order_by(self.table.c.canonical_id)
+            where = self.id_col.in_(self.canonical_ids)
+        return select(self.table).where(where).order_by(self.id_col)
 
     @cached_property
     def _sorted_statements(self) -> Select:
@@ -183,16 +231,16 @@ class Sql:
             group_func = func.min if self.q.sort.ascending else func.max
             inner = (
                 select(
-                    self.table.c.canonical_id,
+                    self.id_col,
                     group_func(value).label("sortable_value"),
                 )
                 .where(
                     and_(
                         self.table.c.prop == prop,
-                        self.table.c.canonical_id.in_(self.canonical_ids),
+                        self.id_col.in_(self.canonical_ids),
                     )
                 )
-                .group_by(self.table.c.canonical_id)
+                .group_by(self.id_col)
                 .limit(self.q.limit)
                 .offset(self.q.offset or None)
             )
@@ -200,14 +248,12 @@ class Sql:
             order_by = "sortable_value"
             if not self.q.sort.ascending:
                 order_by = desc(order_by)
-            order_by = [order_by, self.table.c.canonical_id]
+            order_by = [order_by, self.id_col]
 
             inner = inner.order_by(*order_by)
 
             return select(
-                self.table.join(
-                    inner, self.table.c.canonical_id == inner.c.canonical_id
-                )
+                self.table.join(inner, self.id_col == inner.c.canonical_id)
             ).order_by(*order_by)
 
     @cached_property
@@ -219,7 +265,7 @@ class Sql:
     @cached_property
     def count(self) -> Select:
         return (
-            select(func.count(self.table.c.canonical_id.distinct()))
+            select(func.count(self.id_col.distinct()))
             .select_from(self.table)
             .where(self.clause)
         )
@@ -241,7 +287,7 @@ class Sql:
         limit: int | None = None,
         extra_where: BooleanClauseList | None = None,
     ) -> Select:
-        count = func.count(self.table.c.canonical_id.distinct()).label("count")
+        count = func.count(self.id_col.distinct()).label("count")
         column = self._get_lookup_column(group)
         group = str(group)
         if group in self.META_COLUMNS:
@@ -249,9 +295,7 @@ class Sql:
             where = self.clause
         else:
             grouper = self.table.c.value
-            where = and_(
-                column == group, self.table.c.canonical_id.in_(self.all_canonical_ids)
-            )
+            where = and_(column == group, self.id_col.in_(self.all_canonical_ids))
         if extra_where is not None:
             where = and_(where, extra_where)
         return (
@@ -278,33 +322,35 @@ class Sql:
     def countries_flat(self) -> Select:
         return select(self.table.c.value.distinct()).where(
             and_(
-                self.table.c.prop_type == registry.country,
-                self.table.c.canonical_id.in_(self.all_canonical_ids),
+                self.table.c.prop_type == str(registry.country),
+                self.id_col.in_(self.all_canonical_ids),
             )
         )
 
     @cached_property
     def things(self) -> Select:
         return self.get_group_counts(
-            "schema", extra_where=self.table.c.schema.in_(Things)
+            "schema", extra_where=self.table.c.schema.in_([str(x) for x in Things])
         )
 
     @cached_property
     def things_countries(self) -> Select:
         return self.get_group_counts(
-            registry.country, extra_where=self.table.c.schema.in_(Things)
+            registry.country,
+            extra_where=self.table.c.schema.in_([str(x) for x in Things]),
         )
 
     @cached_property
     def intervals(self) -> Select:
         return self.get_group_counts(
-            "schema", extra_where=self.table.c.schema.in_(Intervals)
+            "schema", extra_where=self.table.c.schema.in_([str(x) for x in Intervals])
         )
 
     @cached_property
     def intervals_countries(self) -> Select:
         return self.get_group_counts(
-            registry.country, extra_where=self.table.c.schema.in_(Intervals)
+            registry.country,
+            extra_where=self.table.c.schema.in_([str(x) for x in Intervals]),
         )
 
     @cached_property
@@ -318,7 +364,7 @@ class Sql:
             func.max(self.table.c.value),
         ).where(
             self.table.c.prop_type == "date",
-            self.table.c.canonical_id.in_(self.all_canonical_ids),
+            self.id_col.in_(self.all_canonical_ids),
         )
 
     @cached_property
@@ -338,15 +384,15 @@ class Sql:
                     text(f"'{agg.func}'"),
                     aggregator,
                 ).where(
-                    self.table.c.prop == agg.prop,
-                    self.table.c.canonical_id.in_(self.all_canonical_ids),
+                    self.table.c.prop == str(agg.prop),
+                    self.id_col.in_(self.all_canonical_ids),
                 )
             )
         return union_all(*qs)
 
     def _get_grouping_where(self, grouper: Field, value: str) -> BooleanClauseList:
         column = self._get_lookup_column(grouper)
-        clauses = [self.table.c.canonical_id.in_(self.all_canonical_ids)]
+        clauses = [self.id_col.in_(self.all_canonical_ids)]
         if grouper in Properties:
             clauses.extend([column == str(grouper), self.table.c.value == value])
             return clauses
@@ -376,7 +422,7 @@ class Sql:
                     sql_agg_value = func.cast(sql_agg_value, NUMERIC)
                 aggregator = sql_agg(sql_agg_value)
 
-                inner = select(self.table.c.canonical_id.distinct()).where(
+                inner = select(self.id_col.distinct()).where(
                     *self._get_grouping_where(grouper, group)
                 )
 
@@ -386,8 +432,8 @@ class Sql:
                         text(f"'{agg.func}'"),
                         aggregator,
                     ).where(
-                        self.table.c.prop == agg.prop,
-                        self.table.c.canonical_id.in_(inner),
+                        self.table.c.prop == str(agg.prop),
+                        self.id_col.in_(inner),
                     )
                 )
         return union_all(*qs)

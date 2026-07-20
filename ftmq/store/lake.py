@@ -54,6 +54,7 @@ from sqlalchemy.sql import Select
 from sqlalchemy.sql.elements import ColumnElement
 
 from ftmq.query import Query
+from ftmq.query.sql import SqlSource
 from ftmq.store.base import DEFAULT_ORIGIN, Store
 from ftmq.store.sql import SQLQueryView, SQLStore
 from ftmq.types import StatementEntities
@@ -324,27 +325,24 @@ class Row:
         return list(self.__iter__())[i]
 
 
-def ensure_schema_buckets(q: Query) -> Select:
-    if not q.schemata_names:
-        return q.sql.statements
-    buckets: set[str] = set()
-    for schema in q.schemata_names:
-        buckets.add(get_schema_bucket(schema))
-    return q.sql.statements.where(TABLE.c.bucket.in_(buckets))
-
-
 class LakeQueryView(SQLQueryView):
     def query(self, query: Query | None = None) -> StatementEntities:
         if query:
-            query.table = self.store.table
             query = self.ensure_scoped_query(query)
-            sql = ensure_schema_buckets(query)
-            yield from self.store._iterate(sql)
+            yield from self.store._iterate(self._sql(query).statements)
         else:
             yield from super().query(query)
 
 
 class LakeStore(SQLStore[LakeQueryView]):
+    @property
+    def source(self) -> SqlSource:
+        """The lake statement view, with schema-filter -> `bucket` partition
+        pruning folded into every compiled query."""
+        return SqlSource(
+            self.table, prune={"schema": get_schema_bucket}, prune_column="bucket"
+        )
+
     def __init__(self, *args, **kwargs) -> None:
         self._backend = FSStore(uri=kwargs.pop("uri"))
         self._partition_by = kwargs.pop("partition_by", PARTITION_BY)

@@ -27,80 +27,71 @@ from followthemoney.proxy import EntityProxy
 from followthemoney.schema import Schema
 from followthemoney.types import registry
 
-from ftmq.enums import Comparators
 from ftmq.query.exceptions import QueryError
-from ftmq.types import Value
 from ftmq.util import parse_comparator
 
 
 class Lookup:
-    """Applies a single comparator to values (the in-memory match logic)."""
+    """Applies a single comparator to values (the in-memory match logic).
 
-    IN = Comparators["in"]
-    EQUALS = Comparators["eq"]
-    NULL = Comparators["null"]
+    The comparator is a plain string, already validated by
+    [`parse_lookup`][ftmq.query.leaves.parse_lookup].
+    """
 
-    def __init__(self, comparator: Comparators, value: Value | None = None):
-        self.comparator = self.get_comparator(comparator)
+    def __init__(self, comparator: str, value: Any = None) -> None:
+        self.comparator = comparator
         self.value = value
 
     def __str__(self) -> str:
-        return str(self.comparator)
+        return self.comparator
 
-    def __eq__(self, other: Any) -> bool:
-        return str(self) == str(other)
-
-    def get_comparator(self, comparator: str) -> Comparators:
-        try:
-            return Comparators[comparator]
-        except KeyError:
-            raise QueryError(f"Invalid comparator: `{comparator}`")
-
-    def apply(self, value: str | None) -> bool:
-        if self.comparator == "eq":
-            return value == self.value
-        if self.comparator == "not":
-            return value != self.value
-        if self.comparator == "in":
+    def apply(self, value: Any) -> bool:
+        c = self.comparator
+        if c == "eq":
+            return bool(value == self.value)
+        if c == "not":
+            return bool(value != self.value)
+        if c == "in":
             return value in self.value
-        if self.comparator == "not_in":
+        if c == "not_in":
             return value not in self.value
-        if self.comparator == "startswith":
-            return value.startswith(self.value)
-        if self.comparator == "endswith":
-            return value.endswith(self.value)
-        if self.comparator == "null":
+        if c == "startswith":
+            return bool(value.startswith(self.value))
+        if c == "endswith":
+            return bool(value.endswith(self.value))
+        if c == "null":
             return not value == self.value
-        if self.comparator == "gt":
-            return value > self.value
-        if self.comparator == "gte":
-            return value >= self.value
-        if self.comparator == "lt":
-            return value < self.value
-        if self.comparator == "lte":
-            return value <= self.value
-        if self.comparator == "like":
+        if c == "gt":
+            return bool(value > self.value)
+        if c == "gte":
+            return bool(value >= self.value)
+        if c == "lt":
+            return bool(value < self.value)
+        if c == "lte":
+            return bool(value <= self.value)
+        if c == "like":
             return self.value in value
-        if self.comparator == "ilike":
+        if c == "ilike":
             return self.value.lower() in value.lower()
         return False
 
 
 class BaseFilter:
-    """Comparator + cast value; the shared base for all query `Leaf` classes."""
+    """Comparator + cast value; the shared base for all query `Leaf` classes.
+
+    The comparator is validated upstream by
+    [`parse_lookup`][ftmq.query.leaves.parse_lookup]; here it is a plain string.
+    """
 
     key: str = ""
 
-    def __init__(self, value: Value, comparator: Comparators | None = None):
-        try:
-            self.comparator = Comparators[comparator or "eq"]
-        except KeyError:
-            raise QueryError(f"Invalid comparator `{comparator}`")
-        self.value: Value = self.get_casted_value(value)
+    def __init__(self, value: Any, comparator: str | None = None) -> None:
+        self.comparator: str = comparator or "eq"
+        self.value: Any = self.get_casted_value(value)
         self.lookup: Lookup = Lookup(self.comparator, self.value)
 
     def __hash__(self) -> int:
-        return hash((self.key, str(self.lookup), str(self.value)))
+        return hash((self.key, self.comparator, str(self.value)))
 
     def __eq__(self, other: Any) -> bool:
         return hash(self) == hash(other)
@@ -113,16 +104,13 @@ class BaseFilter:
         return hash(self) > hash(other)
 
     def to_dict(self) -> dict[str, Any]:
-        if self.comparator == Lookup.EQUALS:
-            key = self.key
-        else:
-            key = f"{self.key}__{self.lookup}"
+        key = self.key if self.comparator == "eq" else f"{self.key}__{self.comparator}"
         return {key: self.value}
 
-    def get_casted_value(self, value: Any) -> Value:
-        if self.comparator == Lookup.IN:
-            return set([self.stringify(v) for v in ensure_list(value)])
-        if self.comparator == Lookup.NULL:
+    def get_casted_value(self, value: Any) -> Any:
+        if self.comparator == "in":
+            return set(self.stringify(v) for v in ensure_list(value))
+        if self.comparator == "null":
             return as_bool(value)
         if is_listish(value):
             raise QueryError(f"Invalid value for `{self.comparator}`: {value}")
@@ -130,7 +118,7 @@ class BaseFilter:
 
     def stringify(self, value: Any) -> str:
         if hasattr(value, "name"):
-            return value.name
+            return str(value.name)
         return str(value)
 
 
