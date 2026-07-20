@@ -1,6 +1,6 @@
 from followthemoney import EntityProxy, StatementEntity
 
-from ftmq.query import G, M, P, Query
+from ftmq.query import C, G, M, P, Query
 from ftmq.store import MemoryStore, Store, get_store
 from ftmq.store.aleph import AlephStore, parse_uri
 from ftmq.store.base import get_resolver
@@ -258,7 +258,7 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
         assert len(statements) == 0
 
     # origin
-    q = Query().where(M(origin="test"))
+    q = Query().where(C(origin="test"))
     res = [p for p in view.query(q)]
     assert len(res) == 0
 

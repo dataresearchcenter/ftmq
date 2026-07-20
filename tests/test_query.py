@@ -1,6 +1,6 @@
 import pytest
 
-from ftmq import G, M, P, Query, QueryError
+from ftmq import C, G, M, P, Query, QueryError
 from ftmq.query import Expr
 from ftmq.util import make_entity
 
@@ -261,3 +261,30 @@ def test_aggregate_untouched():
     data = q.to_dict()
     assert data["aggregations"] == {"sum": {"amount", "amountEur"}}
     assert "q" in data
+
+
+def test_context_node():
+    entity = make_entity(
+        {
+            "id": "e1",
+            "schema": "Person",
+            "properties": {"name": ["Jane"]},
+            "datasets": ["d"],
+            "origin": ["crawl", "manual"],
+        }
+    )
+    # in-memory: reads entity.context, multi-valued
+    assert Query().where(C(origin="crawl")).apply(entity)
+    assert Query().where(C(origin="manual")).apply(entity)
+    assert not Query().where(C(origin="other")).apply(entity)
+    # a missing context key just does not match (no error)
+    assert not Query().where(C(fragment="x")).apply(entity)
+
+    q = Query().where(C(origin="crawl"), M(schema="Person"))
+    assert len(q.context) == 1
+    # serialization round-trips
+    assert Query.from_dict(q.to_dict()).to_dict() == q.to_dict()
+    # Aleph bridge: `origin` is a known context field, others are not
+    assert Query.from_string(q.to_string()).to_dict() == q.to_dict()
+    with pytest.raises(QueryError):
+        Query().where(C(fragment="x")).to_params()

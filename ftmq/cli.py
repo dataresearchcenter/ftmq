@@ -11,7 +11,7 @@ from ftmq.aggregate import aggregate
 from ftmq.io import smart_read_proxies, smart_write_proxies
 from ftmq.model.dataset import Catalog, Dataset
 from ftmq.model.stats import Collector
-from ftmq.query import Query
+from ftmq.query import M, P, Query
 from ftmq.store import get_store
 from ftmq.store.fragments import get_fragments
 from ftmq.store.fragments import get_store as get_fragments_store
@@ -105,15 +105,13 @@ def q(
     """
     q = Query()
     for value in dataset:
-        q = q.where(dataset=value)
+        q = q.where(M(dataset=value))
+    # both legacy schema-expansion flags map to the `schemata` (is-a) field
+    schema_isa = schema_include_descendants or schema_include_matchable
     for value in schema:
-        q = q.where(
-            schema=value,
-            schema_include_descendants=schema_include_descendants,
-            schema_include_matchable=schema_include_matchable,
-        )
+        q = q.where(M(schemata=value) if schema_isa else M(schema=value))
     for prop, value, op in parse_unknown_filters(properties):
-        q = q.where(**{f"{prop}__{op}": value})
+        q = q.where(P(**{f"{prop}__{op}": value}))
     if len(sort):
         q = q.order_by(*sort, ascending=sort_ascending)
 

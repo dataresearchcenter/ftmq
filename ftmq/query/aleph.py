@@ -24,8 +24,8 @@ from urllib.parse import quote, unquote
 from followthemoney.types import registry
 
 from ftmq.query.exceptions import QueryError
-from ftmq.query.leaves import Leaf, PropertyLeaf
-from ftmq.query.nodes import OR, Expr, G, M, P, combine
+from ftmq.query.leaves import ContextLeaf, Leaf, PropertyLeaf
+from ftmq.query.nodes import OR, C, Expr, G, M, P, combine
 
 # Aleph meta filter keys -> ftmq meta field (some upstream keys are aliased)
 ALEPH_META = {
@@ -39,10 +39,11 @@ ALEPH_META = {
     "collections": "dataset",
     "schema": "schema",
     "schemata": "schemata",
-    "origin": "origin",
 }
+# context fields that also exist as Aleph filter keys (mapped to the `C` family)
+ALEPH_CONTEXT = {"origin"}
 RANGE_OPS = ("gte", "gt", "lte", "lt")
-_FAMILIES = {"M": M, "P": P, "G": G}
+_FAMILIES = {"M": M, "P": P, "G": G, "C": C}
 
 
 def normalize_multidict(args: Any) -> dict[str, list[str]]:
@@ -97,6 +98,8 @@ def _collect_terms(expr: Expr) -> list[tuple[Leaf, bool]]:
 
 
 def _leaf_to_param(leaf: Leaf, inverted: bool) -> tuple[str, str, list[str]]:
+    if isinstance(leaf, ContextLeaf) and leaf.key not in ALEPH_CONTEXT:
+        raise QueryError(f"Context field `{leaf.key}` is not an Aleph filter")
     op = str(leaf.comparator)
     field = _aleph_field(leaf)
     value = leaf.value
@@ -127,6 +130,8 @@ def _resolve_field(rest: str) -> tuple[str, str]:
     """Map an Aleph filter field to a (family, ftmq-key) pair."""
     if rest in ALEPH_META:
         return "M", ALEPH_META[rest]
+    if rest in ALEPH_CONTEXT:
+        return "C", rest
     if rest.startswith("properties."):
         return "P", rest[len("properties.") :]
     if rest in registry.groups:

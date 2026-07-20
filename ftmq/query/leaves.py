@@ -2,42 +2,136 @@
 Leaf conditions for the ftmq query language, split by the statement-table
 column they target:
 
-- meta leaves (`M`): `dataset`, `schema` (exact), `schemata` (is-a), `origin`,
+- meta leaves (`M`): `dataset`, `schema` (exact), `schemata` (is-a),
   `id` / `entity_id` / `canonical_id`.
 - the property leaf (`P`): a specific FtM property (the `prop` column).
 - the group leaf (`G`): a followthemoney property-type group (the `prop_type`
   column, keyed by `registry.groups`: `names`, `dates`, `countries`, `entities`,
   ...).
+- the context leaf (`C`): a provenance / storage column such as `origin`,
+  `fragment` or `first_seen` (read from `entity.context` in-memory).
 
-Leaves reuse `Lookup` / `BaseFilter` from `ftmq.query.filters` for comparator
-matching and casting, and add the per-family entity access plus correct
-`null` (present/absent) semantics.
+`Lookup` / `BaseFilter` handle comparator matching and value casting; the
+`Leaf` subclasses add the per-family entity access plus correct `null`
+(present/absent) semantics.
 """
 
 from __future__ import annotations
 
 from typing import Any, Iterator, TypedDict
 
-from banal import ensure_list
+from banal import as_bool, ensure_list, is_listish
 from followthemoney import model
 from followthemoney.property import Property
 from followthemoney.proxy import EntityProxy
 from followthemoney.schema import Schema
 from followthemoney.types import registry
 
+from ftmq.enums import Comparators
 from ftmq.query.exceptions import QueryError
-from ftmq.query.filters import BaseFilter
+from ftmq.types import Value
 from ftmq.util import parse_comparator
 
-META_FIELDS = (
-    "dataset",
-    "schema",
-    "schemata",
-    "origin",
-    "id",
-    "entity_id",
-    "canonical_id",
-)
+
+class Lookup:
+    """Applies a single comparator to values (the in-memory match logic)."""
+
+    IN = Comparators["in"]
+    EQUALS = Comparators["eq"]
+    NULL = Comparators["null"]
+
+    def __init__(self, comparator: Comparators, value: Value | None = None):
+        self.comparator = self.get_comparator(comparator)
+        self.value = value
+
+    def __str__(self) -> str:
+        return str(self.comparator)
+
+    def __eq__(self, other: Any) -> bool:
+        return str(self) == str(other)
+
+    def get_comparator(self, comparator: str) -> Comparators:
+        try:
+            return Comparators[comparator]
+        except KeyError:
+            raise QueryError(f"Invalid comparator: `{comparator}`")
+
+    def apply(self, value: str | None) -> bool:
+        if self.comparator == "eq":
+            return value == self.value
+        if self.comparator == "not":
+            return value != self.value
+        if self.comparator == "in":
+            return value in self.value
+        if self.comparator == "not_in":
+            return value not in self.value
+        if self.comparator == "startswith":
+            return value.startswith(self.value)
+        if self.comparator == "endswith":
+            return value.endswith(self.value)
+        if self.comparator == "null":
+            return not value == self.value
+        if self.comparator == "gt":
+            return value > self.value
+        if self.comparator == "gte":
+            return value >= self.value
+        if self.comparator == "lt":
+            return value < self.value
+        if self.comparator == "lte":
+            return value <= self.value
+        if self.comparator == "like":
+            return self.value in value
+        if self.comparator == "ilike":
+            return self.value.lower() in value.lower()
+        return False
+
+
+class BaseFilter:
+    """Comparator + cast value; the shared base for all query `Leaf` classes."""
+
+    key: str = ""
+
+    def __init__(self, value: Value, comparator: Comparators | None = None):
+        try:
+            self.comparator = Comparators[comparator or "eq"]
+        except KeyError:
+            raise QueryError(f"Invalid comparator `{comparator}`")
+        self.value: Value = self.get_casted_value(value)
+        self.lookup: Lookup = Lookup(self.comparator, self.value)
+
+    def __hash__(self) -> int:
+        return hash((self.key, str(self.lookup), str(self.value)))
+
+    def __eq__(self, other: Any) -> bool:
+        return hash(self) == hash(other)
+
+    def __lt__(self, other: Any) -> bool:
+        # allow ordering (helpful for testing and stable sql output)
+        return hash(self) < hash(other)
+
+    def __gt__(self, other: Any) -> bool:
+        return hash(self) > hash(other)
+
+    def to_dict(self) -> dict[str, Any]:
+        if self.comparator == Lookup.EQUALS:
+            key = self.key
+        else:
+            key = f"{self.key}__{self.lookup}"
+        return {key: self.value}
+
+    def get_casted_value(self, value: Any) -> Value:
+        if self.comparator == Lookup.IN:
+            return set([self.stringify(v) for v in ensure_list(value)])
+        if self.comparator == Lookup.NULL:
+            return as_bool(value)
+        if is_listish(value):
+            raise QueryError(f"Invalid value for `{self.comparator}`: {value}")
+        return self.stringify(value) if value is not None else None
+
+    def stringify(self, value: Any) -> str:
+        if hasattr(value, "name"):
+            return value.name
+        return str(value)
 
 
 class LeafDict(TypedDict):
@@ -169,18 +263,6 @@ class SchemataLeaf(Leaf):
         return hit
 
 
-class OriginLeaf(Leaf):
-    """Matches an entity's `origin` (read from its context)."""
-
-    family, key = "M", "origin"
-
-    def values(self, entity: EntityProxy) -> Iterator[str]:
-        context = getattr(entity, "context", None) or {}
-        value: Any = context.get("origin")
-        origins: list[str] = ensure_list(value)
-        yield from origins
-
-
 class IdLeaf(Leaf):
     """Matches an entity's id."""
 
@@ -243,11 +325,32 @@ class GroupLeaf(Leaf):
         yield from entity.get_type_values(self.prop_type)
 
 
+class ContextLeaf(Leaf):
+    """A context field (the `C` family).
+
+    In-memory it reads `entity.context[key]` (always treated as multi-valued);
+    in SQL it maps to the same-named statement-table column. This is the general
+    form of provenance / storage fields - `origin`, and extra columns such as
+    `fragment`, `first_seen`, `bucket` - that are not followthemoney properties.
+    An entity without the key (or without a `context`) simply does not match.
+    """
+
+    family = "C"
+
+    def __init__(self, key: str, value: Any, comparator: str | None = None):
+        super().__init__(value, comparator)
+        self.key = key
+
+    def values(self, entity: EntityProxy) -> Iterator[str]:
+        context = getattr(entity, "context", None) or {}
+        value: Any = context.get(self.key)
+        yield from ensure_list(value)
+
+
 _META_LEAVES: dict[str, type[Leaf]] = {
     "dataset": DatasetLeaf,
     "schema": SchemaLeaf,
     "schemata": SchemataLeaf,
-    "origin": OriginLeaf,
     "id": IdLeaf,
     "entity_id": EntityIdLeaf,
     "canonical_id": CanonicalIdLeaf,
@@ -308,10 +411,27 @@ def make_group_leaf(key: str, value: Any) -> Leaf:
     return GroupLeaf(group, value, comparator)
 
 
+def make_context_leaf(key: str, value: Any) -> Leaf:
+    """Build a context leaf (the `C` family) from a lookup.
+
+    Args:
+        key: A context / column key, e.g. `origin`, `fragment` or
+            `first_seen__gte`. Any identifier is accepted; validity of a SQL
+            column is checked at compile time.
+        value: The lookup value.
+
+    Returns:
+        The resolved context leaf.
+    """
+    field, comparator = parse_lookup(key)
+    return ContextLeaf(field, value, comparator)
+
+
 LEAF_FACTORIES = {
     "M": make_meta_leaf,
     "P": make_property_leaf,
     "G": make_group_leaf,
+    "C": make_context_leaf,
 }
 
 

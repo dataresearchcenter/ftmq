@@ -2,7 +2,7 @@ import pytest
 from followthemoney import StatementEntity, model
 
 from ftmq.io import make_entity
-from ftmq.query import G, M, P, Query
+from ftmq.query import C, G, M, P, Query
 
 
 def test_proxy_composite():
@@ -221,11 +221,11 @@ def test_proxy_filter_origin():
     }
     entity = make_entity(JANE)
     assert entity.context["origin"] == ["test"]
-    q = Query().where(M(origin="yolo"))
+    q = Query().where(C(origin="yolo"))
     assert not q.apply(entity)
-    q = Query().where(M(origin="test"))
+    q = Query().where(C(origin="test"))
     assert q.apply(entity)
-    _q = Query().where(M(origin__startswith="te"))
+    _q = Query().where(C(origin__startswith="te"))
     assert _q.apply(entity)
 
     entity = make_entity(JANE, StatementEntity)

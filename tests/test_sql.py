@@ -1,7 +1,7 @@
 import pytest
 from sqlalchemy.sql.selectable import Select
 
-from ftmq.query import G, M, P, Query
+from ftmq.query import C, G, M, P, Query
 
 
 def _compare_str(s1, s2) -> bool:
@@ -318,7 +318,8 @@ def test_sql():
         """,
     )
 
-    # reversed
+    # reversed: the `entities` group is not special, it is the `entity`
+    # prop-type group lifted to a canonical_id subquery like any other group
     q = Query().where(G(entities="my_id")).where(P(date=2023), M(schema="Event"))
     assert _compare_str(
         str(q.sql.statements.compile(compile_kwargs={"literal_binds": True})),
@@ -326,10 +327,9 @@ def test_sql():
         SELECT {fields} FROM test_table
         WHERE test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
         FROM test_table
-        WHERE test_table.schema = 'Event' AND test_table.canonical_id IN
-            (SELECT DISTINCT test_table.canonical_id FROM test_table
-            WHERE test_table.prop_type = 'entity' AND test_table.value = 'my_id' AND test_table.schema = 'Event')
-        AND test_table.prop = 'date' AND test_table.value = '2023')
+        WHERE test_table.schema = 'Event' AND test_table.prop = 'date' AND test_table.value = '2023'
+        AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
+            FROM test_table WHERE test_table.prop_type = 'entity' AND test_table.value = 'my_id'))
         ORDER BY test_table.canonical_id
         """,
     )
@@ -383,5 +383,5 @@ def test_sql_ids():
 
 
 def test_sql_origins():
-    q = Query().where(M(origin="test"))
+    q = Query().where(C(origin="test"))
     assert "WHERE test_table.origin = :origin_1" in str(q.sql.statements)

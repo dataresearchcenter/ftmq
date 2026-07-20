@@ -1,3 +1,4 @@
+from collections import defaultdict
 from functools import cached_property
 from typing import TYPE_CHECKING, TypeAlias
 
@@ -29,7 +30,8 @@ from ftmq.enums import (
     PropertyTypesMap,
     Things,
 )
-from ftmq.query.leaves import Leaf, SchemataLeaf
+from ftmq.query.exceptions import QueryError
+from ftmq.query.leaves import ContextLeaf, Leaf, SchemataLeaf
 
 if TYPE_CHECKING:
     from ftmq.query import Query
@@ -106,27 +108,16 @@ class Sql:
                 clauses.append(self.table.c.schema.not_in(names))
             else:
                 clauses.append(self.table.c.schema.in_(names))
-        if self.q.origins:
+        # context / storage columns (`C(origin=...)`, `C(fragment=...)`, ...)
+        context_by_key: dict[str, list[ContextLeaf]] = defaultdict(list)
+        for f in self.q.context:
+            context_by_key[f.key].append(f)
+        for key, fs in context_by_key.items():
+            if key not in self.table.c:
+                raise QueryError(f"Unknown context column: `{key}`")
             clauses.append(
-                or_(
-                    self.get_expression(self.table.c.origin, f)
-                    for f in sorted(self.q.origins)
-                )
+                or_(self.get_expression(self.table.c[key], f) for f in sorted(fs))
             )
-        # reverse lookup: `G(entities=...)`, i.e. the `entity` prop-type group
-        entity_groups = sorted(f for f in self.q.groups if f.key == "entities")
-        if entity_groups:
-            rclause = or_(
-                and_(
-                    self.table.c.prop_type == str(registry.entity),
-                    self.get_expression(self.table.c.value, f),
-                )
-                for f in entity_groups
-            )
-            rq = select(self.table.c.canonical_id.distinct()).where(
-                and_(rclause, *clauses)
-            )
-            clauses.append(self.table.c.canonical_id.in_(rq))
         if self.q.properties:
             clauses.append(
                 or_(
@@ -137,16 +128,24 @@ class Sql:
                     for f in sorted(self.q.properties)
                 )
             )
-        # other prop-type groups (`G(countries=...)`, `G(dates=...)`, ...)
-        other_groups = sorted(f for f in self.q.groups if f.key != "entities")
-        if other_groups:
+        # prop-type groups: `G(countries=...)`, `G(entities=...)` (reverse), ...
+        # Each is an entity-level membership ("the entity has a row of this
+        # prop_type matching the value"), so it lifts to a `canonical_id`
+        # subquery rather than a plain row predicate - the reverse `entities`
+        # group is not special, it is just the `entity` prop-type. A row
+        # predicate would force one row to satisfy both the group and any
+        # property filter at once, which no single statement row can.
+        if self.q.groups:
+            gclause = or_(
+                and_(
+                    self.table.c.prop_type == str(f.prop_type),
+                    self.get_expression(self.table.c.value, f),
+                )
+                for f in sorted(self.q.groups)
+            )
             clauses.append(
-                or_(
-                    and_(
-                        self.table.c.prop_type == str(f.prop_type),
-                        self.get_expression(self.table.c.value, f),
-                    )
-                    for f in other_groups
+                self.table.c.canonical_id.in_(
+                    select(self.table.c.canonical_id.distinct()).where(gclause)
                 )
             )
         return and_(*clauses)
@@ -166,7 +165,7 @@ class Sql:
     @cached_property
     def _unsorted_statements(self) -> Select:
         where = self.clause
-        if self.q.properties or self.q.groups or self.q.limit:
+        if self.q.properties or self.q.groups or self.q.context or self.q.limit:
             where = self.table.c.canonical_id.in_(self.canonical_ids)
         return select(self.table).where(where).order_by(self.table.c.canonical_id)
 

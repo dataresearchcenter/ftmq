@@ -18,11 +18,11 @@ from ftmq.query.aleph import (
 )
 from ftmq.query.exceptions import QueryError
 from ftmq.query.leaves import (
+    ContextLeaf,
     DatasetLeaf,
     GroupLeaf,
     IdLeaf,
     Leaf,
-    OriginLeaf,
     PropertyLeaf,
     SchemaLeaf,
     SchemataLeaf,
@@ -284,21 +284,11 @@ class Query:
         return names
 
     @property
-    def origins(self) -> set[OriginLeaf]:
+    def context(self) -> set[ContextLeaf]:
         """
-        The current filtered origins
+        The current context filters (the `C` family, e.g. `origin`)
         """
-        return {f for f in self._leaves if isinstance(f, OriginLeaf)}
-
-    @property
-    def origin_names(self) -> set[str]:
-        """
-        The names of the current filtered origins
-        """
-        names: set[str] = set()
-        for f in self.origins:
-            names.update(ensure_list(f.value))
-        return names
+        return {f for f in self._leaves if isinstance(f, ContextLeaf)}
 
     @property
     def countries(self) -> set[str]:

@@ -16,6 +16,7 @@ from followthemoney.proxy import EntityProxy
 from ftmq.query.leaves import (
     Leaf,
     leaf_from_dict,
+    make_context_leaf,
     make_group_leaf,
     make_meta_leaf,
     make_property_leaf,
@@ -208,6 +209,15 @@ class G(_FamilyExpr):
     @staticmethod
     def _make(key: str, value: Any) -> Leaf:
         return make_group_leaf(key, value)
+
+
+class C(_FamilyExpr):
+    """Context / storage-column conditions, e.g. `C(origin="crawl")`,
+    `C(first_seen__gte="2024-01")`."""
+
+    @staticmethod
+    def _make(key: str, value: Any) -> Leaf:
+        return make_context_leaf(key, value)
 
 
 def combine(*nodes: Expr, connector: str = AND) -> Expr | None:
