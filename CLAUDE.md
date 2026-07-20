@@ -10,6 +10,16 @@ ftmq is a Python library for querying and filtering [Follow The Money](https://f
 - Multiple storage backends via nomenklatura stores (memory, LevelDB, Redis, SQL, Aleph, Delta Lake)
 - CLI for piping and filtering FTM JSON streams
 
+## Behaviour rules for code agents
+
+1. Don’t assume. Don’t hide confusion. Surface tradeoffs.
+
+2. Minimum code that solves the problem. Nothing speculative.
+
+3. Touch only what you must. Clean up only your own mess.
+
+4. Define success criteria. Loop until verified.
+
 ## Environment
 
 Use the virtualenv at `.venv` for all commands (e.g. `.venv/bin/pytest`, `.venv/bin/python`).
