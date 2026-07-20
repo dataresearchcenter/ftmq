@@ -64,7 +64,8 @@ log = get_logger(__name__)
 Z_ORDER = ["canonical_id", "prop"]  # don't add more columns here
 TARGET_SIZE = 50 * 10_485_760  # 500 MB
 PARTITION_BY = ["dataset", "bucket", "origin"]
-BUCKET_MENTION = "mention"
+BUCKET_MENTION = "mention"  # abstract schema
+BUCKET_PAGE = "page"  # abstract schema
 BUCKET_DOCUMENT = "document"
 BUCKET_INTERVAL = "interval"
 BUCKET_THING = "thing"
@@ -107,7 +108,7 @@ WRITER_LARGE = WriterProperties(
 
 
 def writer_for_bucket(bucket: str) -> WriterProperties:
-    return WRITER_LARGE if bucket == BUCKET_DOCUMENT else WRITER_SMALL
+    return WRITER_LARGE if bucket in (BUCKET_DOCUMENT, BUCKET_PAGE) else WRITER_SMALL
 
 
 SA_TO_ARROW: dict[type, pa.DataType] = {
@@ -261,6 +262,8 @@ def setup_duckdb_storage() -> None:
 @cache
 def get_schema_bucket(schema_name: str) -> str:
     s = model[schema_name]
+    if s.is_a("Page"):
+        return BUCKET_PAGE
     if s.is_a("Mention"):
         return BUCKET_MENTION
     if s.is_a("Document"):
