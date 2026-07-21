@@ -148,9 +148,6 @@ class View(nk.View[Dataset, StatementEntity]):
     Feature add-ons to `nomenklatura.store.base.View`
     """
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
     def query(self, query: Query | None = None) -> StatementEntities:
         """
         Get the entities of a store, optionally filtered by a
