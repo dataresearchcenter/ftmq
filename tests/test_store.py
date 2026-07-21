@@ -14,7 +14,7 @@ from ftmq.util import get_scope_dataset, make_dataset
 def _run_store_test_implicit(cls: type[Store], proxies, **kwargs):
     # implicit catalog from store content
     store = cls(linker=get_resolver(), **kwargs)
-    # assert not store.get_scope().dataset_names
+    assert store._implicit_scope is True
 
     datasets_seen = set()
     with store.writer() as bulk:
@@ -24,6 +24,22 @@ def _run_store_test_implicit(cls: type[Store], proxies, **kwargs):
                 datasets_seen.update(proxy.datasets)
 
     assert store.get_scope().leaf_names == {"donations", "eu_authorities"}
+
+    # regression: an unscoped store implicitly spans every dataset present in
+    # the backend. nomenklatura scopes a view to `dataset.leaf_names`, so a
+    # store opened without a dataset used to surface only entities literally
+    # tagged dataset="default" (the `__init__` scope guard silently stopped
+    # firing once followthemoney made a plain dataset its own leaf). The writer
+    # scope stays "default", but the read scope and `default_view()` must span
+    # all datasets.
+    assert store.dataset.leaf_names == {"default"}
+    assert store.scope.leaf_names == {"donations", "eu_authorities"}
+    entities = list(store.default_view().entities())
+    assert entities
+    assert {ds for e in entities for ds in e.datasets} == {
+        "donations",
+        "eu_authorities",
+    }
     return True
 
 

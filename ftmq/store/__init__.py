@@ -5,7 +5,6 @@ from urllib.parse import urlparse
 from anystore.types import Uri
 from followthemoney.dataset.dataset import Dataset
 from nomenklatura import Resolver, settings
-from nomenklatura.db import get_metadata
 
 from ftmq.store.base import Store, View
 from ftmq.store.memory import MemoryStore
@@ -70,7 +69,6 @@ def get_store(
         try:
             from ftmq.store.sql import SQLStore
 
-            get_metadata.cache_clear()
             return SQLStore(dataset, uri=uri, linker=linker)
         except ImportError:
             raise ImportError("Can not load SqlStore. Install sql dependencies.")

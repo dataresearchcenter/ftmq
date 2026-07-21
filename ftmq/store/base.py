@@ -1,5 +1,5 @@
 from functools import cache, wraps
-from typing import Generic, Iterable, TypeVar
+from typing import Iterable
 from urllib.parse import urlparse
 
 from anystore.logging import get_logger
@@ -16,13 +16,11 @@ from ftmq.aggregations import AggregatorResult
 from ftmq.model.stats import Collector, DatasetStats
 from ftmq.query import Query
 from ftmq.types import StatementEntities, StatementEntity
-from ftmq.util import DEFAULT_DATASET, ensure_dataset
+from ftmq.util import ensure_dataset
 
 log = get_logger(__name__)
 
 DEFAULT_ORIGIN = "default"
-
-V = TypeVar("V", bound="View")
 
 
 def _memory_engine(url: str = "sqlite:///:memory:") -> Engine:
@@ -82,7 +80,7 @@ def get_resolver(uri: str | None = None) -> Resolver[StatementEntity]:
     return Resolver[StatementEntity](Session(engine), create=True)
 
 
-class Store(nk.Store[Dataset, StatementEntity], Generic[V]):
+class Store(nk.Store[Dataset, StatementEntity]):
     """
     Feature add-ons to `nomenklatura.store.Store`
     """
@@ -101,12 +99,14 @@ class Store(nk.Store[Dataset, StatementEntity], Generic[V]):
             dataset: A `followthemoney.Dataset` instance to limit the scope to
             linker: A `nomenklatura.Resolver` instance with linked / deduped data
         """
-        dataset = ensure_dataset(dataset)
+        # An unscoped store (no explicit `dataset`) implicitly spans every
+        # dataset present in the backend. nomenklatura scopes a view to
+        # `dataset.leaf_names`, so without this the store would only surface
+        # entities literally tagged `dataset="default"`. Resolved lazily (see
+        # `scope`) so opening a store never queries the backend.
+        self._implicit_scope = dataset is None
         linker = linker or get_resolver(kwargs.get("uri"))
-        super().__init__(dataset=dataset, linker=linker, **kwargs)
-        # implicit set all datasets as default store scope:
-        if dataset.name == DEFAULT_DATASET and not dataset.leaf_names:
-            self.dataset = self.get_scope()
+        super().__init__(dataset=ensure_dataset(dataset), linker=linker, **kwargs)
 
     def get_scope(self) -> Dataset:
         """
@@ -114,11 +114,17 @@ class Store(nk.Store[Dataset, StatementEntity], Generic[V]):
         """
         raise NotImplementedError
 
-    def view(self, scope: Dataset | None = None, external: bool = False) -> V:
+    @property
+    def scope(self) -> Dataset:
+        """The effective read scope: the store's explicit `dataset`, or all
+        datasets present in the backend when it was opened without one."""
+        return self.get_scope() if self._implicit_scope else self.dataset
+
+    def view(self, scope: Dataset | None = None, external: bool = False) -> "View":
         raise NotImplementedError
 
-    def default_view(self, external: bool = False) -> V:
-        return self.view(self.dataset, external)
+    def default_view(self, external: bool = False) -> "View":
+        return self.view(self.scope, external)
 
     def iterate(self, dataset: str | Dataset | None = None) -> StatementEntities:
         """
@@ -131,14 +137,13 @@ class Store(nk.Store[Dataset, StatementEntity], Generic[V]):
             Generator of `nomenklatura.entity.CompositeEntity`
         """
         if dataset is not None:
-            dataset = ensure_dataset(dataset)
-            view = self.view(dataset)
+            view = self.view(ensure_dataset(dataset))
         else:
-            view = self.view(self.get_scope())
+            view = self.default_view()
         yield from view.entities()
 
 
-class View(nk.View):
+class View(nk.View[Dataset, StatementEntity]):
     """
     Feature add-ons to `nomenklatura.store.base.View`
     """

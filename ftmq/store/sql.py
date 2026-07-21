@@ -1,14 +1,12 @@
 import os
 from collections import defaultdict
 from decimal import Decimal
-from typing import Generic
 
 from anystore.util import clean_dict
 from followthemoney.dataset.dataset import Dataset
 from nomenklatura.db import get_metadata
 from nomenklatura.store import sql as nk
 from sqlalchemy import select
-from typing_extensions import TypeVar
 
 from ftmq.aggregations import AggregatorResult
 from ftmq.enums import Fields
@@ -18,8 +16,6 @@ from ftmq.query.sql import Sql, SqlSource
 from ftmq.store.base import Store, View
 from ftmq.types import StatementEntities
 from ftmq.util import get_scope_dataset
-
-V = TypeVar("V", bound=View, default="SQLQueryView")
 
 MAX_SQL_AGG_GROUPS = int(os.environ.get("MAX_SQL_AGG_GROUPS", 10))
 
@@ -31,6 +27,8 @@ def clean_agg_value(value: str | Decimal) -> str | float | int | None:
 
 
 class SQLQueryView(View, nk.SQLView):
+    store: "SQLStore"
+
     def _sql(self, query: Query) -> Sql:
         return Sql(query, self.store.source)
 
@@ -120,9 +118,12 @@ class SQLQueryView(View, nk.SQLView):
         return res
 
 
-class SQLStore(Store[V], nk.SQLStore, Generic[V]):
+class SQLStore(Store, nk.SQLStore):
     def __init__(self, *args, **kwargs) -> None:
-        get_metadata.cache_clear()  # FIXME
+        # nomenklatura caches a single global MetaData; clear it so
+        # `make_statement_table` re-defines a fresh `statement` table instead
+        # of raising on the already-registered one.
+        get_metadata.cache_clear()
         super().__init__(*args, **kwargs)
 
     @property
@@ -137,6 +138,8 @@ class SQLStore(Store[V], nk.SQLStore, Generic[V]):
             names.add(row[0])
         return get_scope_dataset(*names)
 
-    def view(self, scope: Dataset | None = None, external: bool = False) -> V:
+    def view(
+        self, scope: Dataset | None = None, external: bool = False
+    ) -> "SQLQueryView":
         scope = scope or self.dataset
-        return SQLQueryView(self, scope, external=external)  # type: ignore[return-value]
+        return SQLQueryView(self, scope, external=external)

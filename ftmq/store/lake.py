@@ -46,7 +46,6 @@ from followthemoney.dataset.dataset import Dataset
 from followthemoney.statement import Statement, StatementDict
 from nomenklatura import settings as nks
 from nomenklatura import store as nk
-from nomenklatura.db import get_metadata
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import Boolean, DateTime, column, select, table
@@ -334,7 +333,7 @@ class LakeQueryView(SQLQueryView):
             yield from super().query(query)
 
 
-class LakeStore(SQLStore[LakeQueryView]):
+class LakeStore(SQLStore):
     @property
     def source(self) -> SqlSource:
         """The lake statement view, with schema-filter -> `bucket` partition
@@ -355,8 +354,7 @@ class LakeStore(SQLStore[LakeQueryView]):
         }
         self._duckdb_config: dict[str, str] = kwargs.pop("duckdb_config", None) or {}
         kwargs["uri"] = "sqlite:///:memory:"  # fake it till you make it
-        get_metadata.cache_clear()
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)  # clears the cached MetaData
         self.table = TABLE
         self.uri = self._backend.uri
         setup_duckdb_storage()
