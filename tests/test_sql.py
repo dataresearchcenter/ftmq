@@ -1,7 +1,7 @@
 import pytest
 from sqlalchemy.sql.selectable import Select
 
-from ftmq.query import C, G, M, P, Query
+from ftmq.query import A, C, G, M, P, Query
 
 
 def _compare_str(s1, s2) -> bool:
@@ -247,17 +247,17 @@ def test_sql():
     )
 
     # aggregation
-    q = q.aggregate("sum", "amount").aggregate("max", "date")
+    q = q.aggregate(A(sum="amount"), A(max="date"))
     q = str(q.sql.aggregations)
     assert len(q.split("UNION")) == 2
     assert "SELECT 'date', 'max', max(test_table.value) AS max" in q
     assert "SELECT 'amount', 'sum', sum(CAST(test_table.value AS NUMERIC)) AS sum" in q
 
-    q = Query().aggregate("avg", "amount")
+    q = Query().aggregate(A(avg="amount"))
     q = str(q.sql.aggregations)
     assert "SELECT 'amount', 'avg', avg(CAST(test_table.value AS NUMERIC)) AS avg" in q
 
-    q = Query().aggregate("count", "location")
+    q = Query().aggregate(A(count="location"))
     q = str(q.sql.aggregations)
     assert "SELECT 'location', 'count', count(DISTINCT test_table.value) AS count" in q
 
@@ -278,7 +278,7 @@ def test_sql():
     q = (
         Query()
         .where(M(dataset="test"), M(schema="Project"))
-        .aggregate("max", "amountEur", groups="country")
+        .aggregate(A(max="amountEur", by="country"))
     )
     assert q.sql.group_props == {"country"}
     res = q.sql.get_group_aggregations("country", "de").compile(
@@ -299,7 +299,7 @@ def test_sql():
     q = (
         Query()
         .where(M(dataset="test"), M(schema="Project"))
-        .aggregate("max", "amountEur", groups=["country", "year", "dataset"])
+        .aggregate(A(max="amountEur", by=["country", "year", "dataset"]))
     )
     assert q.sql.group_props == {"country", "year", "dataset"}
     res = q.sql.get_group_aggregations("year", "2023").compile(

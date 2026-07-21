@@ -183,6 +183,8 @@ Query.from_rql(q.to_rql()).to_dict() == q.to_dict()   # True
 
 Field names follow the same convention as the OpenAleph bridge (see below): a meta field (`schema`, `dataset`, `id`, ...), `properties.<name>` for a specific property, a group name (`countries`, `entities`, ...), or `origin`; a bare name that matches none of those is treated as a property. Comparison operators map to ftmq comparators (`eq`, `ne` → `not`, `lt` / `le` / `gt` / `ge`, `in`, `out` → `not_in`, `like` / `ilike`).
 
+RQL also carries [aggregations](./aggregation.md) in the same string: its native `sum` / `min` / `max` / `mean` / `count` and `aggregate(...)` operators map onto `A` nodes, side by side with the filter under the top-level `and` (e.g. `and(eq(schema,Payment),aggregate(beneficiary,sum(amountEur)))`).
+
 `to_rql` raises [`QueryError`][ftmq.QueryError] for a comparator with no RQL equivalent (`null`, `startswith`, `endswith`, `notlike`, `notilike`, `between`).
 
 ### OpenAleph

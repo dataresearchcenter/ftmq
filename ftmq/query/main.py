@@ -7,10 +7,18 @@ from banal import ensure_list, hash_data
 from followthemoney.proxy import EntityProxy
 from followthemoney.types import registry
 
-from ftmq.aggregations import Aggregation, Aggregator
+from ftmq.query.aggregations import (
+    A,
+    Agg,
+    Aggregator,
+    aggregations_from_dict,
+    aggregations_to_dict,
+)
 from ftmq.query.aleph import (
+    aggregations_to_params,
     expr_to_params,
     normalize_multidict,
+    params_to_aggregations,
     params_to_expr,
     params_to_string,
     string_to_params,
@@ -112,13 +120,13 @@ class Query:
         self,
         *nodes: Expr,
         q: Expr | None = None,
-        aggregations: Iterable[Aggregation] | None = None,
+        aggregations: Iterable[Agg] | None = None,
         aggregator: Aggregator | None = None,
         sort: Sort | None = None,
         slice: slice | None = None,
     ):
         self.q: Expr | None = q if q is not None else combine(*nodes)
-        self.aggregations: set[Aggregation] = set(aggregations or [])
+        self.aggregations: set[Agg] = set(aggregations or [])
         self.aggregator = aggregator
         self.sort = sort
         self.slice = slice
@@ -339,7 +347,7 @@ class Query:
             data["limit"] = self.limit
             data["offset"] = self.offset
         if self.aggregations:
-            data["aggregations"] = self.get_aggregator().to_dict()
+            data["aggregations"] = aggregations_to_dict(self.aggregations)
         return data
 
     @classmethod
@@ -356,18 +364,21 @@ class Query:
         slice_ = _make_slice(data.get("limit"), data.get("offset"))
         aggregations = None
         if data.get("aggregations"):
-            aggregations = Aggregator.from_dict(dict(data["aggregations"])).aggregations
+            aggregations = aggregations_from_dict(data["aggregations"])
         return cls(q=q, sort=sort, slice=slice_, aggregations=aggregations)
 
     def to_params(self) -> dict[str, list[str]]:
         """
         Project to an Aleph-style filter param dict (`filter:` / `exclude:` /
-        `empty:` keys plus `sort` / `limit` / `offset`).
+        `empty:` keys, `metric:` / `facet` aggregation keys, plus `sort` /
+        `limit` / `offset`).
 
         Raises `QueryError` for queries outside the flat Aleph-expressible
         subset (cross-field OR, negated groups).
         """
         params = {k: list(v) for k, v in expr_to_params(self.q).items()}
+        if self.aggregations:
+            params.update(aggregations_to_params(self.aggregations))
         if self.sort:
             params["sort"] = [
                 f"{v[1:]}:desc" if v.startswith("-") else f"{v}:asc"
@@ -385,6 +396,7 @@ class Query:
         """Build a `Query` from an Aleph-style param dict / MultiDict."""
         items = normalize_multidict(args)
         q = params_to_expr(items)
+        aggregations = params_to_aggregations(items) or None
         sort = None
         if items.get("sort"):
             svalues: list[str] = []
@@ -400,7 +412,7 @@ class Query:
             _limit = items.get("limit")
             limit = int(_limit[0]) if _limit else None
             slice_ = _make_slice(limit, offset)
-        return cls(q=q, sort=sort, slice=slice_)
+        return cls(q=q, sort=sort, slice=slice_, aggregations=aggregations)
 
     def to_string(self) -> str:
         """
@@ -419,20 +431,23 @@ class Query:
         """Build a `Query` from an [RQL](https://github.com/pjwerneck/pyrql) string.
 
         Unlike the flat Aleph grammar, RQL expresses arbitrary `& | ~` nesting,
-        e.g. `and(eq(schema,Person),or(eq(properties.name,jane),eq(countries,de)))`.
+        e.g. `and(eq(schema,Person),or(eq(properties.name,jane),eq(countries,de)))`,
+        and carries aggregations via its `sum` / `aggregate(...)` operators.
         """
-        return cls(q=parse_rql(value))
+        expr, aggregations = parse_rql(value)
+        return cls(q=expr, aggregations=aggregations)
 
     def to_rql(self) -> str:
-        """Serialize the filter tree to an [RQL](https://github.com/pjwerneck/pyrql)
-        string.
+        """Serialize the filter tree and aggregations to an
+        [RQL](https://github.com/pjwerneck/pyrql) string.
 
         RQL is the only string surface that preserves arbitrary `& | ~` nesting
-        (unlike the flat Aleph params), so it is the way to hand a nested query
-        to another HTTP-like connector. Raises `QueryError` for a comparator with
-        no RQL equivalent (`null`, `startswith`, `endswith`, ...).
+        (unlike the flat Aleph params) and carries aggregations losslessly, so it
+        is the way to hand a full query to another HTTP-like connector. Raises
+        `QueryError` for a comparator with no RQL equivalent (`null`,
+        `startswith`, `endswith`, ...).
         """
-        return serialize_rql(self.q)
+        return serialize_rql(self.q, self.aggregations)
 
     # --- building ----------------------------------------------------------
 
@@ -472,35 +487,37 @@ class Query:
         self.sort = Sort(values=values, ascending=ascending)
         return self._chain()
 
-    def aggregate(
-        self,
-        func: str,
-        *props: str,
-        groups: str | list[str] | None = None,
-    ) -> Self:
-        """Add an aggregation to the query.
+    def aggregate(self, *nodes: A) -> Self:
+        """Add aggregation projections to the query.
+
+        Example:
+            ```python
+            from ftmq import Query, M, A
+
+            q = Query().where(M(schema="Payment")).aggregate(
+                A(sum="amountEur", by="beneficiary"),
+                A(avg="amountEur"),
+            )
+            ```
 
         Args:
-            func: The aggregation function (`min`, `max`, `sum`, `avg`, `count`).
-            *props: The properties (or fields) to aggregate.
-            groups: Optional property/-ies to group the aggregation by.
+            *nodes: `A` nodes, e.g. `A(sum="amountEur", by="beneficiary")`.
 
         Returns:
             The updated `Query` instance.
         """
-        for prop in props:
-            self.aggregations.add(
-                Aggregation(func=func, prop=prop, group_props=ensure_list(groups))
-            )
-        return self._chain()
+        aggs = set(self.aggregations)
+        for node in nodes:
+            aggs.update(node.aggs)
+        return self._chain(aggregations=aggs)
 
     def get_aggregator(self) -> Aggregator:
-        """Build an `Aggregator` from the query's aggregations.
+        """Build an in-memory `Aggregator` from the query's aggregation specs.
 
         Returns:
-            The aggregator that collects this query's aggregations.
+            A fresh accumulator over this query's aggregations.
         """
-        return Aggregator(aggregations=list(self.aggregations))
+        return Aggregator(self.aggregations)
 
     # --- execution ---------------------------------------------------------
 

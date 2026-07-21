@@ -1,6 +1,6 @@
 from followthemoney import EntityProxy, StatementEntity
 
-from ftmq.query import C, G, M, P, Query
+from ftmq.query import A, C, G, M, P, Query
 from ftmq.store import MemoryStore, Store, get_store
 from ftmq.store.aleph import AlephStore, parse_uri
 from ftmq.store.base import get_resolver
@@ -152,11 +152,11 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
     assert res[0].caption == "Dr.-Ing. E. h. Martin Herrenknecht"
 
     # aggregation
-    q = Query().aggregate("max", "date").aggregate("min", "date")
+    q = Query().aggregate(A(max="date"), A(min="date"))
     res = view.aggregations(q)
     assert res == {"max": {"date": "2011-12-29"}, "min": {"date": "2002-07-04"}}
 
-    q = Query().aggregate("count", "id", groups="beneficiary")
+    q = Query().aggregate(A(count="id", by="beneficiary"))
     res = view.aggregations(q)
     assert (
         res["groups"]["beneficiary"]["count"]["id"][
@@ -169,7 +169,7 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
     q = (
         Query()
         .where(M(dataset="donations"))
-        .aggregate("sum", "amountEur", groups="beneficiary")
+        .aggregate(A(sum="amountEur", by="beneficiary"))
     )
     res = view.aggregations(q)
     assert res == {
@@ -194,11 +194,7 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
         },
         "sum": {"amountEur": 40589689.15},
     }
-    q = (
-        Query()
-        .where(M(dataset="donations"))
-        .aggregate("sum", "amountEur", groups="year")
-    )
+    q = Query().where(M(dataset="donations")).aggregate(A(sum="amountEur", by="year"))
     res = view.aggregations(q)
     assert res == {
         "groups": {
@@ -222,7 +218,7 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
         "sum": {"amountEur": 40589689.15},
     }
 
-    q = Query().where(M(dataset="donations")).aggregate("avg", "amountEur")
+    q = Query().where(M(dataset="donations")).aggregate(A(avg="amountEur"))
     res = view.aggregations(q)
     assert res == {"avg": {"amountEur": 139964.44534482757}}
 

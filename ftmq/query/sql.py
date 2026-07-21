@@ -370,7 +370,7 @@ class Sql:
     @cached_property
     def aggregations(self) -> Select:
         qs = []
-        for agg in self.q.aggregations:
+        for agg in sorted(self.q.aggregations, key=lambda a: (a.func, a.prop)):
             sql_agg = getattr(func, agg.func)
             sql_agg_value = self.table.c.value
             if agg.func == Aggregations.count:
@@ -409,8 +409,8 @@ class Sql:
 
     def get_group_aggregations(self, grouper: Field, group: str) -> Select:
         qs = []
-        for agg in self.q.aggregations:
-            if grouper in agg.group_props:
+        for agg in sorted(self.q.aggregations, key=lambda a: (a.func, a.prop)):
+            if grouper in agg.groups:
                 if agg.prop in self.META_COLUMNS:
                     sql_agg_value = self._get_lookup_column(agg.prop)
                 else:
@@ -442,6 +442,6 @@ class Sql:
     def group_props(self) -> set[Field]:
         props: set[Field] = set()
         for agg in self.q.aggregations:
-            if agg.group_props:
-                props.update(agg.group_props)
+            if agg.groups:
+                props.update(agg.groups)
         return props

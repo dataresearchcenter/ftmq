@@ -1,6 +1,6 @@
 import pytest
 
-from ftmq import C, G, M, P, Query, QueryError
+from ftmq import A, C, G, M, P, Query, QueryError
 from ftmq.query import Expr
 from ftmq.util import make_entity
 
@@ -257,10 +257,35 @@ def test_validation():
 
 def test_aggregate_untouched():
     q = Query().where(M(schema="Payment"), P(date__gte="2023"), P(amount__null=False))
-    q = q.aggregate("sum", "amountEur", "amount")
+    q = q.aggregate(A(sum=["amountEur", "amount"]))
     data = q.to_dict()
     assert data["aggregations"] == {"sum": {"amount", "amountEur"}}
     assert "q" in data
+
+
+def test_aggregate_params():
+    # openaleph metric aggregations: `metric:<func>=<prop>`, groups as `facet`
+    q = (
+        Query()
+        .where(M(schema="Payment"))
+        .aggregate(A(sum="amountEur", by="beneficiary"))
+    )
+    params = q.to_params()
+    assert params["metric:sum"] == ["amountEur"]
+    assert params["facet"] == ["beneficiary"]
+    assert Query.from_string(q.to_string()).aggregations == q.aggregations
+
+    # ungrouped, multiple funcs / props
+    q = Query().aggregate(A(sum=["amountEur", "amount"]), A(max="date"))
+    params = q.to_params()
+    assert params["metric:sum"] == ["amount", "amountEur"]
+    assert params["metric:max"] == ["date"]
+    assert "facet" not in params
+    assert Query.from_string(q.to_string()).aggregations == q.aggregations
+
+    # parsed straight from openaleph-style params
+    q = Query.from_params({"metric:avg": ["amountEur"], "facet": ["year"]})
+    assert q.aggregations == set(A(avg="amountEur", by="year").aggs)
 
 
 def test_rql():
@@ -309,6 +334,50 @@ def test_rql():
         Query().where(P(name__startswith="ja")).to_rql()
     with pytest.raises(QueryError):
         Query().where(P(deathDate__null=True)).to_rql()
+
+
+def test_rql_aggregations():
+    # ungrouped metrics are bare `func(prop)` calls (avg <-> mean)
+    assert Query().aggregate(A(sum="amountEur")).to_rql() == "sum(amountEur)"
+    assert Query().aggregate(A(avg="amountEur")).to_rql() == "mean(amountEur)"
+    assert (
+        Query().aggregate(A(min="date"), A(max="date")).to_rql()
+        == "and(max(date),min(date))"
+    )
+
+    # grouped metrics batch into one `aggregate(groups..., funcs...)`
+    assert (
+        Query().aggregate(A(sum="amountEur", by="beneficiary")).to_rql()
+        == "aggregate(beneficiary,sum(amountEur))"
+    )
+    assert (
+        Query().aggregate(A(max="amountEur", by=["country", "year"])).to_rql()
+        == "aggregate(country,year,max(amountEur))"
+    )
+
+    # filter + aggregation sit side by side under the top-level `and`
+    q = Query().where(M(schema="Payment")).aggregate(A(count="id", by="beneficiary"))
+    assert q.to_rql() == "and(eq(schema,Payment),aggregate(beneficiary,count(id)))"
+
+    # a full filter + multi-aggregation query round-trips losslessly
+    q = (
+        Query()
+        .where(M(schema="Payment"), P(date__gte="2023"))
+        .aggregate(A(sum="amountEur", by="beneficiary"), A(avg="amountEur"))
+    )
+    rt = Query.from_rql(q.to_rql())
+    assert rt.aggregations == q.aggregations
+    assert rt.to_dict() == q.to_dict()
+
+    # a hand-written aggregate() batches its metrics under the shared group
+    q = Query.from_rql("aggregate(beneficiary,sum(amountEur),count(id))")
+    assert q.aggregations == set(
+        A(sum="amountEur", by="beneficiary").aggs + A(count="id", by="beneficiary").aggs
+    )
+
+    # an unsupported aggregate operator raises
+    with pytest.raises(QueryError):
+        Query.from_rql("aggregate(beneficiary,median(amountEur))")
 
 
 def test_context_node():

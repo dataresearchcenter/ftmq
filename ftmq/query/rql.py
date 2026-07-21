@@ -5,7 +5,10 @@ RQL is a URL-friendly query language of nestable named operators - e.g.
 `and(eq(schema,Person),or(eq(properties.name,jane),eq(countries,de)))` - which
 maps directly onto the ftmq `Expr` tree (`and`/`or`/`not` + comparison leaves).
 Unlike the flat Aleph param grammar, RQL expresses arbitrary nesting, so this is
-the way to carry a full `M & (P | G)` tree through a single string.
+the way to carry a full `M & (P | G)` tree through a single string. It also
+carries aggregations: RQL's native `sum` / `min` / `max` / `mean` / `count` and
+`aggregate(...)` operators map onto ftmq `A` nodes, side by side with the filter
+under a top-level `and`.
 
 Field names follow the Aleph convention (`schema`, `dataset`, `properties.<name>`,
 a `registry.groups` name, or `origin`); a bare name that matches none of those is
@@ -14,10 +17,12 @@ treated as an FtM property.
 
 from __future__ import annotations
 
-from typing import Any
+from collections import defaultdict
+from typing import Any, Iterable
 
 import pyrql  # type: ignore[import-untyped]
 
+from ftmq.query.aggregations import Agg, make_agg
 from ftmq.query.aleph import _FAMILIES, _aleph_field, _resolve_field
 from ftmq.query.exceptions import QueryError
 from ftmq.query.leaves import Leaf
@@ -52,6 +57,19 @@ TO_RQL_OPERATORS = {
     "like": "like",
     "ilike": "ilike",
 }
+
+# RQL aggregate operator -> ftmq function (RQL calls the average `mean`)
+RQL_FUNCTIONS = {
+    "sum": "sum",
+    "min": "min",
+    "max": "max",
+    "mean": "avg",
+    "count": "count",
+}
+# ftmq function -> RQL operator
+TO_RQL_FUNCTIONS = {v: k for k, v in RQL_FUNCTIONS.items()}
+# operator names that introduce an aggregation rather than a filter
+AGG_OPERATORS = set(RQL_FUNCTIONS) | {"aggregate"}
 
 
 def _resolve_rql_field(field: str) -> tuple[str, str]:
@@ -94,14 +112,57 @@ def rql_to_expr(data: dict[str, Any]) -> Expr:
     return result
 
 
-def parse_rql(value: str) -> Expr | None:
-    """Parse an RQL query string into an `Expr` (or `None` if empty).
+def _metric_aggs(node: dict[str, Any], groups: tuple[str, ...]) -> list[Agg]:
+    """One RQL metric call (`sum(prop, ...)`) -> `Agg` specs."""
+    func = RQL_FUNCTIONS.get(node["name"])
+    if func is None:
+        raise QueryError(f"Unsupported RQL aggregate operator: `{node['name']}`")
+    return [make_agg(func, str(prop), groups) for prop in node["args"]]
+
+
+def _node_aggs(node: dict[str, Any]) -> list[Agg]:
+    """One RQL aggregate node -> `Agg` specs.
+
+    `aggregate(g1, ..., f1(p), ...)` groups the trailing metric calls by the
+    leading property names; a bare metric call (`sum(p)`) is ungrouped.
+    """
+    if node["name"] == "aggregate":
+        groups = tuple(a for a in node["args"] if not isinstance(a, dict))
+        aggs: list[Agg] = []
+        for arg in node["args"]:
+            if isinstance(arg, dict):
+                aggs.extend(_metric_aggs(arg, groups))
+        return aggs
+    return _metric_aggs(node, ())
+
+
+def parse_rql(value: str) -> tuple[Expr | None, set[Agg]]:
+    """Parse an RQL query string into a filter `Expr` and aggregation specs.
+
+    Filter operators (`and` / `or` / `not` + comparisons) build the tree; the
+    aggregate operators (`sum` / `min` / `max` / `mean` / `count` / `aggregate`)
+    build the aggregations. At the top level they sit side by side under `and`.
 
     Raises:
         QueryError: If the RQL uses an unsupported operator or field.
     """
     data = pyrql.parse(value)
-    return rql_to_expr(data) if data else None
+    if not data:
+        return None, set()
+    aggs: set[Agg] = set()
+    if data["name"] in AGG_OPERATORS:
+        aggs.update(_node_aggs(data))
+        return None, aggs
+    if data["name"] == "and":
+        filters: list[dict[str, Any]] = []
+        for child in data["args"]:
+            if isinstance(child, dict) and child.get("name") in AGG_OPERATORS:
+                aggs.update(_node_aggs(child))
+            else:
+                filters.append(child)
+        expr = combine(*(rql_to_expr(f) for f in filters), connector=AND)
+        return expr, aggs
+    return rql_to_expr(data), aggs
 
 
 def _leaf_to_rql(leaf: Leaf) -> dict[str, Any]:
@@ -137,13 +198,46 @@ def expr_to_rql(expr: Expr) -> dict[str, Any]:
     return body
 
 
-def to_rql(expr: Expr | None) -> str:
-    """Serialize an `Expr` tree to an RQL query string.
+def _aggs_to_rql(aggs: Iterable[Agg]) -> list[dict[str, Any]]:
+    """Aggregation specs -> RQL metric / `aggregate` nodes.
+
+    Ungrouped metrics become bare `sum(prop)` calls; metrics that share a `by`
+    are batched into one `aggregate(groups..., funcs...)` node.
+    """
+    ungrouped: list[dict[str, Any]] = []
+    grouped: dict[tuple[str, ...], list[dict[str, Any]]] = defaultdict(list)
+    for agg in sorted(aggs, key=lambda a: (a.groups, a.func, a.prop)):
+        node: dict[str, Any] = {"name": TO_RQL_FUNCTIONS[agg.func], "args": [agg.prop]}
+        if agg.groups:
+            grouped[agg.groups].append(node)
+        else:
+            ungrouped.append(node)
+    nodes: list[dict[str, Any]] = list(ungrouped)
+    for groups, metrics in grouped.items():
+        nodes.append({"name": "aggregate", "args": [*groups, *metrics]})
+    return nodes
+
+
+def to_rql(expr: Expr | None, aggs: Iterable[Agg] = ()) -> str:
+    """Serialize a filter tree and aggregation specs to an RQL query string.
+
+    Filters and aggregations sit side by side under a top-level `and`.
 
     Raises:
-        QueryError: If a leaf uses a comparator with no RQL equivalent (`null`,
-            `startswith`, `endswith`, ...).
+        QueryError: If a filter leaf uses a comparator with no RQL equivalent
+            (`null`, `startswith`, `endswith`, ...).
     """
-    if expr is None or not expr:
+    nodes: list[dict[str, Any]] = []
+    if expr is not None and expr:
+        filter_ast = expr_to_rql(expr)
+        # flatten a top-level `and` filter so aggregations join as siblings
+        if not expr.negated and filter_ast.get("name") == "and":
+            nodes.extend(filter_ast["args"])
+        else:
+            nodes.append(filter_ast)
+    nodes.extend(_aggs_to_rql(aggs))
+    if not nodes:
         return ""
-    return str(pyrql.unparse(expr_to_rql(expr)))
+    if len(nodes) == 1:
+        return str(pyrql.unparse(nodes[0]))
+    return str(pyrql.unparse({"name": "and", "args": nodes}))

@@ -6,7 +6,7 @@ See the [query guide](../query.md) for a narrative introduction.
 
 ## Query nodes
 
-The composable node constructors: `M` (meta), `P` (property), `G` (property-type group) and `C` (context).
+The composable filter-node constructors: `M` (meta), `P` (property), `G` (property-type group) and `C` (context). `A` is the aggregation-projection node (see [Aggregations](#aggregations) below).
 
 ::: ftmq.M
 
@@ -15,6 +15,8 @@ The composable node constructors: `M` (meta), `P` (property), `G` (property-type
 ::: ftmq.G
 
 ::: ftmq.C
+
+::: ftmq.A
 
 ## Expression tree
 
@@ -37,6 +39,12 @@ The filter half of the [Aleph URL-param grammar](../query.md#openaleph). `Query.
 [RQL](https://github.com/pjwerneck/pyrql) support for **nested** filter trees, used by [`Query.from_rql`][ftmq.Query.from_rql].
 
 ::: ftmq.query.rql
+
+## Aggregations
+
+The [`A`][ftmq.A] projection node, the immutable `Agg` spec and the in-memory `Aggregator`. See the [aggregation guide](../aggregation.md).
+
+::: ftmq.query.aggregations
 
 ## SQL
 

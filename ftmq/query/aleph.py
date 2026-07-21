@@ -3,9 +3,11 @@ The Aleph / OpenAleph URL-param grammar: a bidirectional bridge between a
 `Query` filter tree and the `filter:` / `exclude:` / `empty:` param convention
 used by `openaleph_search.SearchQueryParser`.
 
-Only the *filter* half lives here (the mapping between the boolean tree and the
-param keys). `sort` / `limit` / `offset` are query-level concerns handled by
-`Query.to_params` / `Query.from_params`.
+The *filter* half (the mapping between the boolean tree and the param keys)
+lives here, plus the *aggregation* half (`metric:<func>=<prop>` and
+`facet=<field>`, matching openaleph's metric aggregations). `sort` / `limit` /
+`offset` are query-level concerns handled by `Query.to_params` /
+`Query.from_params`.
 
 The param model is flat (AND across keys, OR within a key, `exclude:` and
 `empty:` for negation / absence), so:
@@ -23,6 +25,7 @@ from urllib.parse import quote, unquote
 
 from followthemoney.types import registry
 
+from ftmq.query.aggregations import Agg, make_agg
 from ftmq.query.exceptions import QueryError
 from ftmq.query.leaves import ContextLeaf, Leaf, PropertyLeaf
 from ftmq.query.nodes import OR, C, Expr, G, M, P, combine
@@ -202,6 +205,58 @@ def params_to_expr(items: dict[str, list[str]]) -> Expr | None:
                 nodes.append(_param_to_node(prefix, key[len(prefix) :], values))
                 break
     return combine(*nodes) if nodes else None
+
+
+def aggregations_to_params(aggs: set[Agg]) -> dict[str, list[str]]:
+    """Project aggregation specs to openaleph metric / facet params.
+
+    Each spec becomes a `metric:<func>=<prop>` entry (the convention
+    `openaleph_search.SearchQueryParser` reads as
+    `metrics = {func: {props}}`); grouped fields become `facet=<field>`
+    values. openaleph nests every metric inside every facet bucket, so groups
+    apply across all metrics - a per-metric grouping that differs between
+    metrics collapses to their union here.
+
+    Args:
+        aggs: The query's aggregation specs.
+
+    Returns:
+        The `{"metric:<func>": [props], "facet": [groups]}` param mapping.
+    """
+    params: dict[str, list[str]] = defaultdict(list)
+    facets: set[str] = set()
+    for agg in sorted(aggs, key=lambda a: (a.func, a.prop)):
+        key = f"metric:{agg.func}"
+        if agg.prop not in params[key]:
+            params[key].append(agg.prop)
+        facets.update(agg.groups)
+    if facets:
+        params["facet"] = sorted(facets)
+    return dict(params)
+
+
+def params_to_aggregations(items: dict[str, list[str]]) -> set[Agg]:
+    """Rebuild aggregation specs from openaleph `metric:` / `facet` params.
+
+    The inverse of [`aggregations_to_params`][ftmq.query.aleph.aggregations_to_params]:
+    every `facet` field groups every `metric:<func>=<prop>` (matching how
+    openaleph computes a metric within each facet bucket).
+
+    Args:
+        items: A normalized param mapping.
+
+    Returns:
+        The reconstructed aggregation specs (empty if there are no `metric:`
+        params).
+    """
+    groups = tuple(sorted(set(items.get("facet", []))))
+    aggs: set[Agg] = set()
+    for key, values in items.items():
+        if key.startswith("metric:"):
+            func = key[len("metric:") :]
+            for prop in values:
+                aggs.add(make_agg(func, prop, groups))
+    return aggs
 
 
 def params_to_string(params: dict[str, list[str]]) -> str:

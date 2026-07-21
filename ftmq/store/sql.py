@@ -8,10 +8,10 @@ from nomenklatura.db import get_metadata
 from nomenklatura.store import sql as nk
 from sqlalchemy import select
 
-from ftmq.aggregations import AggregatorResult
 from ftmq.enums import Fields
 from ftmq.model.stats import DatasetStats, compile_stats
 from ftmq.query import M, Query
+from ftmq.query.aggregations import AggregatorResult
 from ftmq.query.sql import Sql, SqlSource
 from ftmq.store.base import Store, View
 from ftmq.types import StatementEntities
@@ -49,9 +49,6 @@ class SQLQueryView(View, nk.SQLView):
 
     def stats(self, query: Query | None = None) -> DatasetStats:
         query = self.ensure_scoped_query(query or Query())
-        key = f"stats-{hash(query)}"
-        if key in self._cache:
-            return self._cache[key]
 
         sql = self._sql(query)
 
@@ -66,7 +63,6 @@ class SQLQueryView(View, nk.SQLView):
             date_range=next(iter(ex(sql.date_range)), None),
             entity_count=self.count(query),
         )
-        self._cache[key] = stats
         return stats
 
     def count(self, query: Query | None = None) -> int:
@@ -80,9 +76,6 @@ class SQLQueryView(View, nk.SQLView):
         if not query.aggregations:
             return
         query = self.ensure_scoped_query(query)
-        key = f"agg-{hash(query)}"
-        if key in self._cache:
-            return self._cache[key]
         sql = self._sql(query)
         res: AggregatorResult = defaultdict(dict)
 
@@ -114,7 +107,6 @@ class SQLQueryView(View, nk.SQLView):
                             value
                         )
         res = clean_dict(res)
-        self._cache[key] = res
         return res
 
 

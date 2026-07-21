@@ -11,7 +11,7 @@ from ftmq.aggregate import aggregate
 from ftmq.io import smart_read_proxies, smart_write_proxies
 from ftmq.model.dataset import Catalog, Dataset
 from ftmq.model.stats import Collector
-from ftmq.query import C, Expr, G, M, P, Query
+from ftmq.query import A, C, Expr, G, M, P, Query
 from ftmq.store import get_store
 from ftmq.store.fragments import get_fragments
 from ftmq.store.fragments import get_store as get_fragments_store
@@ -180,8 +180,7 @@ def q(
         if v
     }
     if aggregation_uri and aggs:
-        for func, props in aggs.items():
-            q = q.aggregate(func, *props, groups=groups)
+        q = q.aggregate(A(**aggs, by=list(groups)))
     proxies = smart_read_proxies(input_uri, dataset=store_dataset, query=q)
     stats = Collector()
     if stats_uri:

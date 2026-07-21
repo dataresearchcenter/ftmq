@@ -12,9 +12,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.pool import StaticPool
 
-from ftmq.aggregations import AggregatorResult
 from ftmq.model.stats import Collector, DatasetStats
 from ftmq.query import Query
+from ftmq.query.aggregations import AggregatorResult
 from ftmq.types import StatementEntities, StatementEntity
 from ftmq.util import ensure_dataset
 
@@ -150,7 +150,6 @@ class View(nk.View[Dataset, StatementEntity]):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._cache = {}
 
     def query(self, query: Query | None = None) -> StatementEntities:
         """
@@ -180,12 +179,8 @@ class View(nk.View[Dataset, StatementEntity]):
         return seen
 
     def stats(self, query: Query | None = None) -> DatasetStats:
-        key = f"stats-{hash(query)}"
-        if key in self._cache:
-            return self._cache[key]
         c = Collector()
         cov = c.collect_many(self.query(query))
-        self._cache[key] = cov
         return cov
 
     def count(self, query: Query | None = None) -> int:
@@ -194,11 +189,7 @@ class View(nk.View[Dataset, StatementEntity]):
     def aggregations(self, query: Query) -> AggregatorResult | None:
         if not query.aggregations:
             return
-        key = f"agg-{hash(query)}"
-        if key in self._cache:
-            return self._cache[key]
         _ = [x for x in self.query(query)]
         if query.aggregator:
             res = dict(query.aggregator.result)
-            self._cache[key] = res
             return res
