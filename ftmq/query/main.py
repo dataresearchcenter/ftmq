@@ -27,13 +27,14 @@ from ftmq.query.leaves import (
     SchemataLeaf,
 )
 from ftmq.query.nodes import Expr, combine
+from ftmq.query.rql import parse_rql
+from ftmq.query.rql import to_rql as serialize_rql
+from ftmq.query.sql import Sql, SqlSource
 from ftmq.types import EntityProxies
 from ftmq.util import prop_is_numeric
 
 if TYPE_CHECKING:
     from sqlalchemy import Select
-
-    from ftmq.query.sql import Sql, SqlSource
 
 
 def _make_slice(limit: int | None, offset: int | None) -> slice | None:
@@ -218,8 +219,6 @@ class Query:
         [`SqlSource`][ftmq.query.sql.SqlSource] to [`compile`][ftmq.Query.compile] or
         build `Sql(query, source)` directly.
         """
-        from ftmq.query.sql import Sql
-
         return Sql(self)
 
     def compile(self, source: "SqlSource | None" = None) -> "Select[Any]":
@@ -234,8 +233,6 @@ class Query:
         Returns:
             The statements `Select`.
         """
-        from ftmq.query.sql import Sql
-
         return Sql(self, source).statements
 
     @property
@@ -416,6 +413,26 @@ class Query:
     def from_string(cls, value: str) -> Self:
         """Build a `Query` from an Aleph URL query string."""
         return cls.from_params(string_to_params(value))
+
+    @classmethod
+    def from_rql(cls, value: str) -> Self:
+        """Build a `Query` from an [RQL](https://github.com/pjwerneck/pyrql) string.
+
+        Unlike the flat Aleph grammar, RQL expresses arbitrary `& | ~` nesting,
+        e.g. `and(eq(schema,Person),or(eq(properties.name,jane),eq(countries,de)))`.
+        """
+        return cls(q=parse_rql(value))
+
+    def to_rql(self) -> str:
+        """Serialize the filter tree to an [RQL](https://github.com/pjwerneck/pyrql)
+        string.
+
+        RQL is the only string surface that preserves arbitrary `& | ~` nesting
+        (unlike the flat Aleph params), so it is the way to hand a nested query
+        to another HTTP-like connector. Raises `QueryError` for a comparator with
+        no RQL equivalent (`null`, `startswith`, `endswith`, ...).
+        """
+        return serialize_rql(self.q)
 
     # --- building ----------------------------------------------------------
 

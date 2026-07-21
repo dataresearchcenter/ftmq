@@ -21,8 +21,7 @@ Of course, the same is possible for output `-o`:
 
 ## Filter expressions
 
-The CLI mirrors the [`Query` language](./query.md): the same `M` / `P` / `G` / `C`
-families, expressed either as typed flags or as an Aleph filter string.
+The CLI mirrors the [`Query` language](./query.md): the same `M` / `P` / `G` / `C` families, expressed either as typed flags or as an Aleph filter string.
 
 Filter for a dataset (a `-d` shortcut for `-m dataset=`):
 
@@ -67,8 +66,7 @@ cat entities.ftm.json | ftmq -g entities=some-entity-id
 
 ### Comparison lookups
 
-Any flag value may carry a `__<comparator>` suffix; `__in` / `__not_in` accept a
-comma-separated list:
+Any flag value may carry a `__<comparator>` suffix; `__in` / `__not_in` accept a comma-separated list:
 
 ```bash
 cat entities.ftm.json | ftmq -s Company -p incorporationDate__gte=2020 -p address__ilike=berlin
@@ -85,12 +83,19 @@ Possible lookups:
 
 ### Aleph filter string
 
-Alternatively pass a full [Aleph](https://openaleph.org) filter string via `-q` /
-`--query` (parsed by [`Query.from_string`][ftmq.Query.from_string]); repeatable and
-combinable with the family flags:
+Alternatively pass a full [Aleph](https://openaleph.org) filter string via `-q` / `--query` (parsed by [`Query.from_string`][ftmq.Query.from_string]); repeatable and combinable with the family flags:
 
 ```bash
 cat entities.ftm.json | ftmq -q 'filter:schema=Person&filter:countries=de'
 cat entities.ftm.json | ftmq -q 'filter:properties.name=Jane&exclude:properties.country=ru'
 cat entities.ftm.json | ftmq -q 'filter:gte:properties.date=2020&empty:properties.deathDate'
+```
+
+The Aleph string is flat (no cross-field `OR`). For a **nested** filter tree, pass an [RQL](https://github.com/pjwerneck/pyrql) string via `--rql` (parsed by [`Query.from_rql`][ftmq.Query.from_rql]):
+
+```bash
+# schema=Person AND (countries=de OR countries=at)
+cat entities.ftm.json | ftmq --rql 'and(eq(schema,Person),or(eq(countries,de),eq(countries,at)))'
+# NOT Organization, with a name in a list
+cat entities.ftm.json | ftmq --rql 'and(not(eq(schema,Organization)),in(name,(jane,joe)))'
 ```

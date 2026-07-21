@@ -60,6 +60,12 @@ def _node(family: type[Expr], arg: str) -> Expr:
     help="Aleph filter query string, e.g. 'filter:schema=Person&filter:countries=de'",
 )
 @click.option(
+    "--rql",
+    multiple=True,
+    help="RQL query string (nested & | ~), e.g. "
+    "'and(eq(schema,Person),or(eq(countries,de),eq(countries,at)))'",
+)
+@click.option(
     "-m",
     "--meta",
     multiple=True,
@@ -116,6 +122,7 @@ def q(
     schema_include_descendants: bool = False,
     schema_include_matchable: bool = False,
     query: tuple[str, ...] = (),
+    rql: tuple[str, ...] = (),
     meta: tuple[str, ...] = (),
     prop: tuple[str, ...] = (),
     group: tuple[str, ...] = (),
@@ -139,6 +146,11 @@ def q(
     # -q: Aleph filter query string(s), merged in via the Aleph bridge
     for value in query:
         sub = Query.from_string(value).q
+        if sub is not None:
+            q = q.where(sub)
+    # --rql: RQL query string(s) (nested & | ~), merged in via `pyrql`
+    for value in rql:
+        sub = Query.from_rql(value).q
         if sub is not None:
             q = q.where(sub)
     for value in dataset:

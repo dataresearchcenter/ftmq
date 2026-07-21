@@ -139,3 +139,5 @@ Tests use fixtures in `tests/fixtures/` (`eu_authorities.ftm.json`, `donations.i
 ## Conventions
 
 - Never use em-dashes (`—`) in prose (docstrings, comments, docs, commit messages, PR text). Use a normal hyphen (`-`) or restructure the sentence.
+- In `docs/` markdown prose, keep each paragraph on a single line (do not hard-wrap; one line per paragraph, separated by blank lines). Code docstrings and comments wrap normally.
+- Import at module top level. Use a function-local (inline) import only to break a genuine circular dependency; a type-only import belongs under `if TYPE_CHECKING:` instead.

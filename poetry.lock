@@ -4024,6 +4024,22 @@ files = [
 diagrams = ["jinja2", "railroad-diagrams"]
 
 [[package]]
+name = "pyrql"
+version = "0.7.11"
+description = "RQL parsing"
+optional = false
+python-versions = "~=3.8"
+groups = ["main"]
+files = [
+    {file = "pyrql-0.7.11-py3-none-any.whl", hash = "sha256:fb756eae1b6178257715c018856eb5acd93d6c463db20e16d9c166b8e4a36f0d"},
+    {file = "pyrql-0.7.11.tar.gz", hash = "sha256:c7f66135cd53410bb46115a0d801114f4c470951b23e3e66c13a503fbbb3778b"},
+]
+
+[package.dependencies]
+pyparsing = ">=3.1,<4.0"
+python-dateutil = ">=2.8,<3.0"
+
+[[package]]
 name = "pytest"
 version = "9.1.1"
 description = "pytest: simple powerful testing with Python"
@@ -5503,4 +5519,4 @@ sql = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.15"
-content-hash = "d99b01373a3529dd6952f5a7e37063c29eaef093f79ea43fc0952490dc46dbf2"
+content-hash = "282576a65835223c6e154efcb55ae0f115c68cb02bed783ba732d271a6526a2f"

@@ -263,6 +263,54 @@ def test_aggregate_untouched():
     assert "q" in data
 
 
+def test_rql():
+    # nested cross-field OR: M(schema=Person) & (P(name=jane) | G(countries=de))
+    q = Query.from_rql(
+        "and(eq(schema,Person),or(eq(properties.name,jane),eq(countries,de)))"
+    )
+    manual = Query().where(M(schema="Person") & (P(name="jane") | G(countries="de")))
+    assert q.to_dict() == manual.to_dict()
+
+    # not / in / range comparators + bare-property fallback
+    q = Query.from_rql(
+        "and(not(eq(schema,Organization)),in(name,(jane,joe)),gt(properties.amountEur,1000))"
+    )
+    manual = Query().where(
+        ~M(schema="Organization"), P(name__in=["jane", "joe"]), P(amountEur__gt=1000)
+    )
+    assert q.to_dict() == manual.to_dict()
+
+    # a single comparison (no and/or wrapper)
+    assert Query.from_rql("eq(schema,Person)").to_dict() == (
+        Query().where(M(schema="Person")).to_dict()
+    )
+
+    # unsupported operator raises
+    with pytest.raises(QueryError):
+        Query.from_rql("bogus(schema,Person)")
+
+    # to_rql: nested tree round-trips through the string
+    q = Query().where(M(schema="Person") & (P(name="jane") | G(countries="de")))
+    assert q.to_rql() == (
+        "and(eq(schema,Person),or(eq(properties.name,jane),eq(countries,de)))"
+    )
+    assert Query.from_rql(q.to_rql()).to_dict() == q.to_dict()
+
+    # not / in / range round-trip and flatten the where()-nested ANDs
+    q = Query().where(
+        ~M(schema="Organization"), P(name__in=["jane", "joe"]), P(amountEur__gt=1000)
+    )
+    assert Query.from_rql(q.to_rql()).to_dict() == q.to_dict()
+
+    assert Query().to_rql() == ""
+
+    # comparators with no RQL equivalent raise on serialization
+    with pytest.raises(QueryError):
+        Query().where(P(name__startswith="ja")).to_rql()
+    with pytest.raises(QueryError):
+        Query().where(P(deathDate__null=True)).to_rql()
+
+
 def test_context_node():
     entity = make_entity(
         {

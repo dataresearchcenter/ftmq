@@ -11,6 +11,7 @@ flowchart TD
     subgraph build [Build]
         NODES["M / P / G nodes<br/>combined with &amp; | ~"]
         DICT["nested dict"]
+        RQL["RQL string<br/>(nested)"]
         PARAMS["Aleph params /<br/>URL query string"]
     end
 
@@ -19,6 +20,8 @@ flowchart TD
     NODES -->|where| Q
     DICT -->|from_dict| Q
     Q -->|to_dict| DICT
+    RQL -->|from_rql| Q
+    Q -->|to_rql| RQL
     PARAMS -->|from_params / from_string| Q
     Q -->|to_params / to_string| PARAMS
 
@@ -155,15 +158,11 @@ for proxy in view.query(q):
 ```
 
 !!! warning "SQL / Lake stores: flat queries only (for now)"
-    In-memory stores (memory, level, redis, file streams) evaluate arbitrary
-    `& | ~` trees. The SQL / Lake translation
-    ([`query.sql`][ftmq.Query.sql]) currently supports only flat conjunctions
-    (`and` of conditions); cross-field `OR` and negated groups are in-memory
-    only until the SQL layer is migrated.
+    In-memory stores (memory, level, redis, file streams) evaluate arbitrary `& | ~` trees. The SQL / Lake translation ([`query.sql`][ftmq.Query.sql]) currently supports only flat conjunctions (`and` of conditions); cross-field `OR` and negated groups are in-memory only until the SQL layer is migrated.
 
-## Serialization and the Aleph bridge
+## Serialization
 
-`Query` has three serialization surfaces. All three round-trip.
+`Query` serializes to a lossless nested dict (round-trips any query), plus two URL-friendly string grammars: RQL (nested) and the flat OpenAleph params (interop).
 
 Lossless nested tree (any query), for caching and storage:
 
@@ -172,7 +171,23 @@ data = q.to_dict()
 assert Query.from_dict(data).to_dict() == data
 ```
 
-Aleph params, as a `MultiDict` or as a URL query string:
+### RQL
+
+[RQL](https://github.com/pjwerneck/pyrql) (Resource Query Language) is a compact, URL-friendly string of nestable operators - `and()` / `or()` / `not()` around comparisons - so, unlike the flat OpenAleph params below, it carries an **arbitrarily nested** `& | ~` tree in a single string. It is the string surface to use for other HTTP-like connectors that need to pass a full nested query. [`from_rql`][ftmq.Query.from_rql] parses it and [`to_rql`][ftmq.Query.to_rql] emits it (via the `pyrql` dependency):
+
+```python
+q = Query().where(M(schema="Person") & (P(name="jane") | G(countries="de")))
+q.to_rql()   # "and(eq(schema,Person),or(eq(properties.name,jane),eq(countries,de)))"
+Query.from_rql(q.to_rql()).to_dict() == q.to_dict()   # True
+```
+
+Field names follow the same convention as the OpenAleph bridge (see below): a meta field (`schema`, `dataset`, `id`, ...), `properties.<name>` for a specific property, a group name (`countries`, `entities`, ...), or `origin`; a bare name that matches none of those is treated as a property. Comparison operators map to ftmq comparators (`eq`, `ne` → `not`, `lt` / `le` / `gt` / `ge`, `in`, `out` → `not_in`, `like` / `ilike`).
+
+`to_rql` raises [`QueryError`][ftmq.QueryError] for a comparator with no RQL equivalent (`null`, `startswith`, `endswith`, `notlike`, `notilike`, `between`).
+
+### OpenAleph
+
+URL params (as [OpenAleph](https://openaleph.org) uses them), as a `MultiDict` or as a URL query string:
 
 ```python
 q = Query().where(M(schema="Person"), G(countries="de"))
@@ -194,18 +209,10 @@ The bridge maps `ftmq` nodes onto the Aleph `filter:` / `exclude:` / `empty:` co
 | `exclude:properties.country=ru` | `P(country__not="ru")` |
 | `empty:properties.birthDate` | `P(birthDate__null=True)` |
 
-The param grammar is flat, so [`to_params`][ftmq.Query.to_params] /
-[`to_string`][ftmq.Query.to_string] raise
-[`QueryError`][ftmq.QueryError] for a query that cannot be expressed as flat
-Aleph params (a cross-field `OR` or a negated group). [`from_params`][ftmq.Query.from_params]
-/ [`from_string`][ftmq.Query.from_string] are total.
+The param grammar is flat, so [`to_params`][ftmq.Query.to_params] / [`to_string`][ftmq.Query.to_string] raise [`QueryError`][ftmq.QueryError] for a query that cannot be expressed as flat Aleph params (a cross-field `OR` or a negated group). [`from_params`][ftmq.Query.from_params] / [`from_string`][ftmq.Query.from_string] are total.
 
 !!! note "Result fidelity"
-    The query *language* round-trips in all directions. Exact *result-set*
-    equivalence between the Elasticsearch backend and an `ftmq` statement store
-    is best-effort for analyzed fields (e.g. `ilike` uses SQL `%` wildcards vs
-    ES analyzers; the `names` group is name-normalized in ES). Aleph free-text
-    search (`q` / `prefix`) has no `ftmq` equivalent.
+    The query *language* round-trips in all directions. Exact *result-set* equivalence between the Elasticsearch backend and an `ftmq` statement store is best-effort for analyzed fields (e.g. `ilike` uses SQL `%` wildcards vs ES analyzers; the `names` group is name-normalized in ES). Aleph free-text search (`q` / `prefix`) has no `ftmq` equivalent.
 
 ## Reference
 
