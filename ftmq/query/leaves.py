@@ -100,8 +100,14 @@ class BaseFilter:
         # allow ordering (helpful for testing and stable sql output)
         return hash(self) < hash(other)
 
+    def __le__(self, other: Any) -> bool:
+        return hash(self) <= hash(other)
+
     def __gt__(self, other: Any) -> bool:
         return hash(self) > hash(other)
+
+    def __ge__(self, other: Any) -> bool:
+        return hash(self) >= hash(other)
 
     def to_dict(self) -> dict[str, Any]:
         key = self.key if self.comparator == "eq" else f"{self.key}__{self.comparator}"
