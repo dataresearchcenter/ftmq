@@ -2847,13 +2847,13 @@ files = [
 
 [[package]]
 name = "nomenklatura"
-version = "4.12.2"
+version = "4.12.3"
 description = "Make record linkages in followthemoney data."
 optional = false
 python-versions = ">=3.11"
 groups = ["main"]
 files = [
-    {file = "nomenklatura-4.12.2-py3-none-any.whl", hash = "sha256:97290089358f625f26a5da6ab1dac6c3e422bfe68b1b11315918ffe517c09982"},
+    {file = "nomenklatura-4.12.3-py3-none-any.whl", hash = "sha256:1fd5fb6ee478c8736099c18aa931affd48da38c38ed2cecc67b6af031b00086d"},
 ]
 
 [package.dependencies]
@@ -5500,4 +5500,4 @@ sql = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.15"
-content-hash = "16bc52be6f5803ccf71cd859170b783ff493055ea8ed64df588d866a077f855c"
+content-hash = "5ba4b5d368f69f98249559abda04e8472775d21545b21ec8c9d705159d74cb2a"
