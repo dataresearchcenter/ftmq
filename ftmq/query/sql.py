@@ -1,6 +1,6 @@
 from collections import defaultdict
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, TypeAlias
+from typing import TYPE_CHECKING, Any, Callable, TypeAlias
 
 from followthemoney.types import PropertyType, registry
 from nomenklatura.db import make_statement_table
@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 Field: TypeAlias = Properties | PropertyTypes | Fields
 
 # a schema-value -> partition-value function (e.g. schema name -> `bucket`)
-PruneFn: TypeAlias = "Callable[[str], str]"
+PruneFn: TypeAlias = Callable[[str], str]
 
 
 class SqlSource:

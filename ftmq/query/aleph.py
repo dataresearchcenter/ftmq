@@ -45,7 +45,10 @@ ALEPH_META = {
 }
 # context fields that also exist as Aleph filter keys (mapped to the `C` family)
 ALEPH_CONTEXT = {"origin"}
-RANGE_OPS = ("gte", "gt", "lte", "lt")
+# comparators expressible as a `filter:<op>:<field>` prefix. The range ops match
+# openaleph-search; the substring / prefix ops are an ftmq extension of the
+# grammar (openaleph never emits them, so interop stays a superset).
+PREFIX_OPS = ("gte", "gt", "lte", "lt", "like", "ilike", "startswith", "endswith")
 _FAMILIES = {"M": M, "P": P, "G": G, "C": C}
 
 
@@ -116,7 +119,7 @@ def _leaf_to_param(leaf: Leaf, inverted: bool) -> tuple[str, str, list[str]]:
         return "filter:", field, [str(value)]
     if op == "in":
         return "filter:", field, sorted(str(v) for v in value)
-    if op in RANGE_OPS:
+    if op in PREFIX_OPS:
         return "filter:", f"{op}:{field}", [str(value)]
     if op == "not":
         return "exclude:", field, [str(value)]
@@ -144,7 +147,7 @@ def _resolve_field(rest: str) -> tuple[str, str]:
 
 def _param_to_node(prefix: str, rest: str, values: list[str]) -> Expr:
     op = None
-    for candidate in RANGE_OPS:
+    for candidate in PREFIX_OPS:
         if rest.startswith(f"{candidate}:"):
             op = candidate
             rest = rest[len(candidate) + 1 :]

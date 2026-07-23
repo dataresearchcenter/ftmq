@@ -61,6 +61,15 @@ cat entities.ftm.json | ftmq search transform | ftmq search --uri sqlite:///ftmq
 ftmq search --uri sqlite:///ftmqs.db "jane doe"
 ```
 
+### HTTP API
+
+`ftmq.api` (formerly the standalone `ftmq-api` package) exposes a store and its search index as a read-only FastAPI application (`pip install ftmq[api]`), speaking the Aleph filter grammar:
+
+```bash
+uvicorn ftmq.api.app:app
+curl "localhost:8000/entities?filter:schema=Payment&filter:gte:properties.date=2023"
+```
+
 ## Documentation
 
 https://docs.investigraph.dev/lib/ftmq

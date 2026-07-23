@@ -1,0 +1,14 @@
+{
+  "name": "api_catalog",
+  "title": "ftmq api test catalog",
+  "datasets": [
+    {
+      "name": "eu_authorities",
+      "title": "EU authorities as collected by AsktheEU.org"
+    },
+    {
+      "name": "donations",
+      "title": "German party donations"
+    }
+  ]
+}

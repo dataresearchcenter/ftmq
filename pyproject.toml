@@ -41,6 +41,7 @@ lake = [
 ]
 aleph = ["furl (>=2.1.4,<3.0.0)", "alephclient (>=2.6.0,<3.0.0)"]
 search = ["tantivy (>=0.26.0,<0.27.0)"]
+api = ["fastapi (>=0.139.2,<0.140.0)", "furl (>=2.1.4,<3.0.0)"]
 
 [project.scripts]
 ftmq = "ftmq.cli:cli"
@@ -69,6 +70,8 @@ mkdocs-material = "^9.7.7"
 mkdocs-click = "^0.9.0"
 griffe = "<3"
 anystore = {extras = ["http", "s3"], version = "^1.2.5"}
+httpx = "^0.28.1"
+uvicorn = "^0.35.0"
 
 [build-system]
 requires = ["poetry-core"]
@@ -79,3 +82,5 @@ NOMENKLATURA_STATEMENT_TABLE = "test_table"
 NOMENKLATURA_DB_URL = "sqlite:///:memory:"
 DEBUG = 1
 MAX_SQL_AGG_GROUPS = 11
+FTMQ_API_USE_CACHE = 1
+FTMQ_API_CACHE_URI = "memory:///ftmq-api-cache"

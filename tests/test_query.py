@@ -182,6 +182,23 @@ def test_params_non_expressible():
         Query().where(~(M(schema="Person") & P(name="a"))).to_params()
 
 
+def test_params_prefix_ops():
+    # substring / prefix comparators are an ftmq extension of the grammar
+    # (openaleph-search never emits them, interop stays a superset)
+    q = Query.from_string(
+        "filter:ilike:properties.name=jane" "&filter:startswith:canonical_id=eu-"
+    )
+    leaves = {(x.family, x.key, str(x.comparator)) for x in q.q.iter_leaves()}
+    assert ("P", "name", "ilike") in leaves
+    assert ("M", "canonical_id", "startswith") in leaves
+    assert Query.from_string(q.to_string()).to_dict() == q.to_dict()
+
+    q2 = Query().where(P(name__like="doe"), M(id__endswith="-x"))
+    params = q2.to_params()
+    assert params["filter:like:properties.name"] == ["doe"]
+    assert params["filter:endswith:id"] == ["-x"]
+
+
 def test_collectors():
     q = Query().where(M(dataset="foo"), M(schema="Person"), G(countries="fr"))
     assert q.dataset_names == {"foo"}

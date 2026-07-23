@@ -1,6 +1,6 @@
 from typing import Any, Iterable, Self
 
-from followthemoney import EntityProxy
+from followthemoney import EntityProxy, model
 from followthemoney.types import registry
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -77,12 +77,16 @@ class EntitySearchResult(BaseModel):
         countries: Iterable[str] | None = None,
         **kwargs: Any,
     ) -> EntityModel:
+        # only include properties the schema actually has (e.g. an interval
+        # schema like `Payment` has no `name`)
+        properties = {"name": list(names), "country": list(countries or [])}
+        schema_props = model[schema].properties
         return EntityModel(
             id=id,
             schema=schema,
             datasets=list(datasets),
             caption=caption,
-            properties={"name": list(names), "country": list(countries or [])},
+            properties={k: v for k, v in properties.items() if k in schema_props},
             referents=[],
         )
 

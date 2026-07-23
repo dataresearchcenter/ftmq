@@ -7,6 +7,7 @@ nav:
   - query.md
   - stores.md
   - search.md
+  - api.md
   - aggregation.md
   - versioning.md
   - Reference:
@@ -15,6 +16,7 @@ nav:
     - ftmq.query: reference/query.md
     - ftmq.store: reference/store.md
     - ftmq.search: reference/search.md
+    - ftmq.api: reference/api.md
     - ftmq.util: reference/util.md
 theme:
   name: material
