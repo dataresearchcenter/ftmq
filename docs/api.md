@@ -6,24 +6,117 @@
 pip install ftmq[api]
 ```
 
-## Setup
+## End-to-end setup
 
-Build a statement store and, for the `/search` and `/autocomplete` endpoints, a search index:
+This walks through serving a followthemoney entities file as a fully featured api instance, including full-text search, entirely from the command line. Start with an `entities.ftm.json` file (one entity json object per line).
+
+### 1. Apply a dataset
+
+The api serves entities scoped by dataset, so make sure every entity carries the dataset name you want to publish it under. If your entities already have proper datasets applied, skip this step.
 
 ```bash
-ftmq -i entities.ftm.json -o sqlite:///nomenklatura.db
-cat entities.ftm.json | ftmq search transform | ftmq search --uri sqlite:///nomenklatura.db index
+cat entities.ftm.json | ftmq apply-dataset -d my_dataset --replace-dataset -o entities.my_dataset.ftm.json
 ```
 
-Point the api at the store and a catalog document listing the datasets it serves, then run it with any ASGI server (install one, e.g. `pip install uvicorn`):
+`--replace-dataset` drops any datasets already present on the entities (including the implicit `default` assigned to raw entities); without the flag, `my_dataset` is added alongside them.
+
+### 2. Load the statement store
 
 ```bash
-export NOMENKLATURA_DB_URL=sqlite:///nomenklatura.db
+ftmq -i entities.my_dataset.ftm.json -o sqlite:///ftm.store
+```
+
+Any [ftmq store backend](./stores.md) works as the target (`sqlite://`, `postgresql://`, `leveldb://`, `redis://`, ...); a sqlite file is the simplest to start with.
+
+### 3. Build the search index
+
+The `/search` and `/autocomplete` endpoints are backed by a [`ftmq.search`](./search.md) index. Transform the entities into search documents and index them:
+
+```bash
+cat entities.my_dataset.ftm.json | ftmq search transform | ftmq search --uri sqlite:///ftm.store index
+```
+
+The index can live in the same sqlite database as the statement store (as here) or anywhere else (`tantivy://` for larger datasets).
+
+### 4. Describe the catalog
+
+The api serves the datasets listed in a catalog document. Create a `catalog.json`:
+
+```json
+{
+  "name": "my_catalog",
+  "title": "My Data Catalog",
+  "datasets": [{ "name": "my_dataset", "title": "My Dataset" }]
+}
+```
+
+### 5. Configure and run
+
+Point the api at the store, the search index and the catalog, then run it with [granian](https://github.com/emmett-framework/granian) (included in the `api` extra):
+
+```bash
+export FTMQ_API_STORE_URI=sqlite:///ftm.store
+export FTMQ_SEARCH_URI=sqlite:///ftm.store
 export FTMQ_API_CATALOG=./catalog.json
-uvicorn ftmq.api.app:app
+granian --interface asgi ftmq.api.app:app
 ```
 
-For production, use several workers, e.g. `gunicorn ftmq.api.app:app --workers 4 --worker-class uvicorn.workers.UvicornWorker`.
+`FTMQ_API_STORE_URI` defaults to nomenklatura's `NOMENKLATURA_DB_URL`, and `FTMQ_SEARCH_URI` defaults to that same database when it is sqlite, so with the single-file layout above only `FTMQ_API_CATALOG` is strictly required. The catalog and stores are read once at process start: after changing data, restart the server.
+
+For production, use several workers: `granian --interface asgi --workers 4 ftmq.api.app:app`. Any other ASGI server (uvicorn, hypercorn, ...) works as well.
+
+### 6. Verify
+
+```bash
+# catalog with computed dataset statistics
+curl -s "localhost:8000/catalog"
+# filtered, sorted entities
+curl -s "localhost:8000/entities?filter:schema=Person&sort=name&limit=5"
+# aggregation
+curl -s "localhost:8000/aggregate?filter:schema=Payment&metric:sum=amountEur"
+# full-text search and autocomplete
+curl -s "localhost:8000/search?q=jane+doe&filter:dataset=my_dataset"
+curl -s "localhost:8000/autocomplete?q=jan"
+```
+
+The interactive ReDoc documentation is served at [`localhost:8000/`](http://localhost:8000).
+
+### Multiple datasets
+
+One api instance serves any number of datasets. Apply each dataset name to its source file, load everything into the same store and search index, and list all datasets in the catalog:
+
+```bash
+cat dataset1.ftm.json | ftmq apply-dataset -d dataset1 --replace-dataset -o entities.dataset1.ftm.json
+cat dataset2.ftm.json | ftmq apply-dataset -d dataset2 --replace-dataset -o entities.dataset2.ftm.json
+
+ftmq -i entities.dataset1.ftm.json -o sqlite:///ftm.store
+ftmq -i entities.dataset2.ftm.json -o sqlite:///ftm.store
+
+cat entities.dataset1.ftm.json entities.dataset2.ftm.json | ftmq search transform | ftmq search --uri sqlite:///ftm.store index
+```
+
+```json
+{
+  "name": "my_catalog",
+  "title": "My Data Catalog",
+  "datasets": [
+    { "name": "dataset1", "title": "Dataset 1" },
+    { "name": "dataset2", "title": "Dataset 2" }
+  ]
+}
+```
+
+Requests span all datasets by default; scope them with one or more `filter:dataset=` params (this works on `/entities`, `/aggregate` and `/search` alike, an unknown dataset returns a 422):
+
+```bash
+curl -s "localhost:8000/catalog"                     # per-dataset statistics
+curl -s "localhost:8000/catalog/dataset2"            # single dataset metadata
+curl -s "localhost:8000/entities?filter:dataset=dataset2&limit=5"
+curl -s "localhost:8000/aggregate?filter:dataset=dataset1&filter:schema=Payment&metric:sum=amountEur"
+curl -s "localhost:8000/search?q=jane+doe&filter:dataset=dataset1"
+```
+
+Remember that the dataset list is frozen at process start (from the catalog document): adding a dataset means updating the catalog, loading its data and restarting the server.
 
 ## Endpoints
 
