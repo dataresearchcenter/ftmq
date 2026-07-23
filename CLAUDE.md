@@ -123,7 +123,13 @@ get_store("lake+s3://bucket/path")
 
 `Sql` translates a `Query` into SQLAlchemy clauses; `SqlSource` describes what it compiles against (table, id column, optional partition pruning) and replaces the old `query.table` mutation. Access via `query.sql` (default nomenklatura statement table) or `query.compile(source)`; the SQL and Lake stores own their `SqlSource` (`SQLStore.source`; the Lake store folds `bucket` partition pruning into every compiled query). Flat conjunctions only - see [refactor status](#query-language-refactor-status).
 
+### Search (`ftmq/search/`)
+
+Full-text "shallow search" stores for FtM entities (formerly the standalone `ftmq-search` package). `logic.transform` flattens entities into `EntityDocument` search docs (names, rigour-based fingerprints via `ftmq.util.entity_fingerprints`, countries, dates, text blob); stores index those docs and answer `search(q, query=None)` / `autocomplete(q)`, where the optional `Query` filters by `dataset_names` / `schemata_names` / `countries`. Backends via `ftmq.search.store.get_store(uri=...)`: `sqlite://` (FTS5, no extra deps) and `tantivy://` / `memory://` (require the `search` extra, i.e. `tantivy`; lazily imported in the factory). Settings use the `FTMQS_` env prefix. The CLI lives in `ftmq/search/cli.py` as a typer sub-app (`ftmq search ...`); a bare query routes to its `search` command via `SearchDefaultGroup`.
+
 ### CLI (`ftmq/cli.py`)
+
+Built on typer (same conventions as anystore: module-level `Settings()`, `@cli.callback` with `--version`, `with ErrorHandler():` command bodies, `Annotated[..., typer.Option(...)]` params). `DefaultCmdTyperGroup` (a `TyperGroup` subclass) routes unknown or absent subcommands to `q`, replacing the former click-default-group dependency; `typer_cli = get_group(cli)` at module end feeds mkdocs-click. typer vendors click, so ftmq has no direct click dependency.
 
 Entry point is `ftmq`. Default command is `q` for filtering:
 ```bash
@@ -132,7 +138,7 @@ cat entities.ftm.json | ftmq -s Company -p country=de -o output.json
 
 Filter flags mirror the query families as repeatable `field[__op]=value` arguments: `-m/--meta`, `-p/--prop`, `-g/--group`, `-c/--context`; `-d` (dataset) and `-s` (schema) are shortcuts, with `--schema-include-descendants` / `--schema-include-matchable` switching `-s` to the is-a `schemata` field. Whole query strings: `-q` (Aleph filter params) and `--rql`. Aggregations: `--sum` / `--min` / `--max` / `--avg` / `--count` plus `--groups`, written to `--aggregation-uri`.
 
-Subcommands: `dataset`, `catalog`, `store`, `fragments`, `aggregate`, `apply-dataset`
+Subcommands: `dataset`, `catalog`, `store`, `fragments`, `search`, `aggregate`, `apply-dataset`. The default-command plumbing (`DefaultCmdTyperGroup`) lives in `ftmq/cli_util.py` so the search sub-app can subclass it without an import cycle.
 
 ## Key Dependencies
 
@@ -141,6 +147,7 @@ Subcommands: `dataset`, `catalog`, `store`, `fragments`, `aggregate`, `apply-dat
 - `anystore`: Cloud-agnostic file I/O (S3, GCS, local)
 - `pydantic`: Data validation for models in `ftmq/model/`
 - `pyrql`: RQL parsing for `Query.from_rql()` / `to_rql()`
+- `typer`: CLI framework (vendors click; no direct click dependency)
 
 ## Testing
 

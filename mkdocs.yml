@@ -6,6 +6,7 @@ nav:
   - Command line: cli.md
   - query.md
   - stores.md
+  - search.md
   - aggregation.md
   - versioning.md
   - Reference:
@@ -13,6 +14,7 @@ nav:
     - ftmq.io: reference/io.md
     - ftmq.query: reference/query.md
     - ftmq.store: reference/store.md
+    - ftmq.search: reference/search.md
     - ftmq.util: reference/util.md
 theme:
   name: material

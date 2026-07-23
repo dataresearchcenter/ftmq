@@ -52,6 +52,15 @@ for proxy in smart_read_proxies("s3://data/entities.ftm.json"):
         yield proxy
 ```
 
+### Full-text search
+
+`ftmq.search` (formerly the standalone `ftmq-search` package) indexes entities into simple full-text search stores, backed by SQLite FTS5 or [Tantivy](https://github.com/quickwit-oss/tantivy) (`pip install ftmq[search]`):
+
+```bash
+cat entities.ftm.json | ftmq search transform | ftmq search --uri sqlite:///ftmqs.db index
+ftmq search --uri sqlite:///ftmqs.db "jane doe"
+```
+
 ## Documentation
 
 https://docs.investigraph.dev/lib/ftmq

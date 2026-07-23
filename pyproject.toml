@@ -18,11 +18,10 @@ requires-python = ">=3.11,<3.15"
 dependencies = [
     "anystore (>=1.2.5,<2.0.0)",
     "rigour (>=2.2.2,<3.0.0)",
-    "click (>=8.4.2,<9.0.0)",
     "followthemoney (>=4.10.0,<5.0.0)",
     "nomenklatura (>=4.11.4,<5.0.0)",
     "rigour (>=2.1.2,<3.0.0)",
-    "click-default-group (>=1.2.4,<2.0.0)",
+    "typer (>=0.26.8,<0.27.0)",
     "orjson (>=3.10.18,<4.0.0)",
     "pydantic (>=2.13.3,<3.0.0)",
     "normality (>=3.1.0,<4.0.0)",
@@ -41,6 +40,7 @@ lake = [
     "pandas (>=3.0.3,<4.0.0)",
 ]
 aleph = ["furl (>=2.1.4,<3.0.0)", "alephclient (>=2.6.0,<3.0.0)"]
+search = ["tantivy (>=0.26.0,<0.27.0)"]
 
 [project.scripts]
 ftmq = "ftmq.cli:cli"

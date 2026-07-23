@@ -51,6 +51,11 @@ def donations():
     ]
 
 
+@pytest.fixture(scope="module")
+def things(donations):
+    return [p for p in donations if p.schema.is_a("Thing")]
+
+
 # https://pawamoy.github.io/posts/local-http-server-fake-files-testing-purposes/
 def spawn_and_wait_server():
     process = subprocess.Popen(
