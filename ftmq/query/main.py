@@ -116,6 +116,11 @@ class Query:
         ```
     """
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Query):
+            return NotImplemented
+        return hash(self) == hash(other)
+
     def __init__(
         self,
         *nodes: Expr,
