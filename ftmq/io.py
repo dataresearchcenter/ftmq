@@ -33,7 +33,7 @@ def smart_read_proxies(
 
     Example:
         ```python
-        from ftmq import Query
+        from ftmq import Query, M, P
         from ftmq.io import smart_read_proxies
 
         # remote file-like source
@@ -49,7 +49,7 @@ def smart_read_proxies(
             print(proxy.schema)
 
         # apply a query to sql storage
-        q = Query(dataset="my_dataset", schema="Person")
+        q = Query().where(M(dataset="my_dataset"), P(schema="Person"))
         for proxy in smart_read_proxies("sqlite:///data/ftm.db", query=q):
             print(proxy.schema)
         ```

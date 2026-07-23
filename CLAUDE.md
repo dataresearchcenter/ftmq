@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 ftmq is a Python library for querying and filtering [Follow The Money](https://followthemoney.tech) (FTM) entities. It provides:
-- A composable `Query` language (`M` / `P` / `G` nodes composed with `&` / `|` / `~`) for filtering entities by meta fields, properties, and property-type groups
+- A composable `Query` language (`M` / `P` / `G` / `C` nodes composed with `&` / `|` / `~`, plus `A` aggregation projections) for filtering entities by meta fields, properties, property-type groups and context/storage columns
 - Smart I/O helpers for reading/writing FTM entities from various sources (files, S3, databases)
 - Multiple storage backends via nomenklatura stores (memory, LevelDB, Redis, SQL, Aleph, Delta Lake)
 - CLI for piping and filtering FTM JSON streams
@@ -53,43 +53,50 @@ make pre-commit
 
 ### Core Components
 
-**Query (`ftmq/query/`)**: The central query language (see [Query language](#query-language-ftmqquery) below). Chainable `.where()`, `.order_by()`, `.aggregate()`; slicing `q[10:20]`; applied via `q.apply(entity)` / `q.apply_iter(entities)`.
+**Query (`ftmq/query/`)**: The central query language (see [Query language](#query-language-ftmqquery) below). Chainable `.where()`, `.order_by()`, `.aggregate()`; slicing `q[10:20]`; applied via `q.apply(entity)` / `q.apply_iter(entities)`, or compiled to SQL via `q.sql` / `q.compile(source)`.
 
 **I/O (`ftmq/io.py`)**: `smart_read_proxies()` and `smart_write_proxies()` auto-detect source type (file, URL, store URI) and handle streaming.
 
 ### Query language (`ftmq/query/`)
 
-`Query` is built from three composable node constructors, split by the statement-table column they target:
+`Query` is built from four composable node constructors, split by the statement-table column they target:
 
-- **`M(**meta)`** - meta fields: `dataset`, `schema` (exact match), `schemata` (is-a: entity *is-a* X, i.e. `model[X] in entity.schema.schemata`), `origin`, `id` / `entity_id` / `canonical_id`.
+- **`M(**meta)`** - meta fields: `dataset`, `schema` (exact match), `schemata` (is-a: entity *is-a* X, i.e. `model[X] in entity.schema.schemata`), `id` / `entity_id` / `canonical_id`.
 - **`P(**props)`** - a specific FtM property (the `prop` column), e.g. `P(name="Jane")`, `P(amountEur__gte=1000)`.
 - **`G(**groups)`** - a followthemoney property-type group (the `prop_type` column, keyed by `registry.groups`: `names`, `dates`, `countries`, `entities`, ...). `G(entities=<id>)` is the reverse lookup (replaces the old `reverse`); `P(<edgeProp>=<id>)` is the narrow form.
+- **`C(**context)`** - a context / storage column: `origin` plus backend-specific columns (`fragment`, `first_seen`, `bucket`, ...). In-memory it reads `entity.context[key]`; in SQL it maps to the same-named statement-table column (an unknown column raises `QueryError` at compile time).
 
 Nodes compose with `&`, `|`, `~` into arbitrary boolean trees. `Query.where(*nodes)` AND-combines positional nodes; chained `.where()` also ANDs. Lookups are `field__comparator=value` (comparators defined in `ftmq/enums.py`). Invalid queries raise `QueryError` (subclass of `ValueError`).
 
+Aggregations are a projection, not a filter: the **`A`** node (`A(sum="amountEur", by="beneficiary")`; functions `min` / `max` / `sum` / `avg` / `count` over any property plus the fields `id` / `dataset` / `schema` / `year`) does not compose with `& | ~` and is passed to `Query.aggregate()`, parallel to `where()`. In-memory they collect during `apply_iter` into `q.aggregator.result` (store views: `view.aggregations(q)`); the SQL backend reads the same `Agg` specs. Do not confuse with `ftmq/aggregate.py`, the schema-downgrading entity merge behind the `ftmq aggregate` CLI subcommand.
+
 ```python
-from ftmq import Query, M, P, G
+from ftmq import Query, M, P, G, A
 
 q = Query().where(M(schema="Person"), P(name__ilike="jane%"))
 q = q.where(G(countries="de") | G(countries="at"))
 q = q.order_by("name")[:10]
+q = q.aggregate(A(count="id", by="dataset"))
 ```
 
-Package layout: `nodes.py` (`Expr` tree + `M`/`P`/`G` + `combine`), `leaves.py` (leaf classes + factories + `LeafDict`), `aleph.py` (Aleph URL-param bridge), `main.py` (`Query` + `Sort`), `exceptions.py` (`QueryError`), `filters.py` (legacy leaf layer, reused by import). `__init__.py` only re-exports.
+Package layout: `nodes.py` (`Expr` tree + `M`/`P`/`G`/`C` + `combine`), `leaves.py` (leaf classes + factories + `LeafDict`), `aggregations.py` (`A` + `Agg` specs + in-memory `Aggregator`), `aleph.py` (Aleph URL-param bridge), `rql.py` (RQL string bridge), `sql.py` (`Sql` + `SqlSource`, see [SQL integration](#sql-integration-ftmqquerysqlpy)), `main.py` (`Query` + `Sort`), `exceptions.py` (`QueryError`). `__init__.py` only re-exports.
 
-`Query` is the canonical query IR with three serialization surfaces:
-- `to_dict()` / `from_dict()` - lossless nested tree (any tree).
-- `to_params()` / `from_params()` - Aleph `filter:`/`exclude:`/`empty:` MultiDict (the flat subset; raises `QueryError` for cross-field OR / negated groups).
+`Query` is the canonical query IR with four serialization surfaces:
+- `to_dict()` / `from_dict()` - lossless nested tree (any tree, plus aggregations / sort / slice).
+- `to_rql()` / `from_rql()` - [RQL](https://github.com/pjwerneck/pyrql) string (via `pyrql`): the only string surface carrying arbitrary `& | ~` nesting, plus aggregations via RQL's `sum` / `mean` / `count` / `aggregate(...)` operators; raises `QueryError` for comparators with no RQL equivalent (`null`, `startswith`, ...).
+- `to_params()` / `from_params()` - Aleph `filter:`/`exclude:`/`empty:` MultiDict (the flat subset; raises `QueryError` for cross-field OR / negated groups); also carries aggregations (`metric:<func>` / `facet`) and `sort` / `limit` / `offset`.
 - `to_string()` / `from_string()` - Aleph URL query string.
 
-The Aleph bridge maps `M`→`filter:schema|schemata|dataset|...`, `P`→`filter:properties.<name>`, `G`→`filter:<group>`, `~`→`exclude:`, `__null`→`empty:`. Goal: bidirectional interop with openaleph-search's `SearchQueryParser` (Aleph params can query ftmq stores and vice versa).
+The Aleph bridge maps `M`→`filter:schema|schemata|dataset|...`, `P`→`filter:properties.<name>`, `G`→`filter:<group>`, `C`→`filter:origin`, `~`→`exclude:`, `__null`→`empty:`, aggregations→`metric:<func>=<prop>` + `facet=<field>`. Goal: bidirectional interop with openaleph-search's `SearchQueryParser` (Aleph params can query ftmq stores and vice versa).
 
 ### Query language refactor status
 
-The query language is mid-refactor from the legacy hand-made `.where(**kwargs)` DSL to the `M`/`P`/`G` grammar. **No backward compatibility** (major-version break).
+The rewrite from the legacy hand-made `.where(**kwargs)` DSL to the `M`/`P`/`G`/`C` grammar is complete (**no backward compatibility**, major-version break): the grammar + `Expr` tree, the in-memory evaluator, all four serialization surfaces, the `A` aggregation rewrite, the `Sql`/`SqlSource` adapter, and all consumers (CLI, SQL/Lake stores, docs, tests) are migrated; the legacy `filters.py` leaf layer is removed. The full test suite passes.
 
-- **Done (phase 1)**: the grammar + `Expr` tree, the in-memory evaluator (`apply`/`apply_iter`, correct AND/OR/NOT, is-a `schemata`, correct `null`), all three serialization surfaces, and the `ftmq/query/` package. Covered by `tests/test_query.py`; the new modules are `mypy --strict` clean (the moved legacy `filters.py` is not).
-- **Pending (phase 2)**: `ftmq/sql.py` still consumes the query's tree-walking collectors and is only correct for flat `is_and_only()` queries (no OR/NOT). Consumers still on the removed kwargs API and failing until migrated: `ftmq/cli.py`, the `ftmq/io.py` docstring, the SQL/Lake stores, and `tests/test_proxy.py` / `tests/test_sql.py` / `tests/test_store.py` / `tests/test_cli.py`. Aggregations (`ftmq/aggregations.py`, `Query.aggregate`) are unchanged.
+Known gaps:
+- The SQL translation compiles only flat conjunctions: `Sql` reads the query's flat leaf collectors (OR within a field, AND across fields), so cross-field `OR` and negated groups evaluate in-memory only (see the warning in `docs/query.md`).
+- `ftmq/query/` is `mypy --strict` clean except the moved `sql.py`; `make typecheck` (strict over the whole package) still fails on the legacy modules (CLI, stores, model, util).
+- The `smart_read_proxies` docstring in `ftmq/io.py` still shows the removed kwargs API.
 
 ### Store Backends (`ftmq/store/`)
 
@@ -112,16 +119,18 @@ get_store("sqlite:///data.db")
 get_store("lake+s3://bucket/path")
 ```
 
-### SQL Integration (`ftmq/sql.py`)
+### SQL Integration (`ftmq/query/sql.py`)
 
-The `Sql` class translates Query filters into SQLAlchemy clauses for SQL and Lake stores. Accessed via `query.sql`. **Not yet updated for the `M`/`P`/`G` refactor** (phase 2): it reads the query's tree-walking collectors and is only correct for flat `is_and_only()` queries. See [refactor status](#query-language-refactor-status).
+`Sql` translates a `Query` into SQLAlchemy clauses; `SqlSource` describes what it compiles against (table, id column, optional partition pruning) and replaces the old `query.table` mutation. Access via `query.sql` (default nomenklatura statement table) or `query.compile(source)`; the SQL and Lake stores own their `SqlSource` (`SQLStore.source`; the Lake store folds `bucket` partition pruning into every compiled query). Flat conjunctions only - see [refactor status](#query-language-refactor-status).
 
 ### CLI (`ftmq/cli.py`)
 
 Entry point is `ftmq`. Default command is `q` for filtering:
 ```bash
-cat entities.ftm.json | ftmq -s Company --country=de -o output.json
+cat entities.ftm.json | ftmq -s Company -p country=de -o output.json
 ```
+
+Filter flags mirror the query families as repeatable `field[__op]=value` arguments: `-m/--meta`, `-p/--prop`, `-g/--group`, `-c/--context`; `-d` (dataset) and `-s` (schema) are shortcuts, with `--schema-include-descendants` / `--schema-include-matchable` switching `-s` to the is-a `schemata` field. Whole query strings: `-q` (Aleph filter params) and `--rql`. Aggregations: `--sum` / `--min` / `--max` / `--avg` / `--count` plus `--groups`, written to `--aggregation-uri`.
 
 Subcommands: `dataset`, `catalog`, `store`, `fragments`, `aggregate`, `apply-dataset`
 
@@ -131,6 +140,7 @@ Subcommands: `dataset`, `catalog`, `store`, `fragments`, `aggregate`, `apply-dat
 - `nomenklatura`: Statement-based entity storage
 - `anystore`: Cloud-agnostic file I/O (S3, GCS, local)
 - `pydantic`: Data validation for models in `ftmq/model/`
+- `pyrql`: RQL parsing for `Query.from_rql()` / `to_rql()`
 
 ## Testing
 
