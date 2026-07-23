@@ -1,5 +1,5 @@
 ::: mkdocs-click
     :module: ftmq.cli
-    :command: cli
+    :command: typer_cli
     :prog_name: ftmq
     :style: table

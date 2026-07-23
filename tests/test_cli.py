@@ -2,9 +2,9 @@ from pathlib import Path
 
 import orjson
 from anystore.logging import configure_logging
-from click.testing import CliRunner
 from followthemoney import ValueEntity
 from followthemoney.dataset.dataset import DatasetModel
+from typer.testing import CliRunner
 
 from ftmq.cli import cli
 from ftmq.io import make_entity
