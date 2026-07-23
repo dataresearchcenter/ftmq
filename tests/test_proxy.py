@@ -81,7 +81,7 @@ def test_proxy_filter_schema(proxies):
 
     # invalid
     with pytest.raises(ValueError):
-        q = Query().where(M(schema="Invalid schema"))
+        Query().where(M(schema="Invalid schema"))
 
 
 def test_proxy_filter_property(proxies):
