@@ -87,9 +87,7 @@ class Sort:
         Yields:
             The entities in sorted order.
         """
-        yield from sorted(
-            entities, key=lambda x: self.apply(x), reverse=not self.ascending
-        )
+        yield from sorted(entities, key=self.apply, reverse=not self.ascending)
 
     def serialize(self) -> list[str]:
         """Serialize to a list of field names, descending fields prefixed `-`.
