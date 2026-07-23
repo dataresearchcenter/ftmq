@@ -1,6 +1,6 @@
 from collections import defaultdict
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, Callable, TypeAlias
+from typing import TYPE_CHECKING, Any, TypeAlias
 
 from followthemoney.types import PropertyType, registry
 from nomenklatura.db import make_statement_table
