@@ -27,6 +27,9 @@ export interface IEntitiesResult {
   readonly prev_url: string | null;
   readonly stats: IDatasetStats | null;
   readonly entities: IEntityDatum[];
+  // populated when the query carries aggregations; a query with `limit: 0`
+  // (via `.slice(0, 0)`) returns only these, no entities
+  readonly aggregations?: Aggregations | null;
 }
 
 type Aggregation = {
@@ -55,17 +58,9 @@ type AggregationGroup = {
   };
 };
 
-type Aggregations = {
+export type Aggregations = {
   readonly [key: string]: Aggregation | AggregationGroup | undefined;
 };
-
-export interface IAggregationResult {
-  readonly total: number;
-  readonly query: IQueryDict;
-  readonly url: string;
-  readonly stats: IDatasetStats;
-  readonly aggregations: Aggregations;
-}
 
 export interface IAutocompleteItem {
   readonly id: string;

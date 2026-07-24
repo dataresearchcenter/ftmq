@@ -14,7 +14,6 @@ from furl import furl
 
 from ftmq.api.query import RetrieveParams, build_query
 from ftmq.api.serialize import (
-    AggregationResponse,
     AutocompleteResponse,
     EntitiesResponse,
     EntityResponse,
@@ -96,10 +95,15 @@ def entity_list(
     view = get_view()
     try:
         query = build_query(request, authenticated)
+        entities: list = []
         adjacents = []
-        entities = [e for e in view.get_entities(query, retrieve_params)]
-        if retrieve_params.nested:
-            adjacents = view.get_adjacents(entities)
+        # `limit=0` returns only aggregations / stats (openaleph-style facets),
+        # so the entity fetch is skipped
+        if query.limit != 0:
+            entities = [e for e in view.get_entities(query, retrieve_params)]
+            if retrieve_params.nested:
+                adjacents = view.get_adjacents(entities)
+        aggregations = view.aggregations(query) if query.aggregations else None
         return EntitiesResponse.from_view(
             request=request,
             entities=entities,
@@ -107,6 +111,7 @@ def entity_list(
             adjacents=adjacents,
             stats=view.stats(query) if retrieve_params.stats else None,
             count=view.count(query) if not retrieve_params.stats else 0,
+            aggregations=aggregations,
         )
     except QueryError as e:
         raise HTTPException(400, detail=[str(e)])
@@ -133,21 +138,6 @@ def entity_detail(
         response.headers["X-Entity-Schema"] = entity.schema.name
         return response
     return EntityResponse.from_entity(entity, adjacents)
-
-
-@anycache(store=get_cache(), key_func=get_cache_key, model=AggregationResponse)
-def aggregation(request: Request) -> AggregationResponse:
-    view = get_view()
-    try:
-        query = build_query(request)
-        return AggregationResponse.from_view(
-            request=request,
-            aggregations=view.aggregations(query),
-            stats=view.stats(query),
-            query=query,
-        )
-    except QueryError as e:
-        raise HTTPException(400, detail=[str(e)])
 
 
 @anycache(store=get_cache(), key_func=get_cache_key, model=EntitiesResponse)

@@ -72,8 +72,8 @@ For production, use several workers: `granian --interface asgi --workers 4 ftmq.
 curl -s "localhost:8000/catalog"
 # filtered, sorted entities
 curl -s "localhost:8000/entities?filter:schema=Person&sort=name&limit=5"
-# aggregation
-curl -s "localhost:8000/aggregate?filter:schema=Payment&metric:sum=amountEur"
+# aggregation (rides on /entities; limit=0 returns only aggregations)
+curl -s "localhost:8000/entities?filter:schema=Payment&metric:sum=amountEur&limit=0"
 # full-text search and autocomplete
 curl -s "localhost:8000/search?q=jane+doe&filter:dataset=my_dataset"
 curl -s "localhost:8000/autocomplete?q=jan"
@@ -106,13 +106,13 @@ cat entities.dataset1.ftm.json entities.dataset2.ftm.json | ftmq search transfor
 }
 ```
 
-Requests span all datasets by default; scope them with one or more `filter:dataset=` params (this works on `/entities`, `/aggregate` and `/search` alike, an unknown dataset returns a 422):
+Requests span all datasets by default; scope them with one or more `filter:dataset=` params (this works on `/entities` and `/search` alike, an unknown dataset returns a 422):
 
 ```bash
 curl -s "localhost:8000/catalog"                     # per-dataset statistics
 curl -s "localhost:8000/catalog/dataset2"            # single dataset metadata
 curl -s "localhost:8000/entities?filter:dataset=dataset2&limit=5"
-curl -s "localhost:8000/aggregate?filter:dataset=dataset1&filter:schema=Payment&metric:sum=amountEur"
+curl -s "localhost:8000/entities?filter:dataset=dataset1&filter:schema=Payment&metric:sum=amountEur&limit=0"
 curl -s "localhost:8000/search?q=jane+doe&filter:dataset=dataset1"
 ```
 
@@ -125,9 +125,8 @@ Remember that the dataset list is frozen at process start (from the catalog docu
 | `/` | ReDoc api documentation |
 | `/catalog` | Catalog metadata with per-dataset statistics |
 | `/catalog/{dataset}` | Dataset metadata |
-| `/entities` | Filtered, sorted, paginated entity lists |
+| `/entities` | Filtered, sorted, paginated entity lists (+ aggregations) |
 | `/entities/{entity_id}` | Entity detail (307 redirect for merged entities) |
-| `/aggregate` | Property value aggregations |
 | `/search` | Full-text search via `ftmq.search` |
 | `/autocomplete` | Name autocomplete via `ftmq.search` |
 
@@ -147,15 +146,17 @@ The api speaks the Aleph / OpenAleph filter grammar, the same [`Query.from_param
 /entities?filter:countries=de                              # property-type groups
 /entities?filter:entities=<entity-id>                      # reverse lookup (any edge)
 /entities?sort=name:desc&limit=100&offset=200              # sorting and pagination
-/aggregate?filter:schema=Payment&metric:sum=amountEur&facet=year
+/entities?filter:schema=Payment&metric:sum=amountEur&facet=year&limit=0   # aggregations only
 /search?q=jane+doe&filter:dataset=my_dataset&filter:countries=de
 ```
+
+Aggregations ride on the entities query, as in the Aleph api: add `metric:<func>=<prop>` (and `facet=<field>` to group them). They are returned in the response `aggregations`; set `limit=0` to get only the aggregations (plus `total` / `stats`), no entities.
 
 For nested boolean trees that the flat grammar cannot express (a cross-field `OR`, a negated group), pass a full [RQL](./query.md) string via `rql=`. It overrides the flat filter params, while `sort` / `limit` / `offset` still apply, and it also carries aggregations:
 
 ```bash
 /entities?rql=and(eq(schema,Person),or(eq(countries,de),eq(countries,at)))
-/aggregate?rql=aggregate(year,sum(amountEur))
+/entities?rql=aggregate(year,sum(amountEur))&limit=0
 ```
 
 Retrieve flags shape the response: `nested` (inline adjacent entities), `featured`, `dehydrate`, `dehydrate_nested`, `stats`. A request with `api_key=<FTMQ_API_BUILD_API_KEY>` may exceed the public `limit` cap (useful for static site builders).
@@ -179,7 +180,7 @@ The former package spoke its own param dialect; this table maps old params to th
 | `page=3&limit=100` | `offset=200&limit=100` |
 | `aggSum=amountEur&aggGroups=year` | `metric:sum=amountEur&facet=year` |
 
-The `/similar` endpoint was removed (it had no backing implementation). The response `query` field now echoes the canonical query serialization instead of the raw params, and pagination urls use `offset`.
+The `/similar` endpoint was removed (it had no backing implementation). The `/aggregate` endpoint was merged into `/entities` (Aleph-style): request aggregations on the entities query and set `limit=0` for aggregations only. The response `query` field now echoes the canonical query serialization instead of the raw params, and pagination urls use `offset`.
 
 ## Settings
 

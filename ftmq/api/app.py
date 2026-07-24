@@ -11,7 +11,6 @@ from ftmq import __version__
 from ftmq.api import views
 from ftmq.api.query import RetrieveParams
 from ftmq.api.serialize import (
-    AggregationResponse,
     AutocompleteResponse,
     EntitiesResponse,
     EntityResponse,
@@ -156,6 +155,19 @@ async def entities(
 
     `?limit=100&offset=200`
 
+    ## aggregations
+
+    Aggregations ride on the same query (as in the Aleph api). Request metrics
+    and optionally group them by properties or fields (`id`, `dataset`,
+    `schema`, `year`):
+
+        ?metric:sum=amountEur&metric:count=id&facet=year
+
+    Set `limit=0` to return only the aggregations (plus `total` / `stats`), no
+    entities:
+
+        ?filter:schema=Payment&metric:sum=amountEur&limit=0
+
     ## searching
 
     Use the `/search` endpoint for fulltext search via `ftmq.search`
@@ -190,38 +202,6 @@ async def detail_entity(
         `x-entity-schema` - the new entity schema
     """
     return views.entity_detail(request, entity_id, retrieve_params)
-
-
-@app.get(
-    "/aggregate",
-    response_model=AggregationResponse,
-    responses={
-        400: {"model": ErrorResponse, "description": "Invalid query"},
-        500: {"model": ErrorResponse, "description": "Server error"},
-    },
-)
-async def aggregation(
-    request: Request,
-    authenticated: Annotated[bool, Depends(get_authenticated)],
-) -> AggregationResponse:
-    """
-    Aggregate property values for given filter criteria (same filter grammar as
-    the entities endpoint).
-
-    Specify which props should be aggregated like this:
-
-        ?metric:sum=amountEur&metric:min=amountEur
-
-    Multiple fields are possible:
-
-        ?metric:max=amountEur&metric:max=date
-
-    Group the metrics by one or more properties or fields (`id`, `dataset`,
-    `schema`, `year`):
-
-        ?metric:sum=amountEur&facet=year
-    """
-    return views.aggregation(request)
 
 
 @app.get(

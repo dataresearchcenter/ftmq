@@ -76,6 +76,8 @@ Validity of schema / property / group names is not checked client-side; the api 
 
 ### Aggregations
 
+Aggregations ride on the entities query (as in the Aleph api): add `A(...)` nodes and read `result.aggregations`. Slice to `limit=0` (via `.slice(0, 0)`) to fetch only the aggregations, no entities.
+
 ```ts
 import { Query, M, A } from "@dataresearchcenter/ftmq";
 
@@ -83,7 +85,12 @@ const query = new Query()
   .where(M({ schema: "Payment" }))
   .aggregate(A({ sum: "amountEur", by: "beneficiary" }), A({ count: "id" }));
 
-const { aggregations } = await api.getAggregations(query);
+// alongside a page of entities
+const page = await api.getEntities(query.slice(0, 25));
+page.aggregations;
+
+// or aggregations only (a convenience for `.slice(0, 0)`)
+const aggregations = await api.getAggregations(query);
 ```
 
 ## Parsing urls into a Query
@@ -122,7 +129,7 @@ A query produced in Python parses in the TypeScript client and vice versa. The s
 | `getEntity(id, retrieve?)` | `/entities/{id}` |
 | `getEntities(query?, retrieve?)` | `/entities` |
 | `getEntitiesAll(query?, retrieve?)` | `/entities` (paginated) |
-| `getAggregations(query?)` | `/aggregate` |
+| `getAggregations(query?)` | `/entities` (`limit=0`) |
 | `search(q, query?, retrieve?)` | `/search` |
 | `autocomplete(q)` | `/autocomplete` |
 

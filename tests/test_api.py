@@ -150,26 +150,38 @@ def test_api_entities_reverse(api_client):
 
 
 def test_api_aggregation(api_client):
+    # aggregations ride on /entities (Aleph-style); `limit=0` returns only them
     res = api_client.get(
-        "/aggregate?filter:dataset=donations&filter:schema=Payment"
-        "&metric:sum=amountEur&metric:min=date&metric:max=date"
+        "/entities?filter:dataset=donations&filter:schema=Payment"
+        "&metric:sum=amountEur&metric:min=date&metric:max=date&limit=0"
     )
     assert res.status_code == 200
     data = res.json()
     assert data["total"] == 290
+    assert data["items"] == 0
+    assert data["entities"] == []
     assert data["aggregations"] == {
         "amountEur": {"sum": 40589689.15},
         "date": {"min": "2002-07-04", "max": "2011-12-29"},
     }
 
     res = api_client.get(
-        "/aggregate?filter:dataset=donations&filter:schema=Payment"
-        "&metric:count=id&facet=year"
+        "/entities?filter:dataset=donations&filter:schema=Payment"
+        "&metric:count=id&facet=year&limit=0"
     )
     data = res.json()
     groups = data["aggregations"]["year"]["groups"]
     assert "count" in groups
     assert groups["count"]["id"]["2011"] > 0
+
+    # aggregations returned alongside entities when limit > 0
+    res = api_client.get(
+        "/entities?filter:dataset=donations&filter:schema=Payment"
+        "&metric:sum=amountEur&limit=5"
+    )
+    data = res.json()
+    assert data["items"] == 5
+    assert data["aggregations"]["amountEur"]["sum"] == 40589689.15
 
 
 def test_api_search(api_client):

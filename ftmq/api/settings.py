@@ -23,7 +23,8 @@ The main api endpoints:
   entities: `/entities/{entity_id}`
 * Retrieve a list of entities based on filter criteria and sorting, with
   pagination: `/entities?{params}`
-* Aggregate property values: `/aggregate?{params}&metric:sum=amountEur`
+* Aggregate property values on the same query (Aleph-style): add
+  `metric:sum=amountEur&facet=year`, set `limit=0` for aggregations only
 * Search for entities via full-text search: `/search?q=<search term>`
 * Autocomplete names: `/autocomplete?q=<term>`
 

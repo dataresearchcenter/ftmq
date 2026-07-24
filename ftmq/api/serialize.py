@@ -39,6 +39,15 @@ class EntityResponse(EntityModel):
 EntityResponse.model_rebuild()
 
 
+def pivot_aggregations(aggregations: AggregatorResult) -> Aggregations:
+    """Pivot `{func: {prop: value}}` to `{prop: {func: value}}` (yente shape)."""
+    agg_data: Aggregations = defaultdict(dict)
+    for func, agg in aggregations.items():
+        for field, value in agg.items():
+            agg_data[field][func] = value
+    return agg_data
+
+
 class EntitiesResponse(BaseModel):
     total: int
     items: int
@@ -48,6 +57,9 @@ class EntitiesResponse(BaseModel):
     next_url: str | None = None
     prev_url: str | None = None
     entities: list[EntityResponse]
+    # populated when the query carries aggregations (openaleph-style: a query
+    # with `limit=0` returns only these, no entities)
+    aggregations: Aggregations | None = None
 
     @classmethod
     def from_view(
@@ -58,6 +70,7 @@ class EntitiesResponse(BaseModel):
         stats: DatasetStats | None = None,
         adjacents: Iterable[Entity] | None = None,
         count: int = 0,
+        aggregations: AggregatorResult | None = None,
     ) -> Self:
         url = furl(str(request.url))
         entity_responses = [EntityResponse.from_entity(e, adjacents) for e in entities]
@@ -69,6 +82,7 @@ class EntitiesResponse(BaseModel):
             entities=entity_responses,
             stats=stats,
             url=str(url),
+            aggregations=pivot_aggregations(aggregations) if aggregations else None,
         )
         limit, offset = query.limit or 0, query.offset or 0
         if limit:
@@ -81,38 +95,6 @@ class EntitiesResponse(BaseModel):
                 url.args["limit"] = limit
                 response.next_url = str(url)
         return response
-
-
-class AggregationResponse(BaseModel):
-    total: int
-    stats: DatasetStats
-    query: dict[str, Any]
-    url: str
-    aggregations: Aggregations
-
-    @classmethod
-    def from_view(
-        cls,
-        request: Request,
-        stats: DatasetStats,
-        aggregations: AggregatorResult,
-        query: Query,
-    ) -> Self:
-        url = furl(str(request.url))
-
-        # pivot `{func: {prop: value}}` to `{prop: {func: value}}`
-        agg_data: Aggregations = defaultdict(dict)
-        for func, agg in aggregations.items():
-            for field, value in agg.items():
-                agg_data[field][func] = value
-
-        return cls(
-            total=stats.entity_count,
-            query=query.to_dict(),
-            stats=stats,
-            aggregations=agg_data,
-            url=str(url),
-        )
 
 
 class AutocompleteResponse(BaseModel):
