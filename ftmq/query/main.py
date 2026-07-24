@@ -437,6 +437,8 @@ class Query:
         e.g. `and(eq(schema,Person),or(eq(properties.name,jane),eq(countries,de)))`,
         and carries aggregations via its `sum` / `aggregate(...)` operators.
         """
+        if not value:
+            return cls()
         expr, aggregations = parse_rql(value)
         return cls(q=expr, aggregations=aggregations)
 
