@@ -30,7 +30,7 @@ Any [ftmq store backend](./stores.md) works as the target (`sqlite://`, `postgre
 
 ### 3. Build the search index
 
-The `/search` and `/autocomplete` endpoints are backed by a [`ftmq.search`](./search.md) index. Transform the entities into search documents and index them:
+Full-text search (`/entities?q=`) and `/autocomplete` are backed by a [`ftmq.search`](./search.md) index. Transform the entities into search documents and index them:
 
 ```bash
 cat entities.my_dataset.ftm.json | ftmq search transform | ftmq search --uri sqlite:///ftm.store index
@@ -75,7 +75,7 @@ curl -s "localhost:8000/entities?filter:schema=Person&sort=name&limit=5"
 # aggregation (rides on /entities; limit=0 returns only aggregations)
 curl -s "localhost:8000/entities?filter:schema=Payment&metric:sum=amountEur&limit=0"
 # full-text search and autocomplete
-curl -s "localhost:8000/search?q=jane+doe&filter:dataset=my_dataset"
+curl -s "localhost:8000/entities?q=jane+doe&filter:dataset=my_dataset"
 curl -s "localhost:8000/autocomplete?q=jan"
 ```
 
@@ -106,14 +106,14 @@ cat entities.dataset1.ftm.json entities.dataset2.ftm.json | ftmq search transfor
 }
 ```
 
-Requests span all datasets by default; scope them with one or more `filter:dataset=` params (this works on `/entities` and `/search` alike, an unknown dataset returns a 422):
+Requests span all datasets by default; scope them with one or more `filter:dataset=` params (for listing and `?q=` search alike, an unknown dataset returns a 422):
 
 ```bash
 curl -s "localhost:8000/catalog"                     # per-dataset statistics
 curl -s "localhost:8000/catalog/dataset2"            # single dataset metadata
 curl -s "localhost:8000/entities?filter:dataset=dataset2&limit=5"
 curl -s "localhost:8000/entities?filter:dataset=dataset1&filter:schema=Payment&metric:sum=amountEur&limit=0"
-curl -s "localhost:8000/search?q=jane+doe&filter:dataset=dataset1"
+curl -s "localhost:8000/entities?q=jane+doe&filter:dataset=dataset1"
 ```
 
 Remember that the dataset list is frozen at process start (from the catalog document): adding a dataset means updating the catalog, loading its data and restarting the server.
@@ -125,9 +125,8 @@ Remember that the dataset list is frozen at process start (from the catalog docu
 | `/` | ReDoc api documentation |
 | `/catalog` | Catalog metadata with per-dataset statistics |
 | `/catalog/{dataset}` | Dataset metadata |
-| `/entities` | Filtered, sorted, paginated entity lists (+ aggregations) |
+| `/entities` | Entity lists, aggregations, and full-text search (`?q=`) |
 | `/entities/{entity_id}` | Entity detail (307 redirect for merged entities) |
-| `/search` | Full-text search via `ftmq.search` |
 | `/autocomplete` | Name autocomplete via `ftmq.search` |
 
 ## Query dialect
@@ -147,7 +146,7 @@ The api speaks the Aleph / OpenAleph filter grammar, the same [`Query.from_param
 /entities?filter:entities=<entity-id>                      # reverse lookup (any edge)
 /entities?sort=name:desc&limit=100&offset=200              # sorting and pagination
 /entities?filter:schema=Payment&metric:sum=amountEur&facet=year&limit=0   # aggregations only
-/search?q=jane+doe&filter:dataset=my_dataset&filter:countries=de
+/entities?q=jane+doe&filter:dataset=my_dataset&filter:countries=de
 ```
 
 Aggregations ride on the entities query, as in the Aleph api: add `metric:<func>=<prop>` (and `facet=<field>` to group them). Ungrouped aggregations are returned in the response `metrics`, grouped ones in `facets`; set `limit=0` to get only those (plus `total`), no results.
@@ -163,7 +162,7 @@ Retrieve flags shape the response: `nested` (inline adjacent entities), `feature
 
 ## Response
 
-`/entities` and `/search` return the OpenAleph api v2 envelope:
+`/entities` (list and `?q=` search) returns the OpenAleph api v2 envelope:
 
 ```json
 {
@@ -208,7 +207,7 @@ The former package spoke its own param dialect; this table maps old params to th
 | `page=3&limit=100` | `offset=200&limit=100` |
 | `aggSum=amountEur&aggGroups=year` | `metric:sum=amountEur&facet=year` |
 
-The `/similar` endpoint was removed (it had no backing implementation). The `/aggregate` endpoint was merged into `/entities` (Aleph-style): request aggregations on the entities query and set `limit=0` for aggregations only. The response `query` field now echoes the canonical query serialization instead of the raw params, and pagination urls use `offset`.
+The `/similar` endpoint was removed (it had no backing implementation). The `/aggregate` and `/search` endpoints were merged into `/entities` (Aleph-style): request aggregations on the entities query (set `limit=0` for aggregations only), and pass `?q=<term>` to run full-text search over the same query. The response `query` field now echoes the canonical query serialization instead of the raw params, and pagination urls use `offset`.
 
 ## Settings
 

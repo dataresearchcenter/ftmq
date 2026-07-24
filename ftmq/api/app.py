@@ -170,7 +170,12 @@ async def entities(
 
     ## searching
 
-    Use the `/search` endpoint for fulltext search via `ftmq.search`
+    A `q` term routes the query to full-text search via `ftmq.search`
+    (relevance-ranked, dehydrated hits), combined with the same filters:
+
+        ?q=jane+doe&filter:dataset=my_dataset&filter:countries=de
+
+    Autocomplete on entity names is at `/autocomplete?q=<term>`.
     """
     return views.entity_list(request, retrieve_params, authenticated=authenticated)
 
@@ -202,29 +207,6 @@ async def detail_entity(
         `x-entity-schema` - the new entity schema
     """
     return views.entity_detail(request, entity_id, retrieve_params)
-
-
-@app.get(
-    "/search",
-    response_model=EntitiesResponse,
-    responses={
-        400: {"model": ErrorResponse, "description": "Invalid query"},
-        500: {"model": ErrorResponse, "description": "Server error"},
-    },
-)
-async def search(
-    request: Request,
-    q: Annotated[str, Query(description="Search term (fulltext via `ftmq.search`)")],
-    authenticated: Annotated[bool, Depends(get_authenticated)],
-) -> EntitiesResponse:
-    """
-    Search entities via `ftmq.search` and optionally filter by
-    `filter:dataset=`, `filter:schema=`, `filter:countries=`
-
-    Returned entities are "dehydrated" and only contain properties defined
-    during indexing.
-    """
-    return views.search(request, authenticated=authenticated)
 
 
 @app.get(

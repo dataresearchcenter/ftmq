@@ -95,6 +95,20 @@ def entity_list(
     view = get_view()
     try:
         query = build_query(request, authenticated)
+        q = request.query_params.get("q")
+        if q:
+            # a `q` term routes to full-text search via ftmq.search: dehydrated,
+            # relevance-ranked hits (no store-side aggregations / stats)
+            if len(q) < settings.min_search_length:
+                raise HTTPException(400, [f"Invalid search query: `{q}`"])
+            hits = [e.to_proxy() for e in get_search_store().search(q, query)]
+            return EntitiesResponse.from_view(
+                request=request,
+                entities=hits,
+                query=query,
+                count=len(hits),
+                query_q=q,
+            )
         entities: list = []
         adjacents = []
         # `limit=0` returns only aggregations / stats (openaleph-style facets),
@@ -112,7 +126,6 @@ def entity_list(
             stats=view.stats(query) if retrieve_params.stats else None,
             count=view.count(query) if not retrieve_params.stats else 0,
             aggregations=aggregations,
-            query_q=request.query_params.get("q"),
         )
     except QueryError as e:
         raise HTTPException(400, detail=[str(e)])
@@ -139,25 +152,6 @@ def entity_detail(
         response.headers["X-Entity-Schema"] = entity.schema.name
         return response
     return EntityResponse.from_entity(entity, adjacents)
-
-
-@anycache(store=get_cache(), key_func=get_cache_key, model=EntitiesResponse)
-def search(request: Request, authenticated: bool | None = False) -> EntitiesResponse:
-    q = request.query_params.get("q")
-    if q is None or len(q) < settings.min_search_length:
-        raise HTTPException(400, [f"Invalid search query: `{q}`"])
-    try:
-        query = build_query(request, authenticated)
-        store = get_search_store()
-        entities = (e.to_proxy() for e in store.search(q, query))
-        return EntitiesResponse.from_view(
-            request=request,
-            entities=entities,
-            query=query,
-            query_q=q,
-        )
-    except QueryError as e:
-        raise HTTPException(400, detail=[str(e)])
 
 
 @anycache(store=get_cache(), key_func=get_cache_key, model=AutocompleteResponse)

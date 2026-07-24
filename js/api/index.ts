@@ -66,13 +66,17 @@ export default class Api {
     }
   }
 
+  /**
+   * Full-text search: a convenience for `getEntities` with a `q` term, which
+   * routes the `/entities` query to `ftmq.search` (relevance-ranked hits).
+   */
   async search(
     q: string,
     query: Query = new Query(),
     retrieve: IRetrieveParams = {},
     opts: RequestInit = {},
   ): Promise<IEntitiesResult> {
-    return await this.get("search", opts, query, retrieve, q);
+    return await this.get("entities", opts, query, retrieve, q);
   }
 
   async autocomplete(q: string, opts: RequestInit = {}): Promise<IAutocompleteResult> {

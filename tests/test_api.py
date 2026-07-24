@@ -192,25 +192,27 @@ def test_api_aggregation(api_client):
 
 
 def test_api_search(api_client):
-    res = api_client.get("/search?q=metall")
+    # a `q` term routes /entities to full-text search via ftmq.search
+    res = api_client.get("/entities?q=metall")
     assert res.status_code == 200
     data = res.json()
     assert len(data["results"]) == 3
     assert data["query_q"] == "metall"
     assert METALL_ID in {e["id"] for e in data["results"]}
 
-    res = api_client.get("/search?q=metall&filter:dataset=eu_authorities")
+    res = api_client.get("/entities?q=metall&filter:dataset=eu_authorities")
     assert len(res.json()["results"]) == 0
 
-    res = api_client.get("/search?q=metall&filter:countries=gb")
+    res = api_client.get("/entities?q=metall&filter:countries=gb")
     assert len(res.json()["results"]) == 0
 
-    # too short
-    res = api_client.get("/search?q=xx")
+    # too short -> 400
+    res = api_client.get("/entities?q=xx")
     assert res.status_code == 400
-    # missing
-    res = api_client.get("/search")
-    assert res.status_code == 422
+    # no `q` -> normal listing, not an error
+    res = api_client.get("/entities")
+    assert res.status_code == 200
+    assert res.json()["query_q"] is None
 
 
 def test_api_rql(api_client):

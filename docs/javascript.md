@@ -130,7 +130,7 @@ A query produced in Python parses in the TypeScript client and vice versa. The s
 | `getEntity(id, retrieve?)` | `/entities/{id}` |
 | `getEntities(query?, retrieve?)` | `/entities` |
 | `getEntitiesAll(query?, retrieve?)` | `/entities` (paginated) |
-| `search(q, query?, retrieve?)` | `/search` |
+| `search(q, query?, retrieve?)` | `/entities?q=` |
 | `autocomplete(q)` | `/autocomplete` |
 
 `retrieve` shapes the response: `{ nested, featured, dehydrate, dehydrate_nested, stats }`. An unauthenticated `limit` is capped to the public maximum; pass an api key to exceed it.
