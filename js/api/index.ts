@@ -42,6 +42,10 @@ export default class Api {
     return await this.get(`entities/${id}`, opts, undefined, retrieve);
   }
 
+  /**
+   * Fetch entities for a query. Pass `retrieve.q` to run full-text search over
+   * the same query (routes `/entities` to `ftmq.search`, relevance-ranked).
+   */
   async getEntities(
     query: Query = new Query(),
     retrieve: IRetrieveParams = {},
@@ -66,21 +70,8 @@ export default class Api {
     }
   }
 
-  /**
-   * Full-text search: a convenience for `getEntities` with a `q` term, which
-   * routes the `/entities` query to `ftmq.search` (relevance-ranked hits).
-   */
-  async search(
-    q: string,
-    query: Query = new Query(),
-    retrieve: IRetrieveParams = {},
-    opts: RequestInit = {},
-  ): Promise<IEntitiesResult> {
-    return await this.get("entities", opts, query, retrieve, q);
-  }
-
   async autocomplete(q: string, opts: RequestInit = {}): Promise<IAutocompleteResult> {
-    return await this.get("autocomplete", opts, undefined, undefined, q);
+    return await this.get("autocomplete", opts, undefined, { q });
   }
 
   onNotFound(error: ApiError): any {
@@ -96,12 +87,8 @@ export default class Api {
   }
 
   // build the request url params from a Query (flat aleph, or `rql=` for a
-  // nested tree) plus retrieve flags, the search term and the api key
-  private params(
-    query?: Query,
-    retrieve: IRetrieveParams = {},
-    q?: string,
-  ): URLSearchParams {
+  // nested tree) plus the retrieve params (flags + `q`) and the api key
+  private params(query?: Query, retrieve: IRetrieveParams = {}): URLSearchParams {
     let params = new URLSearchParams();
     if (query) {
       const authenticated = !!this.api_key;
@@ -112,7 +99,6 @@ export default class Api {
     for (const [key, value] of Object.entries(retrieve)) {
       if (value !== undefined) params.set(key, String(value));
     }
-    if (q !== undefined) params.set("q", q);
     // the api key is only accessible on the server and bumps the page limit
     if (this.api_key) params.set("api_key", this.api_key);
     return params;
@@ -123,9 +109,8 @@ export default class Api {
     opts: RequestInit = {},
     query?: Query,
     retrieve: IRetrieveParams = {},
-    q?: string,
   ): Promise<any> {
-    const url = `${this.endpoint}/${path}?${this.params(query, retrieve, q)}`;
+    const url = `${this.endpoint}/${path}?${this.params(query, retrieve)}`;
     const res = await fetch(url, opts);
     if (res.ok) {
       return await res.json();

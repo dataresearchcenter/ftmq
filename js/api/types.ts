@@ -4,13 +4,16 @@ import type { IDatasetStats } from "./model.js";
 
 // --- request options -------------------------------------------------------
 
-/** Response-shaping flags (read by the api directly, not part of the query). */
+/** Non-query request params: response-shaping flags plus the optional `q`
+ * full-text search term (read by the api directly, not part of the `Query`). */
 export interface IRetrieveParams {
   readonly nested?: boolean;
   readonly featured?: boolean;
   readonly dehydrate?: boolean;
   readonly dehydrate_nested?: boolean;
   readonly stats?: boolean;
+  // a `q` term routes the /entities query to full-text search via ftmq.search
+  readonly q?: string;
 }
 
 // --- aggregations ----------------------------------------------------------

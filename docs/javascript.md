@@ -130,10 +130,9 @@ A query produced in Python parses in the TypeScript client and vice versa. The s
 | `getEntity(id, retrieve?)` | `/entities/{id}` |
 | `getEntities(query?, retrieve?)` | `/entities` |
 | `getEntitiesAll(query?, retrieve?)` | `/entities` (paginated) |
-| `search(q, query?, retrieve?)` | `/entities?q=` |
 | `autocomplete(q)` | `/autocomplete` |
 
-`retrieve` shapes the response: `{ nested, featured, dehydrate, dehydrate_nested, stats }`. An unauthenticated `limit` is capped to the public maximum; pass an api key to exceed it.
+`retrieve` carries the non-query request params: the response-shaping flags `{ nested, featured, dehydrate, dehydrate_nested, stats }` plus an optional `q` full-text search term (which routes the query to `ftmq.search`). An unauthenticated `limit` is capped to the public maximum; pass an api key to exceed it.
 
 The response matches the OpenAleph api v2 envelope: `results`, `total`, `total_type`, `page`, `pages`, `limit`, `offset`, `next`, `previous`, `facets`, `metrics`, `filters`, `query_q`, plus the ftmq extensions `query` (the canonical `toDict`) and `stats`.
 
@@ -147,7 +146,8 @@ page.stats; // IDatasetStats | null
 
 const all = await api.getEntitiesAll(new Query().where(M({ schema: "Company" })));
 
-const hits = await api.search("jane doe", new Query().where(G({ countries: "de" })));
+// full-text search: pass `q` alongside the query
+const hits = await api.getEntities(new Query().where(G({ countries: "de" })), { q: "jane doe" });
 const { candidates } = await api.autocomplete("jan");
 ```
 
