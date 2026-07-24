@@ -32,8 +32,10 @@ def test_api_entities(api_client):
     res = api_client.get("/entities")
     assert res.status_code == 200
     data = res.json()
+    assert data["status"] == "ok"
     assert data["total"] == 625
-    assert data["items"] == 100
+    assert data["total_type"] == "eq"
+    assert len(data["results"]) == 100
 
     res = api_client.get("/entities?filter:dataset=donations")
     assert res.json()["total"] == 474
@@ -61,7 +63,7 @@ def test_api_entities_filtered(api_client):
     res = api_client.get(url)
     data = res.json()
     assert data["total"] == 151
-    entity = data["entities"][0]
+    entity = data["results"][0]
     assert entity["id"].startswith("eu-authorities-")
     # dehydrated: no jurisdiction property
     assert "jurisdiction" not in entity["properties"]
@@ -94,20 +96,23 @@ def test_api_entities_filtered(api_client):
 def test_api_entities_paging(api_client):
     res = api_client.get("/entities?filter:dataset=donations&limit=10&offset=0")
     data = res.json()
-    assert data["items"] == 10
-    assert "offset=10" in data["next_url"]
-    assert data["prev_url"] is None
+    assert len(data["results"]) == 10
+    assert data["limit"] == 10 and data["offset"] == 0
+    assert data["page"] == 1 and data["pages"] == 48  # ceil(474 / 10)
+    assert "offset=10" in data["next"]
+    assert data["previous"] is None
 
     res = api_client.get("/entities?filter:dataset=donations&limit=10&offset=10")
     data = res.json()
-    assert "offset=0" in data["prev_url"]
-    assert "offset=20" in data["next_url"]
+    assert data["page"] == 2
+    assert "offset=0" in data["previous"]
+    assert "offset=20" in data["next"]
 
     # limit is capped unless authenticated
     res = api_client.get("/entities?limit=500")
-    assert res.json()["items"] == 100
+    assert len(res.json()["results"]) == 100
     res = api_client.get("/entities?limit=500&api_key=secret-key-for-build")
-    assert res.json()["items"] == 500
+    assert len(res.json()["results"]) == 500
 
 
 def test_api_entities_nested(api_client):
@@ -115,7 +120,7 @@ def test_api_entities_nested(api_client):
         "/entities?filter:schema=Payment&limit=1&nested=true&filter:dataset=donations"
     )
     data = res.json()
-    entity = data["entities"][0]
+    entity = data["results"][0]
     # adjacent entities are inlined
     nested = [
         v
@@ -145,7 +150,7 @@ def test_api_entities_reverse(api_client):
     res = api_client.get(f"/entities?filter:entities={ADDRESS_ID}")
     data = res.json()
     assert data["total"] == 1
-    entity = data["entities"][0]
+    entity = data["results"][0]
     assert ADDRESS_ID in entity["properties"]["addressEntity"]
 
 
@@ -158,9 +163,9 @@ def test_api_aggregation(api_client):
     assert res.status_code == 200
     data = res.json()
     assert data["total"] == 290
-    assert data["items"] == 0
-    assert data["entities"] == []
-    assert data["aggregations"] == {
+    assert data["results"] == []
+    # ungrouped aggregations -> Aleph `metrics`
+    assert data["metrics"] == {
         "amountEur": {"sum": 40589689.15},
         "date": {"min": "2002-07-04", "max": "2011-12-29"},
     }
@@ -170,9 +175,11 @@ def test_api_aggregation(api_client):
         "&metric:count=id&facet=year&limit=0"
     )
     data = res.json()
-    groups = data["aggregations"]["year"]["groups"]
-    assert "count" in groups
-    assert groups["count"]["id"]["2011"] > 0
+    # grouped aggregations -> Aleph `facets` (value/count buckets)
+    year = data["facets"]["year"]
+    assert year["total"] == len(year["values"])
+    bucket_2011 = next(v for v in year["values"] if v["value"] == "2011")
+    assert bucket_2011["count"] > 0
 
     # aggregations returned alongside entities when limit > 0
     res = api_client.get(
@@ -180,22 +187,23 @@ def test_api_aggregation(api_client):
         "&metric:sum=amountEur&limit=5"
     )
     data = res.json()
-    assert data["items"] == 5
-    assert data["aggregations"]["amountEur"]["sum"] == 40589689.15
+    assert len(data["results"]) == 5
+    assert data["metrics"]["amountEur"]["sum"] == 40589689.15
 
 
 def test_api_search(api_client):
     res = api_client.get("/search?q=metall")
     assert res.status_code == 200
     data = res.json()
-    assert data["items"] == 3
-    assert METALL_ID in {e["id"] for e in data["entities"]}
+    assert len(data["results"]) == 3
+    assert data["query_q"] == "metall"
+    assert METALL_ID in {e["id"] for e in data["results"]}
 
     res = api_client.get("/search?q=metall&filter:dataset=eu_authorities")
-    assert res.json()["items"] == 0
+    assert len(res.json()["results"]) == 0
 
     res = api_client.get("/search?q=metall&filter:countries=gb")
-    assert res.json()["items"] == 0
+    assert len(res.json()["results"]) == 0
 
     # too short
     res = api_client.get("/search?q=xx")
@@ -217,7 +225,7 @@ def test_api_rql(api_client):
     res = api_client.get("/entities?rql=eq(schema,Payment)&limit=5")
     data = res.json()
     assert data["total"] == 290
-    assert data["items"] == 5
+    assert len(data["results"]) == 5
 
     # an unknown dataset inside rql is still validated -> 422
     res = api_client.get("/entities?rql=eq(dataset,not_existent)")

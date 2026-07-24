@@ -112,6 +112,7 @@ def entity_list(
             stats=view.stats(query) if retrieve_params.stats else None,
             count=view.count(query) if not retrieve_params.stats else 0,
             aggregations=aggregations,
+            query_q=request.query_params.get("q"),
         )
     except QueryError as e:
         raise HTTPException(400, detail=[str(e)])
@@ -153,6 +154,7 @@ def search(request: Request, authenticated: bool | None = False) -> EntitiesResp
             request=request,
             entities=entities,
             query=query,
+            query_q=q,
         )
     except QueryError as e:
         raise HTTPException(400, detail=[str(e)])

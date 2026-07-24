@@ -150,7 +150,7 @@ The api speaks the Aleph / OpenAleph filter grammar, the same [`Query.from_param
 /search?q=jane+doe&filter:dataset=my_dataset&filter:countries=de
 ```
 
-Aggregations ride on the entities query, as in the Aleph api: add `metric:<func>=<prop>` (and `facet=<field>` to group them). They are returned in the response `aggregations`; set `limit=0` to get only the aggregations (plus `total` / `stats`), no entities.
+Aggregations ride on the entities query, as in the Aleph api: add `metric:<func>=<prop>` (and `facet=<field>` to group them). Ungrouped aggregations are returned in the response `metrics`, grouped ones in `facets`; set `limit=0` to get only those (plus `total`), no results.
 
 For nested boolean trees that the flat grammar cannot express (a cross-field `OR`, a negated group), pass a full [RQL](./query.md) string via `rql=`. It overrides the flat filter params, while `sort` / `limit` / `offset` still apply, and it also carries aggregations:
 
@@ -160,6 +160,34 @@ For nested boolean trees that the flat grammar cannot express (a cross-field `OR
 ```
 
 Retrieve flags shape the response: `nested` (inline adjacent entities), `featured`, `dehydrate`, `dehydrate_nested`, `stats`. A request with `api_key=<FTMQ_API_BUILD_API_KEY>` may exceed the public `limit` cap (useful for static site builders).
+
+## Response
+
+`/entities` and `/search` return the OpenAleph api v2 envelope:
+
+```json
+{
+  "status": "ok",
+  "results": [{ "id": "...", "caption": "...", "schema": "Person", "properties": {}, "datasets": ["..."] }],
+  "total": 1234,
+  "total_type": "eq",
+  "page": 1,
+  "pages": 13,
+  "limit": 100,
+  "offset": 0,
+  "next": "https://.../entities?...&offset=100&limit=100",
+  "previous": null,
+  "facets": { "year": { "values": [{ "value": "2011", "label": "2011", "count": 42 }], "total": 10 } },
+  "metrics": { "amountEur": { "sum": 40589689.15 } },
+  "filters": { "schema": ["Person"] },
+  "query_q": null,
+  "query": { "q": { "and": [] }, "limit": 100, "offset": 0 },
+  "stats": null,
+  "links": {}
+}
+```
+
+`results` are the entities (each `id` / `caption` / `schema` / `properties` / `datasets`); `total_type` is always `eq` (exact counts). Grouped aggregations land in `facets` (Aleph value/count buckets), ungrouped in `metrics`. `query` (the canonical [`Query.to_dict`](./query.md)) and `stats` (dataset statistics, with `stats=1`) are ftmq extensions Aleph clients can ignore.
 
 ### Migrating from ftmq-api 3.x
 

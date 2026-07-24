@@ -76,21 +76,22 @@ Validity of schema / property / group names is not checked client-side; the api 
 
 ### Aggregations
 
-Aggregations ride on the entities query (as in the Aleph api): add `A(...)` nodes and read `result.aggregations`. Slice to `limit=0` (via `.slice(0, 0)`) to fetch only the aggregations, no entities.
+Aggregations ride on the entities query (as in the Aleph api): add `A(...)` nodes and read the response `metrics` (ungrouped) and `facets` (grouped). Slice to `limit=0` (via `.slice(0, 0)`) to fetch only the aggregations, no entities.
 
 ```ts
 import { Query, M, A } from "@dataresearchcenter/ftmq";
 
 const query = new Query()
   .where(M({ schema: "Payment" }))
-  .aggregate(A({ sum: "amountEur", by: "beneficiary" }), A({ count: "id" }));
+  .aggregate(A({ count: "id", by: "year" }), A({ sum: "amountEur" }));
 
 // alongside a page of entities
 const page = await api.getEntities(query.slice(0, 25));
-page.aggregations;
+page.metrics; // ungrouped: { amountEur: { sum: ... } }
+page.facets; // grouped: { year: { values: [{ value, label, count }], total } }
 
-// or aggregations only (a convenience for `.slice(0, 0)`)
-const aggregations = await api.getAggregations(query);
+// aggregations only: slice to limit 0 (no entities)
+const { facets, metrics } = await api.getEntities(query.slice(0, 0));
 ```
 
 ## Parsing urls into a Query
@@ -129,17 +130,20 @@ A query produced in Python parses in the TypeScript client and vice versa. The s
 | `getEntity(id, retrieve?)` | `/entities/{id}` |
 | `getEntities(query?, retrieve?)` | `/entities` |
 | `getEntitiesAll(query?, retrieve?)` | `/entities` (paginated) |
-| `getAggregations(query?)` | `/entities` (`limit=0`) |
 | `search(q, query?, retrieve?)` | `/search` |
 | `autocomplete(q)` | `/autocomplete` |
 
 `retrieve` shapes the response: `{ nested, featured, dehydrate, dehydrate_nested, stats }`. An unauthenticated `limit` is capped to the public maximum; pass an api key to exceed it.
 
+The response matches the OpenAleph api v2 envelope: `results`, `total`, `total_type`, `page`, `pages`, `limit`, `offset`, `next`, `previous`, `facets`, `metrics`, `filters`, `query_q`, plus the ftmq extensions `query` (the canonical `toDict`) and `stats`.
+
 ```ts
 const page = await api.getEntities(query, { stats: true });
+page.results; // IEntityDatum[]
 page.total; // number of matches
+page.page; // 1-based page number, page.pages total pages
+page.next; // string | null (next-page url)
 page.stats; // IDatasetStats | null
-page.next_url; // string | null
 
 const all = await api.getEntitiesAll(new Query().where(M({ schema: "Company" })));
 
@@ -156,8 +160,8 @@ import { Model, defaultModel } from "@opensanctions/followthemoney";
 
 const model = new Model(defaultModel);
 
-const { entities } = await api.getEntities(new Query().where(M({ schema: "Person" })));
-for (const datum of entities) {
+const { results } = await api.getEntities(new Query().where(M({ schema: "Person" })));
+for (const datum of results) {
   const entity = model.getEntity(datum);
   entity.getCaption();
   entity.getFirst("name");

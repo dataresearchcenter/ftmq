@@ -13,54 +13,55 @@ export interface IRetrieveParams {
   readonly stats?: boolean;
 }
 
+// --- aggregations ----------------------------------------------------------
+
+// ungrouped aggregations, Aleph `metrics`: `{prop: {func: value}}`
+export type IMetrics = {
+  readonly [prop: string]: { readonly [func: string]: number };
+};
+
+// a grouped-aggregation bucket, e.g. `{value: "2011", label: "2011", count: 3}`
+export interface IFacetValue {
+  readonly value: string;
+  readonly label: string;
+  readonly count?: number;
+  readonly [func: string]: string | number | undefined;
+}
+
+// grouped aggregations, Aleph `facets`: `{field: {values: [...], total}}`
+export type IFacets = {
+  readonly [field: string]: {
+    readonly values: IFacetValue[];
+    readonly total: number;
+  };
+};
+
 // --- responses -------------------------------------------------------------
 
 // the api echoes back the canonical query serialization (`Query.toDict`)
 export type IQueryDict = Record<string, any>;
 
+/** The list / search response, matching the OpenAleph api v2 envelope. */
 export interface IEntitiesResult {
+  readonly status: string;
+  readonly results: IEntityDatum[];
   readonly total: number;
-  readonly items: number;
+  readonly total_type: string;
+  readonly page: number;
+  readonly pages: number;
+  readonly limit: number;
+  readonly offset: number;
+  readonly next: string | null;
+  readonly previous: string | null;
+  readonly facets: IFacets;
+  readonly metrics: IMetrics;
+  readonly filters: Record<string, string[]>;
+  readonly query_q: string | null;
+  // ftmq extensions (additive)
   readonly query: IQueryDict;
-  readonly url: string;
-  readonly next_url: string | null;
-  readonly prev_url: string | null;
   readonly stats: IDatasetStats | null;
-  readonly entities: IEntityDatum[];
-  // populated when the query carries aggregations; a query with `limit: 0`
-  // (via `.slice(0, 0)`) returns only these, no entities
-  readonly aggregations?: Aggregations | null;
+  readonly links: Record<string, string>;
 }
-
-type Aggregation = {
-  readonly min?: string | number;
-  readonly max?: string | number;
-  readonly sum?: number;
-  readonly avg?: number;
-  readonly count?: number;
-};
-
-type AggregationGroupValues = {
-  readonly [key: string]: string | number;
-};
-
-type AggregationGrouper = {
-  readonly [key: string]: AggregationGroupValues;
-};
-
-type AggregationGroup = {
-  readonly groups?: {
-    readonly min?: AggregationGrouper;
-    readonly max?: AggregationGrouper;
-    readonly sum?: AggregationGrouper;
-    readonly avg?: AggregationGrouper;
-    readonly count?: AggregationGrouper;
-  };
-};
-
-export type Aggregations = {
-  readonly [key: string]: Aggregation | AggregationGroup | undefined;
-};
 
 export interface IAutocompleteItem {
   readonly id: string;

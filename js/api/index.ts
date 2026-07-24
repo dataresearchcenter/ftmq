@@ -3,7 +3,6 @@ import type { IEntityDatum } from "@opensanctions/followthemoney";
 import { Query } from "../query/index.js";
 import type { ICatalog, IDataset } from "./model.js";
 import type {
-  Aggregations,
   IAutocompleteResult,
   IEntitiesResult,
   IRetrieveParams,
@@ -61,24 +60,10 @@ export default class Api {
     let entities: IEntityDatum[] = [];
     for (;;) {
       const res = await this.getEntities(query.slice(offset, offset + limit), retrieve);
-      entities = [...entities, ...res.entities];
-      if (!res.next_url || res.entities.length === 0) return entities;
+      entities = [...entities, ...res.results];
+      if (!res.next || res.results.length === 0) return entities;
       offset += limit;
     }
-  }
-
-  /**
-   * Aggregations ride on the `/entities` query (as in the Aleph api). This is a
-   * convenience that requests `limit=0` (no entities) and returns only the
-   * aggregations; read `result.aggregations` off `getEntities` to get them
-   * alongside a page of entities.
-   */
-  async getAggregations(
-    query: Query = new Query(),
-    opts: RequestInit = {},
-  ): Promise<Aggregations> {
-    const res = await this.getEntities(query.slice(0, 0), {}, opts);
-    return res.aggregations ?? {};
   }
 
   async search(
