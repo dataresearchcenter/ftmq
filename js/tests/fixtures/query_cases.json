@@ -1,0 +1,1152 @@
+[
+  {
+    "name": "flat_and",
+    "dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "P",
+              "f": "name",
+              "op": "eq",
+              "v": "Jane"
+            }
+          },
+          {
+            "leaf": {
+              "t": "M",
+              "f": "schema",
+              "op": "eq",
+              "v": "Person"
+            }
+          }
+        ]
+      }
+    },
+    "params": {
+      "filter:schema": [
+        "Person"
+      ],
+      "filter:properties.name": [
+        "Jane"
+      ]
+    },
+    "string": "filter:properties.name=Jane&filter:schema=Person",
+    "rql": "and(eq(schema,Person),eq(properties.name,Jane))",
+    "params_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "P",
+              "f": "name",
+              "op": "eq",
+              "v": "Jane"
+            }
+          },
+          {
+            "leaf": {
+              "t": "M",
+              "f": "schema",
+              "op": "eq",
+              "v": "Person"
+            }
+          }
+        ]
+      }
+    },
+    "rql_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "P",
+              "f": "name",
+              "op": "eq",
+              "v": "Jane"
+            }
+          },
+          {
+            "leaf": {
+              "t": "M",
+              "f": "schema",
+              "op": "eq",
+              "v": "Person"
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "dataset_in",
+    "dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "dataset",
+              "op": "in",
+              "v": [
+                "d1",
+                "d2"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "params": {
+      "filter:dataset": [
+        "d1",
+        "d2"
+      ]
+    },
+    "string": "filter:dataset=d1&filter:dataset=d2",
+    "rql": "in(dataset,(d1,d2))",
+    "params_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "dataset",
+              "op": "in",
+              "v": [
+                "d1",
+                "d2"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "rql_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "dataset",
+              "op": "in",
+              "v": [
+                "d1",
+                "d2"
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "exclude_multi",
+    "dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "dataset",
+              "op": "not_in",
+              "v": [
+                "a",
+                "b"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "params": {
+      "exclude:dataset": [
+        "a",
+        "b"
+      ]
+    },
+    "string": "exclude:dataset=a&exclude:dataset=b",
+    "rql": "out(dataset,(a,b))",
+    "params_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "dataset",
+              "op": "not_in",
+              "v": [
+                "a",
+                "b"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "rql_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "dataset",
+              "op": "not_in",
+              "v": [
+                "a",
+                "b"
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "nested_or",
+    "dict": {
+      "q": {
+        "and": [
+          {
+            "or": [
+              {
+                "and": [
+                  {
+                    "leaf": {
+                      "t": "G",
+                      "f": "countries",
+                      "op": "eq",
+                      "v": "de"
+                    }
+                  }
+                ]
+              },
+              {
+                "and": [
+                  {
+                    "leaf": {
+                      "t": "G",
+                      "f": "countries",
+                      "op": "eq",
+                      "v": "at"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "leaf": {
+              "t": "M",
+              "f": "schema",
+              "op": "eq",
+              "v": "Person"
+            }
+          }
+        ]
+      }
+    },
+    "params": null,
+    "string": null,
+    "rql": "and(eq(schema,Person),or(eq(countries,de),eq(countries,at)))",
+    "params_dict": null,
+    "rql_dict": {
+      "q": {
+        "and": [
+          {
+            "or": [
+              {
+                "and": [
+                  {
+                    "leaf": {
+                      "t": "G",
+                      "f": "countries",
+                      "op": "eq",
+                      "v": "de"
+                    }
+                  }
+                ]
+              },
+              {
+                "and": [
+                  {
+                    "leaf": {
+                      "t": "G",
+                      "f": "countries",
+                      "op": "eq",
+                      "v": "at"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "leaf": {
+              "t": "M",
+              "f": "schema",
+              "op": "eq",
+              "v": "Person"
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "negation",
+    "dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "P",
+              "f": "name",
+              "op": "ilike",
+              "v": "jane"
+            }
+          }
+        ],
+        "not": true
+      }
+    },
+    "params": null,
+    "string": null,
+    "rql": "not(ilike(properties.name,jane))",
+    "params_dict": null,
+    "rql_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "P",
+              "f": "name",
+              "op": "ilike",
+              "v": "jane"
+            }
+          }
+        ],
+        "not": true
+      }
+    }
+  },
+  {
+    "name": "ranges",
+    "dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "P",
+              "f": "amountEur",
+              "op": "lt",
+              "v": "1000"
+            }
+          },
+          {
+            "leaf": {
+              "t": "P",
+              "f": "date",
+              "op": "gte",
+              "v": "2023"
+            }
+          }
+        ]
+      }
+    },
+    "params": {
+      "filter:gte:properties.date": [
+        "2023"
+      ],
+      "filter:lt:properties.amountEur": [
+        "1000"
+      ]
+    },
+    "string": "filter:gte:properties.date=2023&filter:lt:properties.amountEur=1000",
+    "rql": "and(ge(properties.date,2023),lt(properties.amountEur,1000))",
+    "params_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "P",
+              "f": "amountEur",
+              "op": "lt",
+              "v": "1000"
+            }
+          },
+          {
+            "leaf": {
+              "t": "P",
+              "f": "date",
+              "op": "gte",
+              "v": "2023"
+            }
+          }
+        ]
+      }
+    },
+    "rql_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "P",
+              "f": "amountEur",
+              "op": "lt",
+              "v": "1000"
+            }
+          },
+          {
+            "leaf": {
+              "t": "P",
+              "f": "date",
+              "op": "gte",
+              "v": "2023"
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "prefix",
+    "dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "canonical_id",
+              "op": "startswith",
+              "v": "eu-"
+            }
+          }
+        ]
+      }
+    },
+    "params": {
+      "filter:startswith:canonical_id": [
+        "eu-"
+      ]
+    },
+    "string": "filter:startswith:canonical_id=eu-",
+    "rql": null,
+    "params_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "canonical_id",
+              "op": "startswith",
+              "v": "eu-"
+            }
+          }
+        ]
+      }
+    },
+    "rql_dict": null
+  },
+  {
+    "name": "reverse",
+    "dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "G",
+              "f": "entities",
+              "op": "eq",
+              "v": "some-id"
+            }
+          }
+        ]
+      }
+    },
+    "params": {
+      "filter:entities": [
+        "some-id"
+      ]
+    },
+    "string": "filter:entities=some-id",
+    "rql": "eq(entities,some-id)",
+    "params_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "G",
+              "f": "entities",
+              "op": "eq",
+              "v": "some-id"
+            }
+          }
+        ]
+      }
+    },
+    "rql_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "G",
+              "f": "entities",
+              "op": "eq",
+              "v": "some-id"
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "context",
+    "dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "C",
+              "f": "origin",
+              "op": "eq",
+              "v": "crawl"
+            }
+          }
+        ]
+      }
+    },
+    "params": {
+      "filter:origin": [
+        "crawl"
+      ]
+    },
+    "string": "filter:origin=crawl",
+    "rql": "eq(origin,crawl)",
+    "params_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "C",
+              "f": "origin",
+              "op": "eq",
+              "v": "crawl"
+            }
+          }
+        ]
+      }
+    },
+    "rql_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "C",
+              "f": "origin",
+              "op": "eq",
+              "v": "crawl"
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "schemata",
+    "dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "schemata",
+              "op": "eq",
+              "v": "LegalEntity"
+            }
+          }
+        ]
+      }
+    },
+    "params": {
+      "filter:schemata": [
+        "LegalEntity"
+      ]
+    },
+    "string": "filter:schemata=LegalEntity",
+    "rql": "eq(schemata,LegalEntity)",
+    "params_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "schemata",
+              "op": "eq",
+              "v": "LegalEntity"
+            }
+          }
+        ]
+      }
+    },
+    "rql_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "schemata",
+              "op": "eq",
+              "v": "LegalEntity"
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "empty",
+    "dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "P",
+              "f": "deathDate",
+              "op": "null",
+              "v": true
+            }
+          }
+        ]
+      }
+    },
+    "params": {
+      "empty:properties.deathDate": [
+        ""
+      ]
+    },
+    "string": "empty:properties.deathDate=",
+    "rql": null,
+    "params_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "P",
+              "f": "deathDate",
+              "op": "null",
+              "v": true
+            }
+          }
+        ]
+      }
+    },
+    "rql_dict": null
+  },
+  {
+    "name": "sort_slice",
+    "dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "schema",
+              "op": "eq",
+              "v": "Payment"
+            }
+          }
+        ]
+      },
+      "order_by": [
+        "-date"
+      ],
+      "limit": 10,
+      "offset": 10
+    },
+    "params": {
+      "filter:schema": [
+        "Payment"
+      ],
+      "sort": [
+        "date:desc"
+      ],
+      "offset": [
+        "10"
+      ],
+      "limit": [
+        "10"
+      ]
+    },
+    "string": "filter:schema=Payment&limit=10&offset=10&sort=date%3Adesc",
+    "rql": "eq(schema,Payment)",
+    "params_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "schema",
+              "op": "eq",
+              "v": "Payment"
+            }
+          }
+        ]
+      },
+      "order_by": [
+        "-date"
+      ],
+      "limit": 10,
+      "offset": 10
+    },
+    "rql_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "schema",
+              "op": "eq",
+              "v": "Payment"
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "sort_asc",
+    "dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "schema",
+              "op": "eq",
+              "v": "Person"
+            }
+          }
+        ]
+      },
+      "order_by": [
+        "name"
+      ],
+      "limit": 25,
+      "offset": 0
+    },
+    "params": {
+      "filter:schema": [
+        "Person"
+      ],
+      "sort": [
+        "name:asc"
+      ],
+      "limit": [
+        "25"
+      ]
+    },
+    "string": "filter:schema=Person&limit=25&sort=name%3Aasc",
+    "rql": "eq(schema,Person)",
+    "params_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "schema",
+              "op": "eq",
+              "v": "Person"
+            }
+          }
+        ]
+      },
+      "order_by": [
+        "name"
+      ],
+      "limit": 25,
+      "offset": 0
+    },
+    "rql_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "schema",
+              "op": "eq",
+              "v": "Person"
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "agg_ungrouped",
+    "dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "schema",
+              "op": "eq",
+              "v": "Payment"
+            }
+          }
+        ]
+      },
+      "aggregations": {
+        "sum": [
+          "amountEur"
+        ],
+        "max": [
+          "date"
+        ],
+        "min": [
+          "date"
+        ]
+      }
+    },
+    "params": {
+      "filter:schema": [
+        "Payment"
+      ],
+      "metric:max": [
+        "date"
+      ],
+      "metric:min": [
+        "date"
+      ],
+      "metric:sum": [
+        "amountEur"
+      ]
+    },
+    "string": "filter:schema=Payment&metric:max=date&metric:min=date&metric:sum=amountEur",
+    "rql": "and(eq(schema,Payment),max(date),min(date),sum(amountEur))",
+    "params_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "schema",
+              "op": "eq",
+              "v": "Payment"
+            }
+          }
+        ]
+      },
+      "aggregations": {
+        "sum": [
+          "amountEur"
+        ],
+        "min": [
+          "date"
+        ],
+        "max": [
+          "date"
+        ]
+      }
+    },
+    "rql_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "schema",
+              "op": "eq",
+              "v": "Payment"
+            }
+          }
+        ]
+      },
+      "aggregations": {
+        "sum": [
+          "amountEur"
+        ],
+        "min": [
+          "date"
+        ],
+        "max": [
+          "date"
+        ]
+      }
+    }
+  },
+  {
+    "name": "agg_grouped",
+    "dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "schema",
+              "op": "eq",
+              "v": "Payment"
+            }
+          }
+        ]
+      },
+      "aggregations": {
+        "groups": {
+          "beneficiary": {
+            "sum": [
+              "amountEur"
+            ]
+          }
+        },
+        "sum": [
+          "amountEur"
+        ],
+        "count": [
+          "id"
+        ]
+      }
+    },
+    "params": {
+      "filter:schema": [
+        "Payment"
+      ],
+      "metric:count": [
+        "id"
+      ],
+      "metric:sum": [
+        "amountEur"
+      ],
+      "facet": [
+        "beneficiary"
+      ]
+    },
+    "string": "facet=beneficiary&filter:schema=Payment&metric:count=id&metric:sum=amountEur",
+    "rql": "and(eq(schema,Payment),count(id),aggregate(beneficiary,sum(amountEur)))",
+    "params_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "schema",
+              "op": "eq",
+              "v": "Payment"
+            }
+          }
+        ]
+      },
+      "aggregations": {
+        "groups": {
+          "beneficiary": {
+            "count": [
+              "id"
+            ],
+            "sum": [
+              "amountEur"
+            ]
+          }
+        },
+        "count": [
+          "id"
+        ],
+        "sum": [
+          "amountEur"
+        ]
+      }
+    },
+    "rql_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "schema",
+              "op": "eq",
+              "v": "Payment"
+            }
+          }
+        ]
+      },
+      "aggregations": {
+        "groups": {
+          "beneficiary": {
+            "sum": [
+              "amountEur"
+            ]
+          }
+        },
+        "sum": [
+          "amountEur"
+        ],
+        "count": [
+          "id"
+        ]
+      }
+    }
+  },
+  {
+    "name": "combined",
+    "dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "dataset",
+              "op": "eq",
+              "v": "donations"
+            }
+          },
+          {
+            "leaf": {
+              "t": "M",
+              "f": "schema",
+              "op": "eq",
+              "v": "Payment"
+            }
+          },
+          {
+            "leaf": {
+              "t": "P",
+              "f": "date",
+              "op": "gte",
+              "v": "2010"
+            }
+          }
+        ]
+      },
+      "order_by": [
+        "-amountEur"
+      ],
+      "limit": 50,
+      "offset": 0,
+      "aggregations": {
+        "groups": {
+          "year": {
+            "sum": [
+              "amountEur"
+            ]
+          }
+        },
+        "sum": [
+          "amountEur"
+        ]
+      }
+    },
+    "params": {
+      "filter:dataset": [
+        "donations"
+      ],
+      "filter:schema": [
+        "Payment"
+      ],
+      "filter:gte:properties.date": [
+        "2010"
+      ],
+      "metric:sum": [
+        "amountEur"
+      ],
+      "facet": [
+        "year"
+      ],
+      "sort": [
+        "amountEur:desc"
+      ],
+      "limit": [
+        "50"
+      ]
+    },
+    "string": "facet=year&filter:dataset=donations&filter:gte:properties.date=2010&filter:schema=Payment&limit=50&metric:sum=amountEur&sort=amountEur%3Adesc",
+    "rql": "and(eq(dataset,donations),eq(schema,Payment),ge(properties.date,2010),aggregate(year,sum(amountEur)))",
+    "params_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "dataset",
+              "op": "eq",
+              "v": "donations"
+            }
+          },
+          {
+            "leaf": {
+              "t": "M",
+              "f": "schema",
+              "op": "eq",
+              "v": "Payment"
+            }
+          },
+          {
+            "leaf": {
+              "t": "P",
+              "f": "date",
+              "op": "gte",
+              "v": "2010"
+            }
+          }
+        ]
+      },
+      "order_by": [
+        "-amountEur"
+      ],
+      "limit": 50,
+      "offset": 0,
+      "aggregations": {
+        "groups": {
+          "year": {
+            "sum": [
+              "amountEur"
+            ]
+          }
+        },
+        "sum": [
+          "amountEur"
+        ]
+      }
+    },
+    "rql_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "dataset",
+              "op": "eq",
+              "v": "donations"
+            }
+          },
+          {
+            "leaf": {
+              "t": "M",
+              "f": "schema",
+              "op": "eq",
+              "v": "Payment"
+            }
+          },
+          {
+            "leaf": {
+              "t": "P",
+              "f": "date",
+              "op": "gte",
+              "v": "2010"
+            }
+          }
+        ]
+      },
+      "aggregations": {
+        "groups": {
+          "year": {
+            "sum": [
+              "amountEur"
+            ]
+          }
+        },
+        "sum": [
+          "amountEur"
+        ]
+      }
+    }
+  }
+]

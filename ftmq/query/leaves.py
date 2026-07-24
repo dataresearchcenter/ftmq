@@ -114,7 +114,7 @@ class BaseFilter:
         return {key: self.value}
 
     def get_casted_value(self, value: Any) -> Any:
-        if self.comparator == "in":
+        if self.comparator in ("in", "not_in"):
             return set(self.stringify(v) for v in ensure_list(value))
         if self.comparator == "null":
             return as_bool(value)

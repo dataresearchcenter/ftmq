@@ -1,18 +1,22 @@
-import type { IEntityDatum, ICatalog, IDataset } from "../model";
+import type { IEntityDatum } from "@opensanctions/followthemoney";
+
+import { Query } from "../query/index.js";
+import type { ICatalog, IDataset } from "./model.js";
 import type {
   IAggregationResult,
-  IApiQuery,
-  IEntitiesResult,
   IAutocompleteResult,
-} from "./types";
-import { cleanQuery } from "./util";
+  IEntitiesResult,
+  IRetrieveParams,
+} from "./types.js";
+import { clampLimit } from "./util.js";
 
 type ApiError = {
   detail: string[];
 };
 
-export * from "./types";
-export * from "./util";
+export * from "./model.js";
+export * from "./types.js";
+export * from "./util.js";
 
 export default class Api {
   private endpoint: string;
@@ -24,53 +28,63 @@ export default class Api {
   }
 
   async getCatalog(opts: RequestInit = {}): Promise<ICatalog> {
-    return await this.api("catalog", {}, opts);
+    return await this.get("catalog", opts);
   }
 
   async getDataset(dataset: string, opts: RequestInit = {}): Promise<IDataset> {
-    return await this.api(`catalog/${dataset}`, {}, opts);
+    return await this.get(`catalog/${dataset}`, opts);
   }
 
-  async getEntity(id: string, opts: RequestInit = {}): Promise<IEntityDatum> {
-    return await this.api(`entities/${id}`, { nested: true }, opts);
+  async getEntity(
+    id: string,
+    retrieve: IRetrieveParams = { nested: true },
+    opts: RequestInit = {},
+  ): Promise<IEntityDatum> {
+    return await this.get(`entities/${id}`, opts, undefined, retrieve);
   }
 
   async getEntities(
-    query: IApiQuery = {},
+    query: Query = new Query(),
+    retrieve: IRetrieveParams = {},
     opts: RequestInit = {},
   ): Promise<IEntitiesResult> {
-    return await this.api(`entities`, query, opts);
+    return await this.get("entities", opts, query, retrieve);
   }
 
-  async getEntitiesAll(q: IApiQuery = {}): Promise<IEntityDatum[]> {
-    // chain requests to paginate and get all results
-    let { entities } = await this.getEntities(q);
-    for (let page = 2; true; page++) {
-      const res = await this.getEntities({ ...q, page });
+  async getEntitiesAll(
+    query: Query = new Query(),
+    retrieve: IRetrieveParams = {},
+  ): Promise<IEntityDatum[]> {
+    // chain requests via `offset` to paginate through all results
+    const limit = query.limit ?? 100;
+    let offset = query.offset ?? 0;
+    let entities: IEntityDatum[] = [];
+    for (;;) {
+      const res = await this.getEntities(query.slice(offset, offset + limit), retrieve);
       entities = [...entities, ...res.entities];
-      if (!res.next_url) {
-        return entities;
-      }
+      if (!res.next_url || res.entities.length === 0) return entities;
+      offset += limit;
     }
   }
 
   async getAggregations(
-    query: IApiQuery = {},
-    opts: RequestInit,
+    query: Query = new Query(),
+    opts: RequestInit = {},
   ): Promise<IAggregationResult> {
-    return await this.api("aggregate", query, opts);
+    return await this.get("aggregate", opts, query);
   }
 
-  async search(q: string, query: IApiQuery = {}): Promise<IEntitiesResult> {
-    return await this.api("search", { ...query, q });
+  async search(
+    q: string,
+    query: Query = new Query(),
+    retrieve: IRetrieveParams = {},
+    opts: RequestInit = {},
+  ): Promise<IEntitiesResult> {
+    return await this.get("search", opts, query, retrieve, q);
   }
 
-  async autocomplete(q: string): Promise<IAutocompleteResult> {
-    return await this.api("autocomplete", { q });
-  }
-
-  async similar(id: string, query: IApiQuery = {}): Promise<IEntitiesResult> {
-    return await this.api("similar", { ...query, id });
+  async autocomplete(q: string, opts: RequestInit = {}): Promise<IAutocompleteResult> {
+    return await this.get("autocomplete", opts, undefined, undefined, q);
   }
 
   onNotFound(error: ApiError): any {
@@ -85,18 +99,40 @@ export default class Api {
     throw new Error(errorMsg);
   }
 
-  async api(
+  // build the request url params from a Query (flat aleph, or `rql=` for a
+  // nested tree) plus retrieve flags, the search term and the api key
+  private params(
+    query?: Query,
+    retrieve: IRetrieveParams = {},
+    q?: string,
+  ): URLSearchParams {
+    let params = new URLSearchParams();
+    if (query) {
+      const authenticated = !!this.api_key;
+      const limit = clampLimit(query.limit, authenticated);
+      const offset = query.offset ?? 0;
+      params = query.slice(offset, offset + limit).toRequestParams();
+    }
+    for (const [key, value] of Object.entries(retrieve)) {
+      if (value !== undefined) params.set(key, String(value));
+    }
+    if (q !== undefined) params.set("q", q);
+    // the api key is only accessible on the server and bumps the page limit
+    if (this.api_key) params.set("api_key", this.api_key);
+    return params;
+  }
+
+  async get(
     path: string,
-    query: IApiQuery = {},
     opts: RequestInit = {},
+    query?: Query,
+    retrieve: IRetrieveParams = {},
+    q?: string,
   ): Promise<any> {
-    query.api_key = this.api_key; // this var is only accessible on server
-    const qs = new URLSearchParams(cleanQuery(query))
-    const url = `${this.endpoint}/${path}?${qs.toString()}`;
+    const url = `${this.endpoint}/${path}?${this.params(query, retrieve, q)}`;
     const res = await fetch(url, opts);
     if (res.ok) {
-      const data = await res.json();
-      return data;
+      return await res.json();
     }
     if (res.status >= 400 && res.status < 600) {
       const error = await res.json();
@@ -113,23 +149,16 @@ export default class Api {
 async function fetcher(url: string, opts: RequestInit = {}): Promise<any> {
   const res = await fetch(url, opts);
   if (res.ok) {
-    const data = await res.json();
-    return data;
+    return await res.json();
   }
   throw new Error(`Fetch error: ${res.status} ${res.statusText}`);
 }
 
-export async function getCatalog(
-  url: string,
-  opts: RequestInit = {},
-): Promise<ICatalog> {
+export async function getCatalog(url: string, opts: RequestInit = {}): Promise<ICatalog> {
   return fetcher(url, opts);
 }
 
-export async function getDataset(
-  url: string,
-  opts: RequestInit = {},
-): Promise<ICatalog> {
+export async function getDataset(url: string, opts: RequestInit = {}): Promise<IDataset> {
   return fetcher(url, opts);
 }
 

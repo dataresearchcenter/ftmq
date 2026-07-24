@@ -199,6 +199,19 @@ def test_params_prefix_ops():
     assert params["filter:endswith:id"] == ["-x"]
 
 
+def test_params_exclude_multi():
+    # `not_in` accepts a list (like `in`); multi-value exclude round-trips
+    q = Query().where(M(dataset__not_in=["a", "b"]))
+    (leaf,) = list(q.q.iter_leaves())
+    assert str(leaf.comparator) == "not_in"
+    assert leaf.value == {"a", "b"}
+    assert q.to_string() == "exclude:dataset=a&exclude:dataset=b"
+    q2 = Query.from_string("exclude:schema=Person&exclude:schema=Company")
+    (leaf2,) = list(q2.q.iter_leaves())
+    assert str(leaf2.comparator) == "not_in"
+    assert leaf2.value == {"Person", "Company"}
+
+
 def test_collectors():
     q = Query().where(M(dataset="foo"), M(schema="Person"), G(countries="fr"))
     assert q.dataset_names == {"foo"}

@@ -79,6 +79,24 @@ def test_api_query_aggregations():
     }
 
 
+def test_api_query_rql():
+    # rql carries a nested boolean tree the flat grammar cannot express
+    q = _build("rql=or(eq(schema,Person),eq(schema,Company))")
+    assert q.q.connector == "OR"
+    leaves = {(x.family, x.key, str(x.value)) for x in q.q.iter_leaves()}
+    assert ("M", "schema", "Person") in leaves
+    assert ("M", "schema", "Company") in leaves
+
+    # rql overrides the flat filter tree, while limit / offset still apply
+    q = _build("rql=eq(schema,Payment)&limit=5&offset=10")
+    assert q.schemata_names == {"Payment"}
+    assert q.limit == 5 and q.offset == 10
+
+    # rql aggregations flow through
+    q = _build("rql=aggregate(year,sum(amountEur))")
+    assert q.aggregations == {Agg(func="sum", prop="amountEur", groups=("year",))}
+
+
 def test_api_query_invalid():
     with pytest.raises(HTTPException) as e:
         _build("filter:dataset=not_existent")

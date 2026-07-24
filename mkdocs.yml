@@ -9,6 +9,7 @@ nav:
   - search.md
   - api.md
   - aggregation.md
+  - javascript.md
   - versioning.md
   - Reference:
     - ftmq.cli: reference/cli.md

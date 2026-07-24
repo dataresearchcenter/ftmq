@@ -193,6 +193,25 @@ def test_api_search(api_client):
     assert res.status_code == 422
 
 
+def test_api_rql(api_client):
+    # nested OR across datasets, expressible only via rql
+    res = api_client.get(
+        "/entities?rql=or(eq(dataset,donations),eq(dataset,eu_authorities))"
+    )
+    assert res.status_code == 200
+    assert res.json()["total"] == 625
+
+    # an rql filter tree with flat pagination on top
+    res = api_client.get("/entities?rql=eq(schema,Payment)&limit=5")
+    data = res.json()
+    assert data["total"] == 290
+    assert data["items"] == 5
+
+    # an unknown dataset inside rql is still validated -> 422
+    res = api_client.get("/entities?rql=eq(dataset,not_existent)")
+    assert res.status_code == 422
+
+
 def test_api_autocomplete(api_client):
     res = api_client.get("/autocomplete?q=verband")
     assert res.status_code == 200

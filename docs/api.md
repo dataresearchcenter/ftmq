@@ -151,6 +151,13 @@ The api speaks the Aleph / OpenAleph filter grammar, the same [`Query.from_param
 /search?q=jane+doe&filter:dataset=my_dataset&filter:countries=de
 ```
 
+For nested boolean trees that the flat grammar cannot express (a cross-field `OR`, a negated group), pass a full [RQL](./query.md) string via `rql=`. It overrides the flat filter params, while `sort` / `limit` / `offset` still apply, and it also carries aggregations:
+
+```bash
+/entities?rql=and(eq(schema,Person),or(eq(countries,de),eq(countries,at)))
+/aggregate?rql=aggregate(year,sum(amountEur))
+```
+
 Retrieve flags shape the response: `nested` (inline adjacent entities), `featured`, `dehydrate`, `dehydrate_nested`, `stats`. A request with `api_key=<FTMQ_API_BUILD_API_KEY>` may exceed the public `limit` cap (useful for static site builders).
 
 ### Migrating from ftmq-api 3.x

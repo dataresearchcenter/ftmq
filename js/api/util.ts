@@ -1,44 +1,14 @@
-import type { IApiQuery, IPublicQuery } from "./types";
+export const DEFAULT_LIMIT = 10;
+export const PER_PAGE = [10, 25, 50, 100]; // page-size options for a UI
+export const MAX_LIMIT = Math.max(...PER_PAGE); // public upper cap (mirrors the api)
 
-const DEFAULT_LIMIT = 10;
-const PER_PAGE = [10, 25, 50, 100];
-const PUBLIC_PARAMS = [
-  "q",
-  "page",
-  "limit",
-  "order_by",
-  "schema",
-  "country",
-  "dataset",
-]; // allowed user facing url params
-
-export const cleanQuery = (
-  query: IApiQuery,
-  keys: string[] = [],
-): IApiQuery => {
-  const patch: IApiQuery = {
-    // ensure limit is within PER_PAGE
-    limit: query.limit
-      ? PER_PAGE.indexOf(query.limit) < 0 && !query.api_key
-        ? DEFAULT_LIMIT
-        : query.limit
-      : DEFAULT_LIMIT,
-    page: query.page || 1,
-  };
-  // filter out empty params and optional filter for specific keys
-  return Object.fromEntries(
-    Object.entries({ ...query, ...patch }).filter(
-      ([k, v]) =>
-        (keys.length ? keys.indexOf(k) > -1 : true) &&
-        !(
-          v === undefined ||
-          v === "" ||
-          v === null ||
-          (Array.isArray(v) && !v.length)
-        ),
-    ),
-  );
+// cap an unauthenticated limit to the public maximum; a smaller limit is kept
+// as-is (mirrors the api's `min(limit, default_limit)`)
+export const clampLimit = (
+  limit: number | undefined | null,
+  authenticated = false,
+): number => {
+  if (!limit) return DEFAULT_LIMIT;
+  if (authenticated) return limit;
+  return Math.min(limit, MAX_LIMIT);
 };
-
-export const getPublicQuery = (query: IApiQuery): IPublicQuery =>
-  cleanQuery(query, PUBLIC_PARAMS);

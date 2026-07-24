@@ -1,35 +1,31 @@
-import type { IEntityDatum, ICoverage } from "../model";
+import type { IEntityDatum } from "@opensanctions/followthemoney";
 
-export interface IPublicQuery {
-  // visible api params in the browser
-  readonly q?: string;
-  readonly page?: number;
-  readonly order_by?: string;
-  readonly schema?: string;
-  readonly country?: string;
-  readonly limit?: number;
-}
+import type { IDatasetStats } from "./model.js";
 
-export interface IApiQuery extends IPublicQuery {
-  api_key?: string;
+// --- request options -------------------------------------------------------
+
+/** Response-shaping flags (read by the api directly, not part of the query). */
+export interface IRetrieveParams {
   readonly nested?: boolean;
   readonly featured?: boolean;
   readonly dehydrate?: boolean;
   readonly dehydrate_nested?: boolean;
-  readonly reverse?: string;
-  readonly dataset?: string;
-  readonly order_by?: string;
-  readonly [key: string]: any; // actual filter props
+  readonly stats?: boolean;
 }
+
+// --- responses -------------------------------------------------------------
+
+// the api echoes back the canonical query serialization (`Query.toDict`)
+export type IQueryDict = Record<string, any>;
 
 export interface IEntitiesResult {
   readonly total: number;
   readonly items: number;
-  readonly query: IApiQuery;
+  readonly query: IQueryDict;
   readonly url: string;
   readonly next_url: string | null;
   readonly prev_url: string | null;
-  readonly coverage: ICoverage;
+  readonly stats: IDatasetStats | null;
   readonly entities: IEntityDatum[];
 }
 
@@ -50,22 +46,24 @@ type AggregationGrouper = {
 };
 
 type AggregationGroup = {
-  readonly min?: AggregationGrouper;
-  readonly max?: AggregationGrouper;
-  readonly sum?: AggregationGrouper;
-  readonly avg?: AggregationGrouper;
-  readonly count?: AggregationGrouper;
+  readonly groups?: {
+    readonly min?: AggregationGrouper;
+    readonly max?: AggregationGrouper;
+    readonly sum?: AggregationGrouper;
+    readonly avg?: AggregationGrouper;
+    readonly count?: AggregationGrouper;
+  };
 };
 
 type Aggregations = {
-  readonly [key: string]: Aggregation | AggregationGroup | undefined; // FIXME
+  readonly [key: string]: Aggregation | AggregationGroup | undefined;
 };
 
 export interface IAggregationResult {
   readonly total: number;
-  readonly query: IApiQuery;
+  readonly query: IQueryDict;
   readonly url: string;
-  readonly coverage: ICoverage;
+  readonly stats: IDatasetStats;
   readonly aggregations: Aggregations;
 }
 
