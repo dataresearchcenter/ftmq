@@ -24,6 +24,22 @@ theme:
   logo: https://cdn.investigativedata.org/style/logos/darc/svg/DARC-Logo-RGB-Horizontal-Neg.svg
   favicon: https://cdn.investigativedata.org/style/logos/darc/favicon.ico
   custom_dir: docs/overrides
+  palette:
+    - media: "(prefers-color-scheme)"
+      scheme: slate
+      toggle:
+        icon: lucide/sun
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: lucide/moon
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: lucide/sun
+        name: Switch to light mode
   features:
     - navigation.instant
     - navigation.tracking
@@ -32,16 +48,17 @@ theme:
     - toc.follow
     - content.code.copy
 extra_css:
-  - stylesheets/extra.css
+  - https://dataresearchcenter.github.io/zensical-theme-darc/stylesheets/darc-zensical.css
 extra:
+  logo_light: https://cdn.investigativedata.org/style/logos/darc/svg/DARC-Logo-RGB-Horizontal-Pos.svg
   social:
-    - icon: material/mail
+    - icon: lucide/mail
       link: mailto:hi@dataresearchcenter.org
-    - icon: material/web
+    - icon: lucide/globe
       link: https://dataresearchcenter.org
-    - icon: material/github
+    - icon: simple/github
       link: https://github.com/dataresearchcenter/ftmq
-    - icon: material/linkedin
+    - icon: fontawesome/brands/linkedin
       link: https://www.linkedin.com/company/dataresearchcenter/
 markdown_extensions:
   - pymdownx.highlight:
