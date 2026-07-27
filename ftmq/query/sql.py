@@ -253,7 +253,7 @@ class Sql:
             inner = inner.order_by(*order_by)
 
             return select(
-                self.table.join(inner, self.id_col == inner.c.canonical_id)
+                self.table.join(inner, self.id_col == inner.c[self.source.id_column])
             ).order_by(*order_by)
 
     @cached_property
