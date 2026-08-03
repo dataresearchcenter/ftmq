@@ -92,14 +92,16 @@ _COMMON_COLUMNS = {
     "last_seen": ColumnProperties(statistics_enabled="CHUNK"),
 }
 WRITER_SMALL = WriterProperties(
-    compression="SNAPPY",
+    compression="ZSTD",
+    compression_level=3,
     data_page_size_limit=2 * 1024 * 1024,
     dictionary_page_size_limit=1 * 1024 * 1024,
     max_row_group_size=1_000_000,
     column_properties={**_COMMON_COLUMNS, "value": _STATS_BLOOM},
 )
 WRITER_LARGE = WriterProperties(
-    compression="SNAPPY",
+    compression="ZSTD",
+    compression_level=3,
     data_page_size_limit=16 * 1024 * 1024,
     dictionary_page_size_limit=1 * 1024 * 1024,
     max_row_group_size=10_000,
