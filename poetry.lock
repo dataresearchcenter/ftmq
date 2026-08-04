@@ -1178,14 +1178,14 @@ pyflakes = ">=3.4.0,<3.5.0"
 
 [[package]]
 name = "followthemoney"
-version = "4.10.0"
+version = "4.10.1"
 description = "A data model for anti corruption data modeling and analysis."
 optional = false
-python-versions = ">=3.10"
+python-versions = ">=3.11"
 groups = ["main"]
 files = [
-    {file = "followthemoney-4.10.0-py3-none-any.whl", hash = "sha256:122945f44643d5d4207dc43b5d57c7b3004d77bf8e30173ee4da8250d4eb6d19"},
-    {file = "followthemoney-4.10.0.tar.gz", hash = "sha256:ea18e8650ea5f269e317e4f483456e1e87a8da5dbdc055b6bc14e95d2b127639"},
+    {file = "followthemoney-4.10.1-py3-none-any.whl", hash = "sha256:ba3ec4305c698d12000dc4c542ff852cb57a72c296e1f0e0df61160e417e212c"},
+    {file = "followthemoney-4.10.1.tar.gz", hash = "sha256:ff5a1a1dcbd9e7eecede8f9d6572d10865971085adb9ac962f3ec18a48d5637f"},
 ]
 
 [package.dependencies]
@@ -1204,11 +1204,11 @@ pyyaml = ">=5.0.0,<7.0.0"
 rdflib = ">=6.2.0,<7.7.0"
 requests = ">=2.21.0,<3.0.0"
 rich = ">=13.0.0,<16.0.0"
-rigour = ">=2.0.0,<3.0.0"
+rigour = ">=2.3.0,<3.0.0"
 sqlalchemy = {version = ">=2.0.0,<3.0.0", extras = ["mypy"]}
 
 [package.extras]
-dev = ["build", "bump2version", "coverage (>=4.1)", "flake8 (>=2.6.0)", "mypy", "pip (>=10.0.0)", "pytest", "pytest-cov", "recommonmark (>=0.4.0)", "responses (>=0.9.0)", "transifex-client", "twine", "types-openpyxl", "types-pyyaml", "types-requests", "types-setuptools", "wheel (>=0.29.0)"]
+dev = ["build", "bump2version", "coverage (>=4.1)", "mypy", "pip (>=10.0.0)", "pytest", "pytest-cov", "recommonmark (>=0.4.0)", "responses (>=0.9.0)", "ruff (>=0.16.0)", "transifex-client", "twine", "types-openpyxl", "types-pyyaml", "types-requests", "types-setuptools", "wheel (>=0.29.0)"]
 docs = ["mkdocs (>=1.4.0)", "mkdocs-gen-files", "mkdocs-macros-plugin", "mkdocs-material (>=9.0.0)", "mkdocstrings[python]"]
 
 [[package]]
@@ -5494,4 +5494,4 @@ sql = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.15"
-content-hash = "ce2e33c80091192b5346dc451e37b94ffca0fab251c322f96336a28d8892f14d"
+content-hash = "b5e86a21163a27ac7e682ede7776d8b6ec45ba2ba32b1c5c9676b5b5b8c3ca38"
