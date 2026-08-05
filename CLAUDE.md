@@ -96,7 +96,7 @@ This query IR and all four surfaces are mirrored in TypeScript in `js/query/`; a
 The rewrite from the legacy hand-made `.where(**kwargs)` DSL to the `M`/`P`/`G`/`C` grammar is complete (**no backward compatibility**, major-version break): the grammar + `Expr` tree, the in-memory evaluator, all four serialization surfaces, the `A` aggregation rewrite, the `Sql`/`SqlSource` adapter, and all consumers (CLI, SQL/Lake stores, docs, tests) are migrated; the legacy `filters.py` leaf layer is removed. The full test suite passes.
 
 Known gaps:
-- The SQL translation compiles only flat conjunctions: `Sql` reads the query's flat leaf collectors (OR within a field, AND across fields), so cross-field `OR` and negated groups evaluate in-memory only (see the warning in `docs/query.md`).
+- The SQL translation compiles arbitrary `& | ~` trees, matching the in-memory evaluator: a plain conjunction with at most one leaf per field uses the flat collectors (row predicates for meta / context columns, one entity-level clause per property / group field); any `OR`, negation or repeated field switches to `Sql._expr_clause`, which lifts every leaf to an entity-level `canonical_id IN (...)` predicate and composes them (so chained same-field `.where()` calls AND, as in memory - alternatives are spelled `__in`). View scoping is compiled by `Sql` itself (an entity-level dataset-membership conjunct, nomenklatura view semantics: scope selects entities, assembly stays store-wide). Remaining caveats are documented in the note in `docs/query.md`: SQLite `LIKE` collation, multi-meta flat conjunctions testing one row, and `between` raising `QueryError` in both evaluators.
 - `ftmq/query/` is `mypy --strict` clean except the moved `sql.py`; `make typecheck` (strict over the whole package) still fails on the legacy modules (CLI, stores, model, util).
 - The `smart_read_proxies` docstring in `ftmq/io.py` still shows the removed kwargs API.
 
@@ -123,7 +123,7 @@ get_store("lake+s3://bucket/path")
 
 ### SQL Integration (`ftmq/query/sql.py`)
 
-`Sql` translates a `Query` into SQLAlchemy clauses; `SqlSource` describes what it compiles against (table, id column, optional partition pruning) and replaces the old `query.table` mutation. Access via `query.sql` (default nomenklatura statement table) or `query.compile(source)`; the SQL and Lake stores own their `SqlSource` (`SQLStore.source`; the Lake store folds `bucket` partition pruning into every compiled query). Flat conjunctions only - see [refactor status](#query-language-refactor-status).
+`Sql` translates a `Query` into SQLAlchemy clauses; `SqlSource` describes what it compiles against (table, id column, optional partition pruning, optional row-level `base_filter`) and replaces the old `query.table` mutation. Access via `query.sql` (default nomenklatura statement table), `query.compile(source)`, or `Sql(query, source, scope=...)` for a dataset-scoped view (what store views do). The SQL and Lake stores own their `SqlSource` (`SQLStore.source`; the Lake store folds `bucket` partition pruning - positive flat schema conjuncts only - and its view filter into every compiled query). Arbitrary boolean trees compile - see [refactor status](#query-language-refactor-status).
 
 ### Search (`ftmq/search/`)
 

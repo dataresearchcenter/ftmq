@@ -10,7 +10,7 @@ from sqlalchemy import select
 
 from ftmq.enums import Fields
 from ftmq.model.stats import DatasetStats, compile_stats
-from ftmq.query import M, Query
+from ftmq.query import Query
 from ftmq.query.aggregations import AggregatorResult
 from ftmq.query.sql import Sql, SqlSource
 from ftmq.store.base import Store, View
@@ -30,26 +30,20 @@ class SQLQueryView(View, nk.SQLView):
     store: "SQLStore"
 
     def _sql(self, query: Query) -> Sql:
-        return Sql(query, self.store.source)
-
-    def ensure_scoped_query(self, query: Query) -> Query:
-        if not query.datasets:
-            return query.where(M(dataset__in=self.dataset_names))
-        if query.dataset_names - self.dataset_names:
-            raise ValueError("Query datasets outside view scope")
-        return query
+        # the view scope compiles to an entity-level membership conjunct, so
+        # it composes with any dataset filters in the query - including
+        # `~` / `|` trees. An out-of-scope dataset filter matches nothing.
+        return Sql(query, self.store.source, scope=self.dataset_names)
 
     def query(self, query: Query | None = None) -> StatementEntities:
         if query:
-            query = self.ensure_scoped_query(query)
             yield from self.store._iterate(self._sql(query).statements)
         else:
             view = self.store.view(self.scope)
             yield from view.entities()
 
     def stats(self, query: Query | None = None) -> DatasetStats:
-        query = self.ensure_scoped_query(query or Query())
-
+        query = query or Query()
         sql = self._sql(query)
 
         def ex(sub):
@@ -75,7 +69,6 @@ class SQLQueryView(View, nk.SQLView):
     def aggregations(self, query: Query) -> AggregatorResult | None:
         if not query.aggregations:
             return
-        query = self.ensure_scoped_query(query)
         sql = self._sql(query)
         res: AggregatorResult = defaultdict(dict)
 

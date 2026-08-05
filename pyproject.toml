@@ -79,6 +79,19 @@ httpx = "^0.28.1"
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
+[tool.pytest.ini_options]
+filterwarnings = [
+    # pyrql drives pyparsing through its deprecated camelCase api on every
+    # parse; ftmq installs a matching runtime filter at import (ftmq/query/rql.py),
+    # but pytest manages warning filters per test and would re-surface them
+    "ignore::DeprecationWarning:pyrql.*",
+    "ignore::DeprecationWarning:pyparsing.*",
+    # sqlalchemy constructs deprecated in *our* code are a build failure, so a
+    # removal in a future sqlalchemy release cannot land as a runtime break.
+    # Scoped to ftmq modules: a dependency's own deprecations are not ours.
+    "error::sqlalchemy.exc.SADeprecationWarning:ftmq.*",
+]
+
 [tool.pytest_env]
 NOMENKLATURA_STATEMENT_TABLE = "test_table"
 NOMENKLATURA_DB_URL = "sqlite:///:memory:"

@@ -181,12 +181,15 @@ def cli_q(
             sub = Query.from_rql(value).q
             if sub is not None:
                 q = q.where(sub)
-        for value in dataset or ():
-            q = q.where(M(dataset=value))
+        # repeated flags are alternatives (`-d a -d b` means a OR b), so they
+        # combine via `__in` - chained same-field `.where()` calls would AND
+        if dataset:
+            q = q.where(M(dataset__in=list(dataset)))
         # both legacy schema-expansion flags map to the `schemata` (is-a) field
         schema_isa = schema_include_descendants or schema_include_matchable
-        for value in schema or ():
-            q = q.where(M(schemata=value) if schema_isa else M(schema=value))
+        if schema:
+            values = list(schema)
+            q = q.where(M(schemata__in=values) if schema_isa else M(schema__in=values))
         # family-prefixed filter flags: -m meta, -p property, -g group, -c context
         for family, args in ((M, meta), (P, prop), (G, group), (C, context)):
             for arg in args or ():

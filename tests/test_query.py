@@ -125,6 +125,25 @@ def test_apply_null():
     assert not Query().where(P(deathDate__null=False)).apply(PERSON)
 
 
+def test_apply_notlike():
+    # substring-negating comparators (used to silently match nothing)
+    assert Query().where(P(name__notlike="XYZ")).apply(PERSON)
+    assert not Query().where(P(name__notlike="Jane")).apply(PERSON)
+    assert Query().where(P(name__notilike="xyz")).apply(PERSON)
+    assert not Query().where(P(name__notilike="jane")).apply(PERSON)
+
+
+def test_apply_between_not_implemented():
+    # `between` is grammar-valid (it serializes) but cannot evaluate yet: the
+    # leaf layer casts values to a single scalar. Fail loudly on both the
+    # in-memory and the SQL side instead of silently diverging.
+    q = Query().where(P(name__between="a"))
+    with pytest.raises(QueryError, match="between"):
+        q.apply(PERSON)
+    with pytest.raises(QueryError, match="between"):
+        str(q.sql.statements)
+
+
 def test_serialization_dict_roundtrip():
     q = (
         Query()

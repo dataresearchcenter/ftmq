@@ -73,7 +73,15 @@ class Lookup:
             return self.value in value
         if c == "ilike":
             return self.value.lower() in value.lower()
-        return False
+        if c == "notlike":
+            return self.value not in value
+        if c == "notilike":
+            return self.value.lower() not in value.lower()
+        # `between` is accepted by the grammar (it serializes) but the leaf
+        # layer casts values to a single scalar, so it cannot evaluate yet -
+        # fail loudly instead of silently matching nothing (the SQL layer
+        # raises the same)
+        raise QueryError(f"Comparator not implemented: `{c}`")
 
 
 class BaseFilter:

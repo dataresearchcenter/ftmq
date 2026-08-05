@@ -9,20 +9,21 @@ def _compare_str(s1, s2) -> bool:
 
 
 def test_sql():
-    q = (
-        Query()
-        .where(M(dataset="test"))
-        .where(M(dataset="other"), M(schema="Event"))
-        .where(P(date__gte=2023))
-    )
-    whereclause = """WHERE (test_table.dataset = :dataset_1 OR test_table.dataset = :dataset_2)
+    q = Query().where(M(dataset__in=["other", "test"]), M(schema="Event"))
+    q = q.where(P(date__gte=2023))
+    # the property filter lifts to a `canonical_id` subquery so it ANDs with
+    # the other fields instead of competing for the same statement row
+    whereclause = """WHERE test_table.dataset IN (__[POSTCOMPILE_dataset_1])
     AND test_table.schema = :schema_1
-    AND test_table.prop = :prop_1
-    AND test_table.value >= :value_1"""
+    AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
+        FROM test_table WHERE test_table.prop = :prop_1 AND test_table.value >= :value_1)"""
     fields = """test_table.id, test_table.entity_id, test_table.canonical_id, test_table.prop,
     test_table.prop_type, test_table.schema, test_table.value, test_table.original_value,
     test_table.dataset, test_table.origin, test_table.lang, test_table.external,
     test_table.first_seen, test_table.last_seen"""
+    # meta facets group over the rows of the matching entities
+    idsclause = f"""WHERE test_table.canonical_id IN
+        (SELECT DISTINCT test_table.canonical_id FROM test_table {whereclause})"""
     assert isinstance(q.sql.canonical_ids, Select)
     assert _compare_str(
         q.sql.canonical_ids,
@@ -56,7 +57,7 @@ def test_sql():
         q.sql.datasets,
         f"""
         SELECT test_table.dataset, count(DISTINCT test_table.canonical_id) AS count
-        FROM test_table {whereclause}
+        FROM test_table {idsclause}
         GROUP BY test_table.dataset
         ORDER BY count DESC
         """,
@@ -67,7 +68,7 @@ def test_sql():
         q.sql.schemata,
         f"""
         SELECT test_table.schema, count(DISTINCT test_table.canonical_id) AS count
-        FROM test_table {whereclause}
+        FROM test_table {idsclause}
         GROUP BY test_table.schema
         ORDER BY count DESC
         """,
@@ -78,7 +79,7 @@ def test_sql():
         q.sql.things,
         f"""
         SELECT test_table.schema, count(DISTINCT test_table.canonical_id) AS count
-        FROM test_table {whereclause}
+        FROM test_table {idsclause}
         AND test_table.schema IN (__[POSTCOMPILE_schema_2])
         GROUP BY test_table.schema
         ORDER BY count DESC
@@ -90,7 +91,7 @@ def test_sql():
         q.sql.intervals,
         f"""
         SELECT test_table.schema, count(DISTINCT test_table.canonical_id) AS count
-        FROM test_table {whereclause}
+        FROM test_table {idsclause}
         AND test_table.schema IN (__[POSTCOMPILE_schema_2])
         GROUP BY test_table.schema
         ORDER BY count DESC
@@ -175,13 +176,8 @@ def test_sql():
     )
 
     # order by creates a join
-    q = (
-        Query()
-        .where(M(dataset="test"))
-        .where(M(dataset="other"), M(schema="Event"))
-        .where(P(date__gte=2023))
-        .order_by("name", ascending=False)
-    )
+    q = Query().where(M(dataset__in=["other", "test"]), M(schema="Event"))
+    q = q.where(P(date__gte=2023)).order_by("name", ascending=False)
     assert isinstance(q.sql.statements, Select)
     assert _compare_str(
         q.sql.statements,
@@ -190,8 +186,9 @@ def test_sql():
         FROM test_table JOIN (SELECT test_table.canonical_id AS canonical_id, max(test_table.value) AS sortable_value
             FROM test_table
             WHERE test_table.prop = :prop_1 AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
-                FROM test_table WHERE (test_table.dataset = :dataset_1 OR test_table.dataset = :dataset_2)
-                AND test_table.schema = :schema_1 AND test_table.prop = :prop_2 AND test_table.value >= :value_1)
+                FROM test_table WHERE test_table.dataset IN (__[POSTCOMPILE_dataset_1])
+                AND test_table.schema = :schema_1 AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
+                    FROM test_table WHERE test_table.prop = :prop_2 AND test_table.value >= :value_1))
             GROUP BY test_table.canonical_id
             ORDER BY sortable_value DESC, test_table.canonical_id)
         AS anon_1 ON test_table.canonical_id = anon_1.canonical_id
@@ -219,13 +216,8 @@ def test_sql():
     assert str(q[1:10].sql.canonical_ids).endswith("LIMIT :param_1 OFFSET :param_2")
 
     # ordered slice
-    q = (
-        Query()
-        .where(M(dataset="test"))
-        .where(M(dataset="other"), M(schema="Event"))
-        .where(P(date__gte=2023))
-        .order_by("name")
-    )
+    q = Query().where(M(dataset__in=["other", "test"]), M(schema="Event"))
+    q = q.where(P(date__gte=2023)).order_by("name")
     assert not str(q[:10].sql.canonical_ids).endswith("LIMIT :param_1")
     assert not str(q[1:10].sql.canonical_ids).endswith("LIMIT :param_1 OFFSET :param_2")
     q = q[1:10]
@@ -236,8 +228,9 @@ def test_sql():
         FROM test_table JOIN (SELECT test_table.canonical_id AS canonical_id, min(test_table.value) AS sortable_value
             FROM test_table
             WHERE test_table.prop = :prop_1 AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
-                FROM test_table WHERE (test_table.dataset = :dataset_1 OR test_table.dataset = :dataset_2)
-                AND test_table.schema = :schema_1 AND test_table.prop = :prop_2 AND test_table.value >= :value_1)
+                FROM test_table WHERE test_table.dataset IN (__[POSTCOMPILE_dataset_1])
+                AND test_table.schema = :schema_1 AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
+                    FROM test_table WHERE test_table.prop = :prop_2 AND test_table.value >= :value_1))
             GROUP BY test_table.canonical_id
             ORDER BY sortable_value, test_table.canonical_id
             LIMIT :param_1 OFFSET :param_2)
@@ -327,19 +320,22 @@ def test_sql():
         SELECT {fields} FROM test_table
         WHERE test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
         FROM test_table
-        WHERE test_table.schema = 'Event' AND test_table.prop = 'date' AND test_table.value = '2023'
+        WHERE test_table.schema = 'Event'
+        AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
+            FROM test_table WHERE test_table.prop = 'date' AND test_table.value = '2023')
         AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
             FROM test_table WHERE test_table.prop_type = 'entity' AND test_table.value = 'my_id'))
         ORDER BY test_table.canonical_id
         """,
     )
 
-    # simplified if no properties or reversed
+    # simplified if no properties or reversed (an unfiltered query compiles
+    # `WHERE true` - never a bare zero-argument conjunction)
     q = Query()
     assert _compare_str(
         q.sql.statements,
         f"""
-        SELECT {fields} FROM test_table ORDER BY test_table.canonical_id
+        SELECT {fields} FROM test_table WHERE true ORDER BY test_table.canonical_id
         """,
     )
     q = Query().where(M(dataset="foo"), M(schema="Person"))
@@ -361,27 +357,208 @@ def test_sql_ids():
     assert "WHERE test_table.entity_id = :entity_id_1" in str(q.sql.statements)
     q = Query().where(M(canonical_id="eu-authorities-chafea"))
     assert "WHERE test_table.canonical_id = :canonical_id_1" in str(q.sql.statements)
-    q = Query().where(
-        M(canonical_id="eu-authorities-chafea", canonical_id__startswith="e")
-    )
-    # FIXME ordering of filters
-    # assert (
-    #     "WHERE test_table.canonical_id = :canonical_id_1 OR (test_table.canonical_id LIKE :canonical_id_2 || '%')"
-    #     in str(q.sql.statements)
-    # )
 
-    # q = q.where(dataset="foo", name="jane")
-    # assert _compare_str(
-    #     """
-    #     SELECT DISTINCT test_table.canonical_id
-    #     FROM test_table
-    #     WHERE (test_table.canonical_id = :canonical_id_1 OR (test_table.canonical_id LIKE :canonical_id_2 || '%'))
-    #         AND test_table.dataset = :dataset_1 AND test_table.prop = :prop_1 AND test_table.value = :value_1
-    #     """,
-    #     str(q.sql.canonical_ids),
-    # )
+    # the different id fields AND together (like any two different fields);
+    # they used to be OR-ed into one clause
+    q = Query().where(M(entity_id="a", canonical_id="b"))
+    assert (
+        "WHERE test_table.canonical_id = :canonical_id_1"
+        " AND test_table.entity_id = :entity_id_1"
+        in " ".join(str(q.sql.canonical_ids).split())
+    )
+
+
+def test_sql_comparators():
+    def lit(q: Query) -> str:
+        compiled = q.sql.canonical_ids.compile(compile_kwargs={"literal_binds": True})
+        return " ".join(str(compiled).split())
+
+    # notlike / notilike are real comparators (they used to fall through to
+    # arbitrary column methods and match nearly everything)
+    assert "NOT LIKE '%' || 'acme' || '%' ESCAPE '/'" in lit(
+        Query().where(P(name__notlike="acme"))
+    )
+    assert "NOT LIKE '%' || lower('acme') || '%' ESCAPE '/'" in lit(
+        Query().where(P(name__notilike="acme"))
+    )
+
+    # `%` / `_` in values are escaped so they match literally, like the
+    # in-memory substring test
+    assert "LIKE '%' || '100/%' || '%' ESCAPE '/'" in lit(
+        Query().where(P(name__like="100%"))
+    )
+    assert "LIKE 'eu/_' || '%' ESCAPE '/'" in lit(
+        Query().where(M(entity_id__startswith="eu_"))
+    )
+
+    # bool typed columns compare typed values - the leaf layer stringifies,
+    # which broke boolean columns on every backend differently
+    assert "external = false" in lit(Query().where(C(external=False)))
+    assert "external = true" in lit(Query().where(C(external=True)))
+
+
+def test_sql_context_multi_key():
+    # different context columns AND at the entity level: `origin` and `lang`
+    # may be satisfied by two different statement rows
+    q = Query().where(C(origin="x"), C(lang="en"))
+    compiled = " ".join(str(q.sql.canonical_ids).split())
+    assert compiled.count("SELECT DISTINCT test_table.canonical_id") == 3
+    assert "test_table.lang = :lang_1" in compiled
+    assert "test_table.origin = :origin_1" in compiled
 
 
 def test_sql_origins():
     q = Query().where(C(origin="test"))
     assert "WHERE test_table.origin = :origin_1" in str(q.sql.statements)
+
+
+def test_sql_boolean_tree():
+    def where(q: Query) -> str:
+        return str(q.sql.canonical_ids.compile(compile_kwargs={"literal_binds": True}))
+
+    ids = "SELECT DISTINCT test_table.canonical_id FROM test_table"
+
+    # different props AND together - one row cannot hold two props, so each
+    # field lifts to its own entity-level sub-select
+    assert _compare_str(
+        where(Query().where(P(name="jane"), P(country="de"))),
+        f"""
+        {ids} WHERE test_table.canonical_id IN
+            ({ids} WHERE test_table.prop = 'country' AND test_table.value = 'de')
+        AND test_table.canonical_id IN
+            ({ids} WHERE test_table.prop = 'name' AND test_table.value = 'jane')
+        """,
+    )
+
+    # an OR node composes the same entity-level predicates
+    assert _compare_str(
+        where(Query().where(P(name="jane") | G(countries="de"))),
+        f"""
+        {ids} WHERE test_table.canonical_id IN
+            ({ids} WHERE test_table.prop = 'name' AND test_table.value = 'jane')
+        OR test_table.canonical_id IN
+            ({ids} WHERE test_table.prop_type = 'country' AND test_table.value = 'de')
+        """,
+    )
+
+    # a negation excludes the matching entities (it used to be dropped, which
+    # silently returned exactly the entities the query asked to exclude)
+    assert _compare_str(
+        where(Query().where(~P(name="jane"))),
+        f"""
+        {ids} WHERE (test_table.canonical_id NOT IN
+            ({ids} WHERE test_table.prop = 'name' AND test_table.value = 'jane'))
+        """,
+    )
+
+    # nesting: a flat leaf ANDs with a nested OR group
+    assert _compare_str(
+        where(Query().where(M(schema="Person") & (P(name="jane") | P(name="joe")))),
+        f"""
+        {ids} WHERE test_table.canonical_id IN ({ids} WHERE test_table.schema = 'Person')
+        AND (test_table.canonical_id IN
+            ({ids} WHERE test_table.prop = 'name' AND test_table.value = 'jane')
+        OR test_table.canonical_id IN
+            ({ids} WHERE test_table.prop = 'name' AND test_table.value = 'joe'))
+        """,
+    )
+
+    # `M(id=...)` targets the source's entity-identity column, not the
+    # statement's own `id` column
+    assert "WHERE test_table.canonical_id = :canonical_id_1" in str(
+        Query().where(M(id="foo")).sql.statements
+    )
+
+    # a negated empty node matches nothing (it used to compile to TRUE and
+    # return the entire store)
+    assert _compare_str(where(Query().where(~M())), f"{ids} WHERE false")
+
+    # chained same-field filters AND, like the in-memory evaluator (the flat
+    # collectors used to OR them; alternatives are spelled `__in`)
+    assert _compare_str(
+        where(Query().where(M(dataset="d1")).where(M(dataset="d2"))),
+        f"""
+        {ids} WHERE test_table.canonical_id IN ({ids} WHERE test_table.dataset = 'd1')
+        AND test_table.canonical_id IN ({ids} WHERE test_table.dataset = 'd2')
+        """,
+    )
+
+    # `schema__not` / `schemata__not` compile as entity-level anti-joins:
+    # in-memory they test the entity's single resolved schema, and a row
+    # predicate would match any merged entity with a row outside the set
+    assert _compare_str(
+        where(Query().where(M(schema__not="Person"))),
+        f"""
+        {ids} WHERE (test_table.canonical_id NOT IN
+            ({ids} WHERE test_table.schema IN ('Person')))
+        """,
+    )
+    assert "NOT IN" in where(Query().where(M(schemata__not="Organization")))
+
+
+def test_sql_null():
+    # `null` is a presence test, not a value comparison: it must never end up
+    # as `value IS true/false` (silently empty on sqlite, a cast error on duckdb)
+    def where(q: Query) -> str:
+        return str(q.sql.canonical_ids.compile(compile_kwargs={"literal_binds": True}))
+
+    # a prop is present if the entity has any row for it ...
+    assert _compare_str(
+        where(Query().where(P(name__null=False))),
+        """
+        SELECT DISTINCT test_table.canonical_id FROM test_table
+        WHERE test_table.canonical_id IN
+            (SELECT DISTINCT test_table.canonical_id FROM test_table WHERE test_table.prop = 'name')
+        """,
+    )
+    # ... and absent only if it has none, which lifts to an anti-join
+    assert _compare_str(
+        where(Query().where(P(name__null=True))),
+        """
+        SELECT DISTINCT test_table.canonical_id FROM test_table
+        WHERE (test_table.canonical_id NOT IN
+            (SELECT DISTINCT test_table.canonical_id FROM test_table WHERE test_table.prop = 'name'))
+        """,
+    )
+
+    # groups test the same way on the `prop_type` column
+    assert _compare_str(
+        where(Query().where(G(countries__null=False))),
+        """
+        SELECT DISTINCT test_table.canonical_id FROM test_table
+        WHERE test_table.canonical_id IN
+            (SELECT DISTINCT test_table.canonical_id FROM test_table WHERE test_table.prop_type = 'country')
+        """,
+    )
+    assert _compare_str(
+        where(Query().where(G(countries__null=True))),
+        """
+        SELECT DISTINCT test_table.canonical_id FROM test_table
+        WHERE (test_table.canonical_id NOT IN
+            (SELECT DISTINCT test_table.canonical_id FROM test_table WHERE test_table.prop_type = 'country'))
+        """,
+    )
+
+    # a context column is a real column, so presence is a NULL check on it
+    assert _compare_str(
+        where(Query().where(C(origin__null=False))),
+        "SELECT DISTINCT test_table.canonical_id FROM test_table WHERE test_table.origin IS NOT NULL",
+    )
+    assert _compare_str(
+        where(Query().where(C(origin__null=True))),
+        """
+        SELECT DISTINCT test_table.canonical_id FROM test_table
+        WHERE (test_table.canonical_id NOT IN
+            (SELECT DISTINCT test_table.canonical_id FROM test_table WHERE test_table.origin IS NOT NULL))
+        """,
+    )
+
+    # combined with other filters
+    assert _compare_str(
+        where(Query().where(M(schema="Person"), P(name__null=False))),
+        """
+        SELECT DISTINCT test_table.canonical_id FROM test_table
+        WHERE test_table.schema = 'Person' AND test_table.canonical_id IN
+            (SELECT DISTINCT test_table.canonical_id FROM test_table WHERE test_table.prop = 'name')
+        """,
+    )

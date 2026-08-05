@@ -329,7 +329,6 @@ class Row:
 class LakeQueryView(SQLQueryView):
     def query(self, query: Query | None = None) -> StatementEntities:
         if query:
-            query = self.ensure_scoped_query(query)
             yield from self.store._iterate(self._sql(query).statements)
         else:
             yield from super().query(query)
@@ -339,9 +338,12 @@ class LakeStore(SQLStore):
     @property
     def source(self) -> SqlSource:
         """The lake statement view, with schema-filter -> `bucket` partition
-        pruning folded into every compiled query."""
+        pruning and the view filter folded into every compiled query."""
         return SqlSource(
-            self.table, prune={"schema": get_schema_bucket}, prune_column="bucket"
+            self.table,
+            prune={"schema": get_schema_bucket},
+            prune_column="bucket",
+            base_filter=self._view_filter,
         )
 
     def __init__(self, *args, **kwargs) -> None:

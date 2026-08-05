@@ -8,7 +8,7 @@ from ftmq.store.fragments import get_fragments
 from ftmq.store.lake import LakeStore
 from ftmq.store.level import LevelDBStore
 from ftmq.store.sql import SQLStore
-from ftmq.util import get_scope_dataset, make_dataset
+from ftmq.util import get_scope_dataset, make_dataset, make_entity
 
 
 def _run_store_test_implicit(cls: type[Store], proxies, **kwargs):
@@ -261,6 +261,76 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
     res = [p for p in view.query(q)]
     assert len(res) == 151
 
+    # `null` presence filters must agree with the in-memory evaluator on every
+    # backend (they used to compile to `value IS true/false`: silently empty on
+    # sqlite, a cast error on duckdb)
+    q = Query().where(P(name__null=False))
+    assert len([p for p in view.query(q)]) == 246
+    q = Query().where(P(name__null=True))
+    assert len([p for p in view.query(q)]) == 625 - 246
+    q = Query().where(P(deathDate__null=True))
+    assert len([p for p in view.query(q)]) == 625
+    q = Query().where(G(countries__null=False))
+    assert len([p for p in view.query(q)]) == 321
+    q = Query().where(G(countries__null=True))
+    assert len([p for p in view.query(q)]) == 625 - 321
+    q = Query().where(M(schema="Payment"), P(amountEur__null=False))
+    res = [p for p in view.query(q)]
+    assert len(res) == 290
+    assert all(r.get("amountEur") for r in res)
+
+    # boolean composition must agree with the in-memory evaluator on every
+    # backend: the SQL translation used to OR all property filters into one row
+    # predicate (so an AND over two props matched either) and to drop `~`
+    q = Query().where(P(name__ilike="agency"))
+    assert len([p for p in view.query(q)]) == 23
+    q = Query().where(P(name__ilike="agency"), P(jurisdiction="eu"))
+    assert len([p for p in view.query(q)]) == 23
+    q = Query().where(P(name__ilike="agency"), P(country="eu"))  # no country prop
+    assert len([p for p in view.query(q)]) == 0
+    q = Query().where(P(name__ilike="bank") | P(name__ilike="agency"))
+    assert len([p for p in view.query(q)]) == 30
+    q = Query().where(~P(name__ilike="agency"))
+    assert len([p for p in view.query(q)]) == 625 - 23
+    q = Query().where(
+        M(schema="Person") & (P(name__ilike="herren") | G(countries="de"))
+    )
+    assert len([p for p in view.query(q)]) == 22
+    q = Query().where(G(countries="de"), G(names__ilike="herren"))
+    assert len([p for p in view.query(q)]) == 1
+
+    # `M(id=...)` addresses the entity, not the statement's own id column
+    q = Query().where(M(id="eu-authorities-chafea"))
+    assert len([p for p in view.query(q)]) == 1
+
+    # negated / OR-ed schema filters - on the lake backend these must also
+    # disable `bucket` partition pruning, which is only sound for positive
+    # schema conjuncts
+    n_person = len([p for p in view.query(Query().where(M(schema="Person")))])
+    assert n_person > 0
+    q = Query().where(~M(schema="Person"))
+    assert len([p for p in view.query(q)]) == 625 - n_person
+    q = Query().where(M(schema="Person") | M(schema="PublicBody"))
+    assert len([p for p in view.query(q)]) == n_person + 151
+
+    # an empty negated node matches nothing (it used to compile to TRUE)
+    q = Query().where(~M())
+    assert len([p for p in view.query(q)]) == 0
+
+    # `notlike` is a real comparator, not a silent fall-through
+    q = Query().where(P(name__notlike="xyzzy"))
+    assert len([p for p in view.query(q)]) == 246
+
+    # offset-only and empty slices must not be dropped
+    q = Query().where(M(dataset="eu_authorities"))
+    assert len([p for p in view.query(q[10:])]) == 141
+    assert len([p for p in view.query(q[0:0])]) == 0
+
+    # chained same-field filters AND (like the in-memory evaluator); spell
+    # alternatives as `__in`
+    q = Query().where(M(dataset="eu_authorities")).where(M(dataset="donations"))
+    assert len([p for p in view.query(q)]) == 0
+
     # pop
     # FIXME
     if test_pop:
@@ -275,6 +345,93 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
     assert len(res) == 0
 
     return True
+
+
+def test_store_scoped_views(tmp_path):
+    # a canonical entity spanning two datasets: the scope selects which
+    # *entities* a view surfaces (those with a statement in a scoped dataset),
+    # while filters and assembly see the full canonical entity - this is the
+    # nomenklatura in-memory view behaviour, and the SQL/Lake compilation must
+    # match it, including for `~` / `|` trees and anti-joins
+    entities = [
+        # e1 exists in ds_a (birthDate) and ds_b (name)
+        make_entity(
+            {"id": "e1", "schema": "Person", "properties": {"birthDate": ["1980"]}},
+            StatementEntity,
+            "ds_a",
+        ),
+        make_entity(
+            {"id": "e1", "schema": "Person", "properties": {"name": ["Jane"]}},
+            StatementEntity,
+            "ds_b",
+        ),
+        make_entity(
+            {"id": "e2", "schema": "Person", "properties": {"name": ["Alice"]}},
+            StatementEntity,
+            "ds_a",
+        ),
+        make_entity(
+            {"id": "e3", "schema": "Person", "properties": {"name": ["Bob"]}},
+            StatementEntity,
+            "ds_b",
+        ),
+        make_entity(
+            {"id": "e4", "schema": "Company", "properties": {"name": ["Acme"]}},
+            StatementEntity,
+            "ds_c",
+        ),
+    ]
+
+    from followthemoney.dataset.dataset import Dataset as FtmDataset
+
+    def scope(name, *names):
+        # a uniquely named scope dataset - `get_scope_dataset` names every
+        # scope "default", and followthemoney interns datasets by name, which
+        # would clobber the "default" scope other tests rely on
+        ds = FtmDataset({"name": name, "datasets": list(names)})
+        ds.children = {make_dataset(n) for n in names}
+        return ds
+
+    def build(cls, **kwargs):
+        store = cls(
+            dataset=scope("scope_abc", "ds_a", "ds_b", "ds_c"),
+            linker=get_resolver(),
+            **kwargs,
+        )
+        with store.writer() as bulk:
+            for e in entities:
+                bulk.add_entity(e)
+        return store
+
+    from nomenklatura.db import get_metadata
+
+    stores = [build(MemoryStore)]
+    get_metadata.cache_clear()
+    stores.append(build(SQLStore, uri=f"sqlite:///{tmp_path}/scope.db"))
+    stores.append(build(LakeStore, uri=tmp_path / "scope-lake"))
+
+    def ids(view, q):
+        return {e.id for e in view.query(q)}
+
+    for store in stores:
+        view_a = store.view(make_dataset("ds_a"))
+        view_ab = store.view(scope("scope_ab", "ds_a", "ds_b"))
+
+        # e1 is in scope via its ds_a fragment; its name (from ds_b) is
+        # visible because the canonical entity assembles across datasets
+        assert ids(view_a, Query().where(P(name="Jane"))) == {"e1"}
+        assert ids(view_a, Query().where(P(name__null=True))) == set()
+        res = [e for e in view_a.query(Query().where(P(birthDate__null=False)))]
+        assert [e.id for e in res] == ["e1"]
+        assert res[0].get("name") == ["Jane"]
+        # out-of-scope entities stay invisible, even when they match
+        assert ids(view_a, Query().where(P(name="Bob"))) == set()
+        assert ids(view_a, Query().where(P(name="Acme"))) == set()
+        # negation composes with the scope: entities without a ds_a fragment
+        assert ids(view_ab, Query().where(~M(dataset="ds_a"))) == {"e3"}
+        # an out-of-scope dataset filter matches nothing (no error)
+        assert ids(view_ab, Query().where(M(dataset="ds_c"))) == set()
+        assert len([e for e in view_a.query(Query())]) == 2
 
 
 def test_store_memory(proxies):

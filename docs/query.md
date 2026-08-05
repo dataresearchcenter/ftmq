@@ -94,7 +94,7 @@ Any lookup can carry a comparator with the `__<comparator>` suffix (default is e
 - `eq` (default) / `not` - (not) equals
 - `gt` / `gte` / `lt` / `lte` - greater / lower (or equal)
 - `in` / `not_in` - value (not) in a list
-- `like` / `ilike` - SQLish `LIKE` / case-insensitive `ILIKE` (use `%` placeholders)
+- `like` / `ilike` - (case-insensitive) substring match; `notlike` / `notilike` negate it. `%` and `_` in the value match literally
 - `startswith` / `endswith`
 - `null` - test for presence: `P(deathDate__null=True)` matches entities *without* a `deathDate`
 
@@ -157,8 +157,10 @@ for proxy in view.query(q):
     ...
 ```
 
-!!! warning "SQL / Lake stores: flat queries only (for now)"
-    In-memory stores (memory, level, redis, file streams) evaluate arbitrary `& | ~` trees. The SQL / Lake translation ([`query.sql`][ftmq.Query.sql]) currently supports only flat conjunctions (`and` of conditions); cross-field `OR` and negated groups are in-memory only until the SQL layer is migrated.
+!!! note "SQL / Lake stores: how the boolean tree compiles"
+    The SQL / Lake translation ([`query.sql`][ftmq.Query.sql]) compiles arbitrary `& | ~` trees and follows the in-memory evaluator. A plain conjunction of distinct fields becomes flat `WHERE` predicates; property and group conditions, and any tree involving `OR`, negation or repeated fields, lift each condition to an entity-level `canonical_id IN (...)` sub-select so the tree composes - a single statement row cannot answer "this entity has no `deathDate`" or "it matches *either* of two different properties". Chained same-field filters AND (as in memory); spell alternatives as `P(name__in=[...])` or `P(name="a") | P(name="b")`.
+
+    Remaining caveats: `like` on SQLite is case-insensitive for ASCII (SQLite's `LIKE` collation), unlike the in-memory and DuckDB substring test. A flat conjunction of several *meta* fields (`M(dataset=...), M(schema=...)`) tests one statement row, so a canonical entity merged across datasets can match in memory but not in SQL. `between` is part of the grammar (it serializes) but does not evaluate yet and raises [`QueryError`][ftmq.QueryError] on both the in-memory and the SQL side.
 
 ## Serialization
 

@@ -17,16 +17,29 @@ treated as an FtM property.
 
 from __future__ import annotations
 
+import warnings
 from collections import defaultdict
 from typing import Any, Iterable
 
-import pyrql  # type: ignore[import-untyped]
+with warnings.catch_warnings():
+    # pyrql builds its grammar at import time with pyparsing's camelCase api,
+    # which is deprecated - not actionable for consumers, so don't leak it
+    warnings.simplefilter("ignore", DeprecationWarning)
+    import pyrql  # type: ignore[import-untyped]
 
-from ftmq.query.aggregations import Agg, make_agg
-from ftmq.query.aleph import _FAMILIES, _aleph_field, _resolve_field
-from ftmq.query.exceptions import QueryError
-from ftmq.query.leaves import Leaf
-from ftmq.query.nodes import AND, OR, Expr, combine
+# pyrql also calls the deprecated camelCase api on every parse/unparse. A
+# per-call `catch_warnings()` block mutates process-global state and is not
+# thread-safe (`Query.from_rql` runs per-request in the API), so install one
+# targeted module filter instead.
+warnings.filterwarnings(
+    "ignore", category=DeprecationWarning, module=r"pyrql\.|pyparsing\."
+)
+
+from ftmq.query.aggregations import Agg, make_agg  # noqa: E402
+from ftmq.query.aleph import _FAMILIES, _aleph_field, _resolve_field  # noqa: E402
+from ftmq.query.exceptions import QueryError  # noqa: E402
+from ftmq.query.leaves import Leaf  # noqa: E402
+from ftmq.query.nodes import AND, OR, Expr, combine  # noqa: E402
 
 # RQL comparison operator -> ftmq comparator
 RQL_COMPARATORS = {
