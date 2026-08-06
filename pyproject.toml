@@ -16,7 +16,7 @@ classifiers = [
 ]
 requires-python = ">=3.11,<3.15"
 dependencies = [
-    "anystore @ git+https://github.com/dataresearchcenter/anystore.git",
+    "anystore (>=1.2.6,<2.0.0)",
     "rigour (>=2.2.3,<3.0.0)",
     "followthemoney (>=4.10.0,<5.0.0)",
     "nomenklatura (>=4.13.0,<5.0.0)",
