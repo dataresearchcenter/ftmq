@@ -693,6 +693,54 @@ def test_store_numeric_aggregation_agrees_with_memory(tmp_path):
         assert res["count"]["id"] == len(entities) == store.default_view().count(q)
 
 
+def test_store_numeric_aggregation_skips_non_numeric(tmp_path):
+    # a value that isn't a number at all (an unmigrated store, or one written
+    # with `cast_types=False`) must not fail the aggregation: the sql backends
+    # read it as NULL, so it drops out the way it does in memory, where
+    # `registry.number.to_number` returns None
+    entities = [
+        make_entity(
+            {
+                "id": f"pay-{i}",
+                "schema": "Payment",
+                "properties": {"amountEur": [raw]},
+            },
+            StatementEntity,
+            "numbers",
+        )
+        for i, raw in enumerate(["1000.50", "n/a", "2000", "unknown"])
+    ]
+    scope = get_scope_dataset("numbers")
+    q = (
+        Query()
+        .where(M(schema="Payment"))
+        .aggregate(A(sum=P("amountEur"), min=P("amountEur"), max=P("amountEur")))
+    )
+    expected = {"sum": 3000.5, "min": 1000.5, "max": 2000.0}
+    stores: dict[str, Store] = {
+        "memory": MemoryStore(dataset=scope, linker=get_resolver(), cast_types=False),
+        "sqlite": SQLStore(
+            dataset=scope,
+            linker=get_resolver(),
+            uri=f"sqlite:///{tmp_path}/nan.db",
+            cast_types=False,
+        ),
+        "lake": LakeStore(
+            dataset=scope,
+            linker=get_resolver(),
+            uri=tmp_path / "lake",
+            cast_types=False,
+        ),
+    }
+    for name, store in stores.items():
+        with store.writer() as bulk:
+            for proxy in entities:
+                bulk.add_entity(proxy)
+        res = store.default_view().aggregations(q)
+        for func, value in expected.items():
+            assert res[func]["properties.amountEur"] == value, (name, func)
+
+
 def test_store_default_dataset_name_resolves(tmp_path):
     # regression: an implicit scope over a dataset literally named "default"
     # collapsed to an empty `leaf_names`, so `get_entity` filtered on

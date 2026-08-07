@@ -22,6 +22,8 @@ from sqlalchemy import (
     true,
     union_all,
 )
+from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.sql.functions import FunctionElement
 
 from ftmq.query.aggregations import Agg
 from ftmq.query.exceptions import QueryError
@@ -71,13 +73,67 @@ class Lookup:
         return [] if self.where is None else [self.where]
 
 
+# sqlite numeric: contains a digit, and nothing a number can't contain
+SQLITE_NUMERIC_GLOB = ("*[0-9]*", "*[^0-9.eE+-]*")
+
+
+class NumericValue(FunctionElement[Any]):
+    """A statement `value` read as a number, `NULL` if it isn't one.
+
+    The `value` column is text: a non-numeric value in it (an unmigrated store,
+    or a value `cast_number` couldn't parse and passed through) makes a plain
+    `CAST` raise on postgres and duckdb, which fails the whole aggregation.
+    Every dialect renders the error-tolerant spelling instead, so a stray value
+    drops out of the aggregate the way it does in memory (where
+    `registry.number.to_number` returns `None` and the aggregator skips it).
+    """
+
+    name = "numeric_value"
+    type = NUMERIC()
+    inherit_cache = True
+
+
+@compiles(NumericValue)
+def _compile_numeric_value(element: NumericValue, compiler: Any, **kw: Any) -> str:
+    # TRY_CAST is the duckdb spelling - the lake store compiles against the
+    # default dialect, so it is what the generic compiler has to emit
+    return f"TRY_CAST({compiler.process(element.clauses, **kw)} AS NUMERIC)"
+
+
+@compiles(NumericValue, "sqlite")
+def _compile_numeric_value_sqlite(
+    element: NumericValue, compiler: Any, **kw: Any
+) -> str:
+    # sqlite has no TRY_CAST and raises nothing to begin with: it reads the
+    # numeric prefix of a value and falls back to 0, so `"n/a"` would count as
+    # a 0 in a min / avg where the other dialects skip it. The same GLOB guard
+    # gets it to NULL as well.
+    value = compiler.process(element.clauses, **kw)
+    has_digit, has_other = SQLITE_NUMERIC_GLOB
+    guard = f"{value} GLOB '{has_digit}' AND NOT {value} GLOB '{has_other}'"
+    return f"(CASE WHEN {guard} THEN CAST({value} AS NUMERIC) END)"
+
+
+@compiles(NumericValue, "postgresql")
+def _compile_numeric_value_postgresql(
+    # use postgres 16+ built-in test
+    element: NumericValue,
+    compiler: Any,
+    **kw: Any,
+) -> str:
+    value = compiler.process(element.clauses, **kw)
+    return f"(CASE WHEN pg_input_is_valid({value},'numeric') THEN CAST({value} AS NUMERIC) END)"
+
+
 def numeric_value(column: Any) -> Any:
-    """Read a statement `value` as a number. Stored values must be in the
-    canonical format written by
+    """Read a statement `value` as a number, `NULL` if it isn't one (see
+    [`NumericValue`][ftmq.query.sql.NumericValue]). Stored values should be in
+    the canonical format written by
     [`ftmq.statements.cast_number`][ftmq.statements.cast_number] (no thousands
     separators, no unit suffix); a store fed raw display-formatted amounts has
-    to be migrated first (`ftmq statements cast-types`)."""
-    return func.cast(column, NUMERIC)
+    to be migrated first (`ftmq statements cast-types`), otherwise its values
+    read as `NULL` instead of the number they display."""
+    return NumericValue(column)
 
 
 class SqlSource:

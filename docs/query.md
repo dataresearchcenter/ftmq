@@ -168,6 +168,8 @@ for proxy in view.query(q):
 
     Caveats: `like` on SQLite is case-insensitive for ASCII (SQLite's `LIKE` collation), unlike the in-memory and DuckDB substring test. A query of *only* meta / context fields (`M(dataset=...), M(schema=...)`) filters statement rows directly, so a canonical entity merged across datasets can match in memory but not in SQL; with any property / group condition (or a store view's scope) involved, the whole canonical entity comes back.
 
+    Numeric aggregations (`sum` / `min` / `max` / `avg`) read the text `value` column as a number with an error-tolerant cast, so a stored value that isn't a number reads as `NULL` and drops out of the aggregate instead of failing the query - the same value is skipped in memory, where `registry.number.to_number` returns `None`. A store holding display-formatted amounts (`"324,687.00"`) therefore aggregates them as `NULL` rather than as the number they display; migrate it with `ftmq statements cast-types` so the SQL backends see the canonical format.
+
 ## Serialization
 
 `Query` serializes to a lossless nested dict (round-trips any query), plus two URL-friendly string grammars: RQL (nested) and the flat OpenAleph params (interop).
