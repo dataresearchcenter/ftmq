@@ -85,6 +85,7 @@ class TantivyStore(BaseStore):
             data["id"] = doc.get_first("id")
             data["caption"] = doc.get_first("caption")
             data["schema"] = doc.get_first("schema")
+            data["names"] = data.get("names") or []
             yield EntitySearchResult(**data, score=score)
 
     def autocomplete(self, q: str) -> Iterable[AutocompleteResult]:
