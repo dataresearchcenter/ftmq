@@ -35,11 +35,11 @@ from ftmq.query.leaves import (
     SchemataLeaf,
 )
 from ftmq.query.nodes import Expr, combine
+from ftmq.query.refs import NUMERIC_PROPS
 from ftmq.query.rql import parse_rql
 from ftmq.query.rql import to_rql as serialize_rql
 from ftmq.query.sql import Sql, SqlSource
 from ftmq.types import EntityProxies
-from ftmq.util import prop_is_numeric
 
 if TYPE_CHECKING:
     from sqlalchemy import Select
@@ -54,10 +54,11 @@ def _make_slice(limit: int | None, offset: int | None) -> slice | None:
 
 
 class Sort:
-    """An ordering over one or more entity properties."""
+    """An ordering over a single entity property (both evaluators agree: the
+    SQL adapter never supported more than one sort field)."""
 
-    def __init__(self, values: Iterable[str], ascending: bool | None = True) -> None:
-        self.values = tuple(values)
+    def __init__(self, value: str, ascending: bool = True) -> None:
+        self.value = value
         self.ascending = ascending
 
     def apply(self, entity: EntityProxy) -> tuple[Any, ...]:
@@ -67,16 +68,13 @@ class Sort:
             entity: The entity to read the sort values from.
 
         Returns:
-            A tuple of the entity's values for the sort properties (numeric
-            properties are cast to numbers).
+            A tuple of the entity's values for the sort property (a numeric
+            property is cast to numbers).
         """
-        values: tuple[Any, ...] = tuple()
-        for v in self.values:
-            p_values: list[Any] = entity.get(v, quiet=True) or []
-            if prop_is_numeric(entity.schema, v):
-                p_values = list(map(registry.number.to_number, p_values))
-            values = values + tuple(p_values)
-        return values
+        values: list[Any] = entity.get(self.value, quiet=True) or []
+        if self.value in NUMERIC_PROPS:
+            values = [registry.number.to_number(v) for v in values]
+        return tuple(values)
 
     def apply_iter(self, entities: EntityProxies) -> EntityProxies:
         """Sort a stream of entities.
@@ -89,20 +87,24 @@ class Sort:
         """
         yield from sorted(entities, key=self.apply, reverse=not self.ascending)
 
-    def serialize(self) -> list[str]:
-        """Serialize to a list of field names, descending fields prefixed `-`.
+    def serialize(self) -> str:
+        """Serialize to the field name, prefixed `-` when descending.
 
         Returns:
-            The ordered field names, e.g. `["name"]` or `["-date"]`.
+            The field name, e.g. `"name"` or `"-date"`.
         """
-        if self.ascending:
-            return list(self.values)
-        return [f"-{v}" for v in self.values]
+        return self.value if self.ascending else f"-{self.value}"
+
+    @classmethod
+    def deserialize(cls, value: str) -> Self:
+        """Rebuild from [`serialize`][ftmq.query.main.Sort.serialize] output."""
+        return cls(value.lstrip("-"), ascending=not value.startswith("-"))
 
 
 class Query:
     """
-    A filter over FtM entities, built from composable `M` / `P` / `G` nodes.
+    A filter over FtM entities, built from composable `M` / `P` / `G` / `C`
+    nodes.
 
     Examples:
         ```python
@@ -359,11 +361,7 @@ class Query:
         q = Expr.from_dict(data["q"]) if data.get("q") else None
         sort = None
         if data.get("order_by"):
-            values = list(data["order_by"])
-            ascending = not (values and str(values[0]).startswith("-"))
-            sort = Sort(
-                values=[str(v).lstrip("-") for v in values], ascending=ascending
-            )
+            sort = Sort.deserialize(str(data["order_by"]))
         slice_ = _make_slice(data.get("limit"), data.get("offset"))
         aggregations = None
         if data.get("aggregations"):
@@ -383,10 +381,8 @@ class Query:
         if self.aggregations:
             params.update(aggregations_to_params(self.aggregations))
         if self.sort:
-            params["sort"] = [
-                f"{v[1:]}:desc" if v.startswith("-") else f"{v}:asc"
-                for v in self.sort.serialize()
-            ]
+            direction = "asc" if self.sort.ascending else "desc"
+            params["sort"] = [f"{self.sort.value}:{direction}"]
         if self.slice:
             if self.offset:
                 params["offset"] = [str(self.offset)]
@@ -402,13 +398,10 @@ class Query:
         aggregations = params_to_aggregations(items) or None
         sort = None
         if items.get("sort"):
-            svalues: list[str] = []
-            ascending = True
-            for value in items["sort"]:
-                field, _, direction = value.partition(":")
-                svalues.append(field)
-                ascending = direction != "desc"
-            sort = Sort(values=svalues, ascending=ascending)
+            if len(items["sort"]) > 1:
+                raise QueryError("Multi-field sort is not supported")
+            field, _, direction = items["sort"][0].partition(":")
+            sort = Sort(field, ascending=direction != "desc")
         slice_ = None
         if "limit" in items or "offset" in items:
             offset = int((items.get("offset") or ["0"])[0] or 0)
@@ -458,7 +451,7 @@ class Query:
 
     def where(self, *nodes: Expr) -> Self:
         """
-        AND another set of `M` / `P` / `G` nodes into the current `Query`.
+        AND another set of `M` / `P` / `G` / `C` nodes into the current `Query`.
 
         Example:
             ```python
@@ -467,7 +460,8 @@ class Query:
             ```
 
         Args:
-            *nodes: `M` / `P` / `G` nodes (optionally composed with `&`/`|`/`~`)
+            *nodes: `M` / `P` / `G` / `C` nodes (optionally composed with
+                `&`/`|`/`~`)
 
         Returns:
             The updated `Query` instance
@@ -478,19 +472,21 @@ class Query:
         q = new if self.q is None else (self.q & new)
         return self._chain(q=q)
 
-    def order_by(self, *values: str, ascending: bool | None = True) -> Self:
+    def order_by(self, value: str, *, ascending: bool = True) -> Self:
         """
-        Add or update the current sorting.
+        Set the sorting (a single field; the SQL adapter never supported more).
 
         Args:
-            *values: Fields to order by
+            value: The field to order by; a leading `-` marks descending
+                (`order_by("-date")` == `order_by("date", ascending=False)`)
             ascending: Ascending or descending
 
         Returns:
             The updated `Query` instance.
         """
-        self.sort = Sort(values=values, ascending=ascending)
-        return self._chain()
+        if value.startswith("-"):
+            value, ascending = value[1:], False
+        return self._chain(sort=Sort(value, ascending=ascending))
 
     def aggregate(self, *nodes: A) -> Self:
         """Add aggregation projections to the query.

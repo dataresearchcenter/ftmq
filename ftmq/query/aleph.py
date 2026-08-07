@@ -23,12 +23,11 @@ from collections import defaultdict
 from typing import Any
 from urllib.parse import quote, unquote
 
-from followthemoney.types import registry
-
 from ftmq.query.aggregations import Agg, make_agg
 from ftmq.query.exceptions import QueryError
-from ftmq.query.leaves import ContextLeaf, Leaf, PropertyLeaf
+from ftmq.query.leaves import Leaf
 from ftmq.query.nodes import OR, C, Expr, G, M, P, combine
+from ftmq.query.refs import IdRef, ref_from_wire
 
 # Aleph meta filter keys -> ftmq meta field (some upstream keys are aliased)
 ALEPH_META = {
@@ -43,8 +42,6 @@ ALEPH_META = {
     "schema": "schema",
     "schemata": "schemata",
 }
-# context fields that also exist as Aleph filter keys (mapped to the `C` family)
-ALEPH_CONTEXT = {"origin"}
 # comparators expressible as a `filter:<op>:<field>` prefix. The range ops match
 # openaleph-search; the substring / prefix ops are an ftmq extension of the
 # grammar (openaleph never emits them, so interop stays a superset).
@@ -74,13 +71,6 @@ def normalize_multidict(args: Any) -> dict[str, list[str]]:
     return dict(items)
 
 
-def _aleph_field(leaf: Leaf) -> str:
-    if isinstance(leaf, PropertyLeaf):
-        return f"properties.{leaf.key}"
-    # group leaves use the group name; meta leaves use their own key
-    return leaf.key
-
-
 def _collect_terms(expr: Expr) -> list[tuple[Leaf, bool]]:
     """Flatten an Aleph-expressible flat-AND tree into `(leaf, inverted)`
     pairs. A negated sub-tree is only allowed when it wraps a single leaf
@@ -104,10 +94,8 @@ def _collect_terms(expr: Expr) -> list[tuple[Leaf, bool]]:
 
 
 def _leaf_to_param(leaf: Leaf, inverted: bool) -> tuple[str, str, list[str]]:
-    if isinstance(leaf, ContextLeaf) and leaf.key not in ALEPH_CONTEXT:
-        raise QueryError(f"Context field `{leaf.key}` is not an Aleph filter")
     op = str(leaf.comparator)
-    field = _aleph_field(leaf)
+    field = leaf.wire
     value = leaf.value
     if inverted:
         if op == "eq":
@@ -133,16 +121,17 @@ def _leaf_to_param(leaf: Leaf, inverted: bool) -> tuple[str, str, list[str]]:
 
 
 def _resolve_field(rest: str) -> tuple[str, str]:
-    """Map an Aleph filter field to a (family, ftmq-key) pair."""
+    """Map a filter field to a (family, ftmq-key) pair.
+
+    Field names are the same on both halves of the grammar, so this is
+    [`ref_from_wire`][ftmq.query.refs.ref_from_wire] plus the upstream key
+    aliases and `schemata`, which is an is-a predicate rather than a field a
+    projection could read.
+    """
     if rest in ALEPH_META:
         return "M", ALEPH_META[rest]
-    if rest in ALEPH_CONTEXT:
-        return "C", rest
-    if rest.startswith("properties."):
-        return "P", rest[len("properties.") :]
-    if rest in registry.groups:
-        return "G", rest
-    raise QueryError(f"Unknown Aleph filter field: `{rest}`")
+    ref = ref_from_wire(rest)
+    return ref.family, ref.key
 
 
 def _param_to_node(prefix: str, rest: str, values: list[str]) -> Expr:
@@ -213,26 +202,27 @@ def params_to_expr(items: dict[str, list[str]]) -> Expr | None:
 def aggregations_to_params(aggs: set[Agg]) -> dict[str, list[str]]:
     """Project aggregation specs to openaleph metric / facet params.
 
-    Each spec becomes a `metric:<func>=<prop>` entry (the convention
+    Each spec becomes a `metric:<func>=<field>` entry (the convention
     `openaleph_search.SearchQueryParser` reads as
-    `metrics = {func: {props}}`); grouped fields become `facet=<field>`
-    values. openaleph nests every metric inside every facet bucket, so groups
-    apply across all metrics - a per-metric grouping that differs between
-    metrics collapses to their union here.
+    `metrics = {func: {fields}}`); grouped fields become `facet=<field>`
+    values, spelled as the filter keys are (`properties.<name>`,
+    `group.<name>`, `context.<name>`, bare meta fields and `year`). Facet
+    groups apply across all metrics - a per-metric grouping that differs
+    between metrics collapses to their union here.
 
     Args:
         aggs: The query's aggregation specs.
 
     Returns:
-        The `{"metric:<func>": [props], "facet": [groups]}` param mapping.
+        The `{"metric:<func>": [fields], "facet": [groups]}` param mapping.
     """
     params: dict[str, list[str]] = defaultdict(list)
     facets: set[str] = set()
-    for agg in sorted(aggs, key=lambda a: (a.func, a.prop)):
+    for agg in sorted(aggs, key=lambda a: (a.func, a.key)):
         key = f"metric:{agg.func}"
-        if agg.prop not in params[key]:
-            params[key].append(agg.prop)
-        facets.update(agg.groups)
+        if agg.key not in params[key]:
+            params[key].append(agg.key)
+        facets.update(g.wire for g in agg.groups)
     if facets:
         params["facet"] = sorted(facets)
     return dict(params)
@@ -245,20 +235,26 @@ def params_to_aggregations(items: dict[str, list[str]]) -> set[Agg]:
     every `facet` field groups every `metric:<func>=<prop>` (matching how
     openaleph computes a metric within each facet bucket).
 
+    A `facet` with no `metric:` alongside it groups an entity count - the
+    idiomatic Aleph facet. Dropping it instead would discard the param in
+    silence and answer with empty facets.
+
     Args:
         items: A normalized param mapping.
 
     Returns:
-        The reconstructed aggregation specs (empty if there are no `metric:`
-        params).
+        The reconstructed aggregation specs (empty if there is neither a
+        `metric:` nor a `facet` param).
     """
-    groups = tuple(sorted(set(items.get("facet", []))))
+    groups = tuple(ref_from_wire(g) for g in sorted(set(items.get("facet", []))))
     aggs: set[Agg] = set()
     for key, values in items.items():
         if key.startswith("metric:"):
             func = key[len("metric:") :]
-            for prop in values:
-                aggs.add(make_agg(func, prop, groups))
+            for field in values:
+                aggs.add(make_agg(func, ref_from_wire(field), groups))
+    if groups and not aggs:
+        aggs.add(make_agg("count", IdRef(), groups))
     return aggs
 
 

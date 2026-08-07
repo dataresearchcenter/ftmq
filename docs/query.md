@@ -4,12 +4,12 @@ A `Query` is a composable, backend-agnostic filter over FtM entities. It is also
 
 ## Where `Query` sits in the toolchain
 
-`Query` is the hub. It is built from `M` / `P` / `G` nodes (or deserialized from a dict or from Aleph params), and from there it is either run against entities or projected back out to another representation.
+`Query` is the hub. It is built from `M` / `P` / `G` / `C` nodes (or deserialized from a dict or from Aleph params), and from there it is either run against entities or projected back out to another representation.
 
 ```mermaid
 flowchart TD
     subgraph build [Build]
-        NODES["M / P / G nodes<br/>combined with &amp; | ~"]
+        NODES["M / P / G / C nodes<br/>combined with &amp; | ~"]
         DICT["nested dict"]
         RQL["RQL string<br/>(nested)"]
         PARAMS["Aleph params /<br/>URL query string"]
@@ -36,27 +36,30 @@ flowchart TD
     PARAMS <-->|same filter grammar| ALEPH["OpenAleph HTTP API<br/>openaleph-search<br/>SearchQueryParser"]
 ```
 
-Because the Aleph param grammar is shared, the *same* query language works in both directions: an Aleph-style request can drive an `ftmq` store, and an `ftmq` `Query` can drive the OpenAleph API. This is what lets `Query` eventually underpin openaleph-search's `SearchQueryParser`.
+The param grammar works in both directions: an Aleph-style request can drive an `ftmq` store, and an `ftmq` `Query` can drive the OpenAleph API.
 
 ## Building a query
 
-A query is built from three node constructors, split by the statement-table column they target:
+A query is built from four node constructors, split by the statement-table column they target:
 
 | Node | Targets | Use it for |
 |---|---|---|
-| **`M`** (meta) | `dataset`, `schema`, `origin`, entity `id` | `M(schema="Person")`, `M(dataset__in=["d1", "d2"])` |
+| **`M`** (meta) | `dataset`, `schema` / `schemata`, entity ids | `M(schema="Person")`, `M(dataset__in=["d1", "d2"])` |
 | **`P`** (property) | a specific FtM property | `P(name="Jane")`, `P(amountEur__gte=1000)` |
 | **`G`** (group) | a property-*type* group (`prop_type`) | `G(countries="de")`, `G(dates__gte="2020")` |
+| **`C`** (context) | a context / storage column | `C(origin="crawl")`, `C(first_seen__gte="2024-01")` |
 
 ```python
-from ftmq import Query, M, P, G
+from ftmq import Query, M, P, G, C
 
 q = Query().where(M(schema="Person"), P(name="Jane"))
 ```
 
-`M` covers the metadata fields: `dataset`, `schema` / `schemata` (see below), `origin`, and `id` / `entity_id` / `canonical_id`.
+`M` covers the metadata fields: `dataset`, `schema` / `schemata` (see below), and `id` / `entity_id` / `canonical_id`.
 
 `P` matches a single, named property (example: [Person](https://followthemoney.tech/explorer/schemata/Person/)). `G` matches *any* property of a followthemoney [property type](https://followthemoney.tech/explorer/types), keyed by its group name (`names`, `dates`, `countries`, `emails`, `entities`, ...). For example `P(country="de")` matches the literal `country` property, while `G(countries="de")` matches any country-typed property (`nationality`, `jurisdiction`, `country`, ...).
+
+`C` matches a context / storage column: `origin`, plus whatever extra columns a backend carries (`fragment`, `first_seen`, `bucket`, ...). Any key is accepted at build time; in memory it reads `entity.context[key]`, in SQL it maps to the same-named statement-table column and an unknown column raises [`QueryError`][ftmq.QueryError] at compile time. On the wire a context field spells `context.<name>` (`filter:context.origin=crawl`).
 
 ### `schema` vs `schemata`
 
@@ -111,7 +114,7 @@ Query().where(~P(legalForm="gGmbH"))
 
 ### Reverse lookups (edges)
 
-There is no dedicated reverse operator: a reverse lookup is just a filter on an entity-typed value.
+A reverse lookup is a filter on an entity-typed value:
 
 ```python
 G(entities="entity-id")     # any entity-typed property pointing at this id (any edge)
@@ -120,9 +123,12 @@ P(director="entity-id")     # a specific edge property pointing at this id
 
 ### Sorting and slicing
 
+Sorting takes a single field:
+
 ```python
 q = Query().order_by("name")                 # ascending
 q = Query().order_by("date", ascending=False)
+q = Query().order_by("-date")                # leading `-` = descending
 
 q = Query()[:100]     # first 100
 q = q[10:20]          # next 10
@@ -158,9 +164,9 @@ for proxy in view.query(q):
 ```
 
 !!! note "SQL / Lake stores: how the boolean tree compiles"
-    The SQL / Lake translation ([`query.sql`][ftmq.Query.sql]) compiles arbitrary `& | ~` trees and follows the in-memory evaluator. A plain conjunction of distinct fields becomes flat `WHERE` predicates; property and group conditions, and any tree involving `OR`, negation or repeated fields, lift each condition to an entity-level `canonical_id IN (...)` sub-select so the tree composes - a single statement row cannot answer "this entity has no `deathDate`" or "it matches *either* of two different properties". Chained same-field filters AND (as in memory); spell alternatives as `P(name__in=[...])` or `P(name="a") | P(name="b")`.
+    The SQL / Lake translation ([`query.sql`][ftmq.Query.sql]) compiles arbitrary `& | ~` trees and follows the in-memory evaluator. A plain conjunction of distinct fields becomes flat `WHERE` predicates; property and group conditions, and any tree involving `OR`, negation or repeated fields, lift each condition to an entity-level `canonical_id IN (...)` sub-select. Chained same-field filters AND (as in memory); spell alternatives as `P(name__in=[...])` or `P(name="a") | P(name="b")`.
 
-    Remaining caveats: `like` on SQLite is case-insensitive for ASCII (SQLite's `LIKE` collation), unlike the in-memory and DuckDB substring test. A flat conjunction of several *meta* fields (`M(dataset=...), M(schema=...)`) tests one statement row, so a canonical entity merged across datasets can match in memory but not in SQL. `between` is part of the grammar (it serializes) but does not evaluate yet and raises [`QueryError`][ftmq.QueryError] on both the in-memory and the SQL side.
+    Caveats: `like` on SQLite is case-insensitive for ASCII (SQLite's `LIKE` collation), unlike the in-memory and DuckDB substring test. A query of *only* meta / context fields (`M(dataset=...), M(schema=...)`) filters statement rows directly, so a canonical entity merged across datasets can match in memory but not in SQL; with any property / group condition (or a store view's scope) involved, the whole canonical entity comes back.
 
 ## Serialization
 
@@ -175,19 +181,19 @@ assert Query.from_dict(data).to_dict() == data
 
 ### RQL
 
-[RQL](https://github.com/pjwerneck/pyrql) (Resource Query Language) is a compact, URL-friendly string of nestable operators - `and()` / `or()` / `not()` around comparisons - so, unlike the flat OpenAleph params below, it carries an **arbitrarily nested** `& | ~` tree in a single string. It is the string surface to use for other HTTP-like connectors that need to pass a full nested query. [`from_rql`][ftmq.Query.from_rql] parses it and [`to_rql`][ftmq.Query.to_rql] emits it (via the `pyrql` dependency):
+[RQL](https://github.com/pjwerneck/pyrql) (Resource Query Language) is a compact, URL-friendly string of nestable operators - `and()` / `or()` / `not()` around comparisons - carrying an **arbitrarily nested** `& | ~` tree in a single string. [`from_rql`][ftmq.Query.from_rql] parses it and [`to_rql`][ftmq.Query.to_rql] emits it (via the `pyrql` dependency):
 
 ```python
 q = Query().where(M(schema="Person") & (P(name="jane") | G(countries="de")))
-q.to_rql()   # "and(eq(schema,Person),or(eq(properties.name,jane),eq(countries,de)))"
+q.to_rql()   # "and(eq(schema,Person),or(eq(properties.name,jane),eq(group.countries,de)))"
 Query.from_rql(q.to_rql()).to_dict() == q.to_dict()   # True
 ```
 
-Field names follow the same convention as the OpenAleph bridge (see below): a meta field (`schema`, `dataset`, `id`, ...), `properties.<name>` for a specific property, a group name (`countries`, `entities`, ...), or `origin`; a bare name that matches none of those is treated as a property. Comparison operators map to ftmq comparators (`eq`, `ne` → `not`, `lt` / `le` / `gt` / `ge`, `in`, `out` → `not_in`, `like` / `ilike`).
+Field names use the wire spelling shared by every string surface (params, RQL, [aggregations](./aggregation.md)): `properties.<name>` for a property, `group.<name>` for a property-type group, `context.<name>` for a context column; meta fields (`schema`, `dataset`, `id`, ...) and `year` are bare. A bare name that is none of those is read as a property. Comparison operators map to ftmq comparators (`eq`, `ne` → `not`, `lt` / `le` / `gt` / `ge`, `in`, `out` → `not_in`, `like` / `ilike`).
 
-RQL also carries [aggregations](./aggregation.md) in the same string: its native `sum` / `min` / `max` / `mean` / `count` and `aggregate(...)` operators map onto `A` nodes, side by side with the filter under the top-level `and` (e.g. `and(eq(schema,Payment),aggregate(beneficiary,sum(amountEur)))`).
+RQL also carries [aggregations](./aggregation.md) in the same string: its native `sum` / `min` / `max` / `mean` / `count` and `aggregate(...)` operators map onto `A` nodes, side by side with the filter under the top-level `and` (e.g. `and(eq(schema,Payment),aggregate(properties.beneficiary,sum(properties.amountEur)))`).
 
-`to_rql` raises [`QueryError`][ftmq.QueryError] for a comparator with no RQL equivalent (`null`, `startswith`, `endswith`, `notlike`, `notilike`, `between`).
+`to_rql` raises [`QueryError`][ftmq.QueryError] for a comparator with no RQL equivalent (`null`, `startswith`, `endswith`, `notlike`, `notilike`).
 
 ### OpenAleph
 
@@ -195,9 +201,9 @@ URL params (as [OpenAleph](https://openaleph.org) uses them), as a `MultiDict` o
 
 ```python
 q = Query().where(M(schema="Person"), G(countries="de"))
-q.to_string()   # "filter:countries=de&filter:schema=Person"
-Query.from_string("filter:schema=Person&filter:countries=de")
-Query.from_params({"filter:schema": ["Person"], "filter:countries": ["de"]})
+q.to_string()   # "filter:group.countries=de&filter:schema=Person"
+Query.from_string("filter:schema=Person&filter:group.countries=de")
+Query.from_params({"filter:schema": ["Person"], "filter:group.countries": ["de"]})
 ```
 
 The bridge maps `ftmq` nodes onto the Aleph `filter:` / `exclude:` / `empty:` convention:
@@ -208,7 +214,7 @@ The bridge maps `ftmq` nodes onto the Aleph `filter:` / `exclude:` / `empty:` co
 | `filter:dataset=d` / `filter:collection_id=d` | `M(dataset="d")` |
 | `filter:id=x` / `filter:_id=x` | `M(id="x")` |
 | `filter:properties.firstName=Jane` | `P(firstName="Jane")` |
-| `filter:countries=de` (any group) | `G(countries="de")` |
+| `filter:group.countries=de` (any group) | `G(countries="de")` |
 | `filter:gte:properties.date=2018` | `P(date__gte=2018)` |
 | `exclude:properties.country=ru` | `P(country__not="ru")` |
 | `empty:properties.birthDate` | `P(birthDate__null=True)` |

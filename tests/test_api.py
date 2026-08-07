@@ -147,7 +147,7 @@ def test_api_entity_detail(api_client):
 
 
 def test_api_entities_reverse(api_client):
-    res = api_client.get(f"/entities?filter:entities={ADDRESS_ID}")
+    res = api_client.get(f"/entities?filter:group.entities={ADDRESS_ID}")
     data = res.json()
     assert data["total"] == 1
     entity = data["results"][0]
@@ -158,16 +158,19 @@ def test_api_aggregation(api_client):
     # aggregations ride on /entities (Aleph-style); `limit=0` returns only them
     res = api_client.get(
         "/entities?filter:dataset=donations&filter:schema=Payment"
-        "&metric:sum=amountEur&metric:min=date&metric:max=date&limit=0"
+        "&metric:sum=properties.amountEur&metric:min=properties.date"
+        "&metric:max=properties.date&limit=0"
     )
     assert res.status_code == 200
     data = res.json()
     assert data["total"] == 290
     assert data["results"] == []
     # ungrouped aggregations -> Aleph `metrics`
+    # fields are spelled as in the filter grammar, so a property keeps its
+    # `properties.` prefix here too
     assert data["metrics"] == {
-        "amountEur": {"sum": 40589689.15},
-        "date": {"min": "2002-07-04", "max": "2011-12-29"},
+        "properties.amountEur": {"sum": 40589689.15},
+        "properties.date": {"min": "2002-07-04", "max": "2011-12-29"},
     }
 
     res = api_client.get(
@@ -184,11 +187,11 @@ def test_api_aggregation(api_client):
     # aggregations returned alongside entities when limit > 0
     res = api_client.get(
         "/entities?filter:dataset=donations&filter:schema=Payment"
-        "&metric:sum=amountEur&limit=5"
+        "&metric:sum=properties.amountEur&limit=5"
     )
     data = res.json()
     assert len(data["results"]) == 5
-    assert data["metrics"]["amountEur"]["sum"] == 40589689.15
+    assert data["metrics"]["properties.amountEur"]["sum"] == 40589689.15
 
 
 def test_api_search(api_client):
@@ -203,7 +206,7 @@ def test_api_search(api_client):
     res = api_client.get("/entities?q=metall&filter:dataset=eu_authorities")
     assert len(res.json()["results"]) == 0
 
-    res = api_client.get("/entities?q=metall&filter:countries=gb")
+    res = api_client.get("/entities?q=metall&filter:group.countries=gb")
     assert len(res.json()["results"]) == 0
 
     # too short -> 400

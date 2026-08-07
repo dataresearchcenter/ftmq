@@ -30,18 +30,23 @@ function makeSlice(limit: number | null, offset: number | null): Slice | null {
   return { start, stop: limit !== null ? start + limit : null };
 }
 
-/** An ordering over one or more entity properties. */
+/** An ordering over a single entity property (mirroring the Python `Sort`). */
 export class Sort {
-  readonly values: string[];
+  readonly value: string;
   readonly ascending: boolean;
 
-  constructor(values: string[], ascending = true) {
-    this.values = values;
+  constructor(value: string, ascending = true) {
+    this.value = value;
     this.ascending = ascending;
   }
 
-  serialize(): string[] {
-    return this.ascending ? [...this.values] : this.values.map((v) => `-${v}`);
+  serialize(): string {
+    return this.ascending ? this.value : `-${this.value}`;
+  }
+
+  static deserialize(value: string): Sort {
+    const ascending = !value.startsWith("-");
+    return new Sort(ascending ? value : value.slice(1), ascending);
   }
 }
 
@@ -49,7 +54,10 @@ export type ParamsInput = URLSearchParams | Record<string, string | string[]>;
 
 function normalizeParams(args: ParamsInput): Params {
   const items: Params = {};
-  if (typeof URLSearchParams !== "undefined" && args instanceof URLSearchParams) {
+  if (
+    typeof URLSearchParams !== "undefined" &&
+    args instanceof URLSearchParams
+  ) {
     for (const key of new Set(args.keys())) items[key] = args.getAll(key);
   } else {
     for (const [key, value] of Object.entries(args)) {
@@ -84,7 +92,9 @@ export class Query {
     return new Query({
       q: patch.q !== undefined ? patch.q : this.q,
       aggregations:
-        patch.aggregations !== undefined ? patch.aggregations : this.aggregations,
+        patch.aggregations !== undefined
+          ? patch.aggregations
+          : this.aggregations,
       sort: patch.sort !== undefined ? patch.sort : this.sort,
       slice: patch.slice !== undefined ? patch.slice : this.sliceRange,
     });
@@ -100,15 +110,9 @@ export class Query {
     return this.chain({ q });
   }
 
-  /** Order by one or more fields; a leading `-` marks descending. */
-  orderBy(...values: string[]): Query {
-    if (values.length === 0) return this.chain({ sort: null });
-    const ascending = !values[0].startsWith("-");
-    const sort = new Sort(
-      values.map((v) => (v.startsWith("-") ? v.slice(1) : v)),
-      ascending,
-    );
-    return this.chain({ sort });
+  /** Order by a single field; a leading `-` marks descending. */
+  orderBy(value: string): Query {
+    return this.chain({ sort: Sort.deserialize(value) });
   }
 
   /** Slice the result set (`q.slice(offset, offset + limit)`). */
@@ -139,7 +143,9 @@ export class Query {
 
   // --- leaf collectors -----------------------------------------------------
 
-  private leafValues(predicate: (leaf: { family: string; field: string }) => boolean): Set<string> {
+  private leafValues(
+    predicate: (leaf: { family: string; field: string }) => boolean,
+  ): Set<string> {
     const names = new Set<string>();
     if (this.q) {
       for (const leaf of this.q.iterLeaves()) {
@@ -159,7 +165,8 @@ export class Query {
 
   get schemata(): Set<string> {
     return this.leafValues(
-      (l) => l.family === "M" && (l.field === "schema" || l.field === "schemata"),
+      (l) =>
+        l.family === "M" && (l.field === "schema" || l.field === "schemata"),
     );
   }
 
@@ -186,13 +193,8 @@ export class Query {
   static fromDict(data: Record<string, any>): Query {
     const q = data.q ? Expr.fromDict(data.q) : null;
     let sort: Sort | null = null;
-    if (data.order_by && data.order_by.length) {
-      const values: string[] = data.order_by.map(String);
-      const ascending = !String(values[0]).startsWith("-");
-      sort = new Sort(
-        values.map((v) => (v.startsWith("-") ? v.slice(1) : v)),
-        ascending,
-      );
+    if (data.order_by) {
+      sort = Sort.deserialize(String(data.order_by));
     }
     const slice = makeSlice(data.limit ?? null, data.offset ?? null);
     const aggregations = data.aggregations
@@ -207,9 +209,8 @@ export class Query {
       Object.assign(params, aggregationsToParams(this.aggregations));
     }
     if (this.sort) {
-      params.sort = this.sort
-        .serialize()
-        .map((v) => (v.startsWith("-") ? `${v.slice(1)}:desc` : `${v}:asc`));
+      const direction = this.sort.ascending ? "asc" : "desc";
+      params.sort = [`${this.sort.value}:${direction}`];
     }
     if (this.sliceRange) {
       if (this.offset) params.offset = [String(this.offset)];
@@ -224,16 +225,14 @@ export class Query {
     const aggs = paramsToAggregations(items);
     let sort: Sort | null = null;
     if (items.sort) {
-      const svalues: string[] = [];
-      let ascending = true;
-      for (const value of items.sort) {
-        const idx = value.indexOf(":");
-        const field = idx < 0 ? value : value.slice(0, idx);
-        const direction = idx < 0 ? "" : value.slice(idx + 1);
-        svalues.push(field);
-        ascending = direction !== "desc";
+      if (items.sort.length > 1) {
+        throw new QueryError("Multi-field sort is not supported");
       }
-      sort = new Sort(svalues, ascending);
+      const value = items.sort[0];
+      const idx = value.indexOf(":");
+      const field = idx < 0 ? value : value.slice(0, idx);
+      const direction = idx < 0 ? "" : value.slice(idx + 1);
+      sort = new Sort(field, direction !== "desc");
     }
     let slice: Slice | null = null;
     if ("limit" in items || "offset" in items) {
@@ -280,9 +279,8 @@ export class Query {
       Object.assign(params, aggregationsToParams(this.aggregations));
     }
     if (this.sort) {
-      params.sort = this.sort
-        .serialize()
-        .map((v) => (v.startsWith("-") ? `${v.slice(1)}:desc` : `${v}:asc`));
+      const direction = this.sort.ascending ? "asc" : "desc";
+      params.sort = [`${this.sort.value}:${direction}`];
     }
     if (this.sliceRange) {
       if (this.offset) params.offset = [String(this.offset)];

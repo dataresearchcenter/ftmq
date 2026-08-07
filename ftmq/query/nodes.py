@@ -1,18 +1,20 @@
 """
-The boolean expression tree and the `M` / `P` / `G` leaf constructors.
+The boolean expression tree and the `M` / `P` / `G` / `C` family constructors.
 
 `Expr` nodes compose with `&`, `|`, `~` into arbitrary boolean trees; the
-`M` (meta), `P` (property) and `G` (group) constructors turn `field__op=value`
-kwargs into leaves of one family.
+`M` (meta), `P` (property), `G` (group) and `C` (context) constructors turn
+`field__op=value` kwargs into leaves of one family (and, called with a bare
+field name, build `Ref`s).
 """
 
 from __future__ import annotations
 
-from typing import Any, Iterator
+from typing import Any, Iterator, overload
 
 from banal import hash_data
 from followthemoney.proxy import EntityProxy
 
+from ftmq.query.exceptions import QueryError
 from ftmq.query.leaves import (
     Leaf,
     leaf_from_dict,
@@ -21,6 +23,7 @@ from ftmq.query.leaves import (
     make_meta_leaf,
     make_property_leaf,
 )
+from ftmq.query.refs import ContextRef, GroupRef, PropRef, Ref, make_meta_ref
 
 AND = "AND"
 OR = "OR"
@@ -165,12 +168,45 @@ class Expr:
 
 
 class _FamilyExpr(Expr):
-    """Base for the `M`/`P`/`G` leaf constructors: parse `field__op=value`
-    kwargs into leaves of one family, AND-combined."""
+    """Base for the `M`/`P`/`G`/`C` constructors.
+
+    Called with `field__op=value` kwargs it builds leaves of one family,
+    AND-combined. Called with a single positional field name it builds a
+    [`Ref`][ftmq.query.refs.Ref] instead - the same field, no condition - which
+    is what an aggregation projects over:
+
+    ```python
+    P(amountEur__gte=1000)          # a condition (an `Expr`)
+    P("amountEur")                  # a field reference (a `Ref`)
+    ```
+    """
 
     @staticmethod
     def _make(key: str, value: Any) -> Leaf:
         raise NotImplementedError
+
+    @staticmethod
+    def _ref(field: str) -> Ref:
+        raise NotImplementedError
+
+    # a field name yields a `Ref`, not an instance of this class - which is
+    # the point, and something mypy has no way to spell for `__new__`
+    @overload
+    def __new__(cls, field: str, /) -> Ref: ...  # type: ignore[misc]  # noqa: E704
+
+    @overload
+    def __new__(cls, **lookups: Any) -> "_FamilyExpr": ...  # noqa: E704
+
+    def __new__(cls, *args: Any, **lookups: Any) -> Any:
+        if args:
+            if len(args) > 1 or lookups:
+                raise QueryError(
+                    f"`{cls.__name__}` takes either one field name (a reference) "
+                    "or `field=value` lookups (a condition), not both"
+                )
+            # returning a foreign type from `__new__` skips `__init__`
+            return cls._ref(args[0])
+        return super().__new__(cls)
 
     def __init__(self, **lookups: Any) -> None:
         super().__init__(connector=AND)
@@ -179,36 +215,55 @@ class _FamilyExpr(Expr):
 
 
 class M(_FamilyExpr):
-    """Meta-field conditions: dataset, schema, schemata, origin, id, ..."""
+    """Meta fields: `dataset`, `schema`, `schemata`, `id`, ... - `M(schema="Person")`
+    as a condition, `M("dataset")` as a reference."""
 
     @staticmethod
     def _make(key: str, value: Any) -> Leaf:
         return make_meta_leaf(key, value)
 
+    @staticmethod
+    def _ref(field: str) -> Ref:
+        return make_meta_ref(field)
+
 
 class P(_FamilyExpr):
-    """Specific-property conditions, e.g. `P(name="Jane", amountEur__gte=1000)`."""
+    """A specific FtM property: `P(name="Jane", amountEur__gte=1000)` as a
+    condition, `P("amountEur")` as a reference."""
 
     @staticmethod
     def _make(key: str, value: Any) -> Leaf:
         return make_property_leaf(key, value)
 
+    @staticmethod
+    def _ref(field: str) -> Ref:
+        return PropRef(field)
+
 
 class G(_FamilyExpr):
-    """Property-type group conditions, e.g. `G(countries="de")`, `G(entities=id)`."""
+    """A property-type group: `G(countries="de")` as a condition,
+    `G("countries")` as a reference."""
 
     @staticmethod
     def _make(key: str, value: Any) -> Leaf:
         return make_group_leaf(key, value)
 
+    @staticmethod
+    def _ref(field: str) -> Ref:
+        return GroupRef(field)
+
 
 class C(_FamilyExpr):
-    """Context / storage-column conditions, e.g. `C(origin="crawl")`,
-    `C(first_seen__gte="2024-01")`."""
+    """A context / storage column: `C(origin="crawl")` as a condition,
+    `C("origin")` as a reference."""
 
     @staticmethod
     def _make(key: str, value: Any) -> Leaf:
         return make_context_leaf(key, value)
+
+    @staticmethod
+    def _ref(field: str) -> Ref:
+        return ContextRef(field)
 
 
 def combine(*nodes: Expr, connector: str = AND) -> Expr | None:

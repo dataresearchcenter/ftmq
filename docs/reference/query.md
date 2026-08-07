@@ -24,6 +24,12 @@ The composable filter-node constructors: `M` (meta), `P` (property), `G` (proper
 
 ::: ftmq.query.combine
 
+## Field references
+
+A field without a value: what an [aggregation](../aggregation.md) projects over, and what a leaf carries besides its comparator. Built by the same family constructors, called with a bare field name (`P("amountEur")`).
+
+::: ftmq.query.refs
+
 ## Leaves
 
 ::: ftmq.query.leaves

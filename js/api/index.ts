@@ -63,14 +63,20 @@ export default class Api {
     let offset = query.offset ?? 0;
     let entities: IEntityDatum[] = [];
     for (;;) {
-      const res = await this.getEntities(query.slice(offset, offset + limit), retrieve);
+      const res = await this.getEntities(
+        query.slice(offset, offset + limit),
+        retrieve,
+      );
       entities = [...entities, ...res.results];
       if (!res.next || res.results.length === 0) return entities;
       offset += limit;
     }
   }
 
-  async autocomplete(q: string, opts: RequestInit = {}): Promise<IAutocompleteResult> {
+  async autocomplete(
+    q: string,
+    opts: RequestInit = {},
+  ): Promise<IAutocompleteResult> {
     return await this.get("autocomplete", opts, undefined, { q });
   }
 
@@ -88,7 +94,10 @@ export default class Api {
 
   // build the request url params from a Query (flat aleph, or `rql=` for a
   // nested tree) plus the retrieve params (flags + `q`) and the api key
-  private params(query?: Query, retrieve: IRetrieveParams = {}): URLSearchParams {
+  private params(
+    query?: Query,
+    retrieve: IRetrieveParams = {},
+  ): URLSearchParams {
     let params = new URLSearchParams();
     if (query) {
       const authenticated = !!this.api_key;
@@ -135,11 +144,17 @@ async function fetcher(url: string, opts: RequestInit = {}): Promise<any> {
   throw new Error(`Fetch error: ${res.status} ${res.statusText}`);
 }
 
-export async function getCatalog(url: string, opts: RequestInit = {}): Promise<ICatalog> {
+export async function getCatalog(
+  url: string,
+  opts: RequestInit = {},
+): Promise<ICatalog> {
   return fetcher(url, opts);
 }
 
-export async function getDataset(url: string, opts: RequestInit = {}): Promise<IDataset> {
+export async function getDataset(
+  url: string,
+  opts: RequestInit = {},
+): Promise<IDataset> {
   return fetcher(url, opts);
 }
 

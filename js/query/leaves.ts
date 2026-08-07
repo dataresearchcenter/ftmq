@@ -4,7 +4,7 @@ import { asBool, ensureList } from "./util.js";
 // query node family: M (meta), P (property), G (property-type group), C (context)
 export type Family = "M" | "P" | "G" | "C";
 
-// the value comparators (mirrors ftmq.enums.Comparators). `eq` is the default.
+// the value comparators (mirrors `ftmq.query.leaves.COMPARATORS`). `eq` is the default.
 export type Comparator =
   | "eq"
   | "not"
@@ -20,8 +20,7 @@ export type Comparator =
   | "startswith"
   | "endswith"
   | "notlike"
-  | "notilike"
-  | "between";
+  | "notilike";
 
 const COMPARATORS = new Set<Comparator>([
   "eq",
@@ -39,7 +38,6 @@ const COMPARATORS = new Set<Comparator>([
   "endswith",
   "notlike",
   "notilike",
-  "between",
 ]);
 
 export type LeafValue = string | boolean | string[];
@@ -96,6 +94,17 @@ export class Leaf {
     this.field = field;
     this.comparator = comparator;
     this.value = castValue(comparator, value);
+  }
+
+  /**
+   * How this leaf's field is spelled on a string surface (Aleph params, RQL).
+   * The same spelling an aggregation over the same field uses (see `Ref`).
+   */
+  get wire(): string {
+    if (this.family === "P") return `properties.${this.field}`;
+    if (this.family === "G") return `group.${this.field}`;
+    if (this.family === "C") return `context.${this.field}`;
+    return this.field;
   }
 
   fieldDict(): LeafDict {

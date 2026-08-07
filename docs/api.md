@@ -1,4 +1,4 @@
-`ftmq.api` exposes a followthemoney statement store (and the [`ftmq.search`](./search.md) full-text index) as a read-only [FastAPI](https://fastapi.tiangolo.com/) application. It was formerly the standalone [`ftmq-api`](https://github.com/dataresearchcenter/ftmq-api) package (and before that, `ftmstore-fastapi`).
+`ftmq.api` exposes a followthemoney statement store (and the [`ftmq.search`](./search.md) full-text index) as a read-only [FastAPI](https://fastapi.tiangolo.com/) application.
 
 ## Install
 
@@ -40,7 +40,7 @@ The index can live in the same sqlite database as the statement store (as here) 
 
 ### 4. Describe the catalog
 
-The api serves the datasets listed in a catalog document. Create a `catalog.json`:
+A catalog document adds metadata (titles, descriptions, publishers) to the datasets. Create a `catalog.json`:
 
 ```json
 {
@@ -49,6 +49,8 @@ The api serves the datasets listed in a catalog document. Create a `catalog.json
   "datasets": [{ "name": "my_dataset", "title": "My Dataset" }]
 }
 ```
+
+The catalog is optional: the *store* decides what is queryable. A dataset present in the store but missing from the catalog is served with a bare name (a warning is logged). `filter:dataset=` accepts every name the store holds and rejects anything else with a 422 listing the available names.
 
 ### 5. Configure and run
 
@@ -61,7 +63,7 @@ export FTMQ_API_CATALOG=./catalog.json
 granian --interface asgi ftmq.api.app:app
 ```
 
-`FTMQ_API_STORE_URI` defaults to nomenklatura's `NOMENKLATURA_DB_URL`, and `FTMQ_SEARCH_URI` defaults to that same database when it is sqlite, so with the single-file layout above only `FTMQ_API_CATALOG` is strictly required. The catalog and stores are read once at process start: after changing data, restart the server.
+`FTMQ_API_STORE_URI` defaults to nomenklatura's `NOMENKLATURA_DB_URL`, and `FTMQ_SEARCH_URI` defaults to that same database when it is sqlite, so with the single-file layout above every variable is optional (without `FTMQ_API_CATALOG` the catalog is derived from the store). The catalog and stores are read once at process start: after changing data, restart the server.
 
 For production, use several workers: `granian --interface asgi --workers 4 ftmq.api.app:app`. Any other ASGI server (uvicorn, hypercorn, ...) works as well.
 
@@ -73,7 +75,7 @@ curl -s "localhost:8000/catalog"
 # filtered, sorted entities
 curl -s "localhost:8000/entities?filter:schema=Person&sort=name&limit=5"
 # aggregation (rides on /entities; limit=0 returns only aggregations)
-curl -s "localhost:8000/entities?filter:schema=Payment&metric:sum=amountEur&limit=0"
+curl -s "localhost:8000/entities?filter:schema=Payment&metric:sum=properties.amountEur&limit=0"
 # full-text search and autocomplete
 curl -s "localhost:8000/entities?q=jane+doe&filter:dataset=my_dataset"
 curl -s "localhost:8000/autocomplete?q=jan"
@@ -112,7 +114,7 @@ Requests span all datasets by default; scope them with one or more `filter:datas
 curl -s "localhost:8000/catalog"                     # per-dataset statistics
 curl -s "localhost:8000/catalog/dataset2"            # single dataset metadata
 curl -s "localhost:8000/entities?filter:dataset=dataset2&limit=5"
-curl -s "localhost:8000/entities?filter:dataset=dataset1&filter:schema=Payment&metric:sum=amountEur&limit=0"
+curl -s "localhost:8000/entities?filter:dataset=dataset1&filter:schema=Payment&metric:sum=properties.amountEur&limit=0"
 curl -s "localhost:8000/entities?q=jane+doe&filter:dataset=dataset1"
 ```
 
@@ -142,20 +144,23 @@ The api speaks the Aleph / OpenAleph filter grammar, the same [`Query.from_param
 /entities?filter:startswith:canonical_id=eu-               # prefix: startswith, endswith
 /entities?exclude:properties.jurisdiction=eu               # negation
 /entities?empty:properties.deathDate=                      # absence
-/entities?filter:countries=de                              # property-type groups
-/entities?filter:entities=<entity-id>                      # reverse lookup (any edge)
+/entities?filter:group.countries=de                        # property-type groups
+/entities?filter:group.entities=<entity-id>                # reverse lookup (any edge)
+/entities?filter:context.origin=crawl                      # context columns
 /entities?sort=name:desc&limit=100&offset=200              # sorting and pagination
-/entities?filter:schema=Payment&metric:sum=amountEur&facet=year&limit=0   # aggregations only
-/entities?q=jane+doe&filter:dataset=my_dataset&filter:countries=de
+/entities?filter:schema=Payment&metric:sum=properties.amountEur&facet=year&limit=0   # aggregations only
+/entities?q=jane+doe&filter:dataset=my_dataset&filter:group.countries=de
 ```
 
-Aggregations ride on the entities query, as in the Aleph api: add `metric:<func>=<prop>` (and `facet=<field>` to group them). Ungrouped aggregations are returned in the response `metrics`, grouped ones in `facets`; set `limit=0` to get only those (plus `total`), no results.
+Aggregations ride on the entities query: add `metric:<func>=<field>` (and `facet=<field>` to group them). Ungrouped aggregations are returned in the response `metrics`, grouped ones in `facets`; set `limit=0` to get only those (plus `total`), no results.
+
+`metric:` and `facet` take the same field spelling as `filter:`: `properties.<name>` for a property, `group.<name>` for a property-type group, `context.<name>` for a context column; meta fields and `year` are bare. The response keys the metrics the same way. A `facet` on its own groups an entity count: `?facet=group.countries` is short for `?metric:count=id&facet=group.countries`, and `metric:count=id` agrees with the response `total`.
 
 For nested boolean trees that the flat grammar cannot express (a cross-field `OR`, a negated group), pass a full [RQL](./query.md) string via `rql=`. It overrides the flat filter params, while `sort` / `limit` / `offset` still apply, and it also carries aggregations:
 
 ```bash
-/entities?rql=and(eq(schema,Person),or(eq(countries,de),eq(countries,at)))
-/entities?rql=aggregate(year,sum(amountEur))&limit=0
+/entities?rql=and(eq(schema,Person),or(eq(group.countries,de),eq(group.countries,at)))
+/entities?rql=aggregate(year,sum(properties.amountEur))&limit=0
 ```
 
 Retrieve flags shape the response: `nested` (inline adjacent entities), `featured`, `dehydrate`, `dehydrate_nested`, `stats`. A request with `api_key=<FTMQ_API_BUILD_API_KEY>` may exceed the public `limit` cap (useful for static site builders).
@@ -177,7 +182,7 @@ Retrieve flags shape the response: `nested` (inline adjacent entities), `feature
   "next": "https://.../entities?...&offset=100&limit=100",
   "previous": null,
   "facets": { "year": { "values": [{ "value": "2011", "label": "2011", "count": 42 }], "total": 10 } },
-  "metrics": { "amountEur": { "sum": 40589689.15 } },
+  "metrics": { "properties.amountEur": { "sum": 40589689.15 } },
   "filters": { "schema": ["Person"] },
   "query_q": null,
   "query": { "q": { "and": [] }, "limit": 100, "offset": 0 },
@@ -190,7 +195,7 @@ Retrieve flags shape the response: `nested` (inline adjacent entities), `feature
 
 ### Migrating from ftmq-api 3.x
 
-The former package spoke its own param dialect; this table maps old params to the new grammar:
+Old params map to the current grammar:
 
 | ftmq-api 3.x | ftmq.api |
 |---|---|
@@ -201,13 +206,13 @@ The former package spoke its own param dialect; this table maps old params to th
 | `date__gte=2023` | `filter:gte:properties.date=2023` |
 | `jurisdiction__not=eu` | `exclude:properties.jurisdiction=eu` |
 | `canonical_id__startswith=eu-` | `filter:startswith:canonical_id=eu-` |
-| `reverse=<id>` | `filter:entities=<id>` |
-| `country=de` (search) | `filter:countries=de` |
+| `reverse=<id>` | `filter:group.entities=<id>` |
+| `country=de` (search) | `filter:group.countries=de` |
 | `order_by=-date` | `sort=date:desc` |
 | `page=3&limit=100` | `offset=200&limit=100` |
-| `aggSum=amountEur&aggGroups=year` | `metric:sum=amountEur&facet=year` |
+| `aggSum=amountEur&aggGroups=year` | `metric:sum=properties.amountEur&facet=year` |
 
-The `/similar` endpoint was removed (it had no backing implementation). The `/aggregate` and `/search` endpoints were merged into `/entities` (Aleph-style): request aggregations on the entities query (set `limit=0` for aggregations only), and pass `?q=<term>` to run full-text search over the same query. The response `query` field now echoes the canonical query serialization instead of the raw params, and pagination urls use `offset`.
+The `/similar` endpoint was removed. `/aggregate` and `/search` are merged into `/entities`: request aggregations on the entities query (`limit=0` for aggregations only) and pass `?q=<term>` for full-text search. The response `query` field echoes the canonical query serialization, and pagination urls use `offset`.
 
 ## Settings
 

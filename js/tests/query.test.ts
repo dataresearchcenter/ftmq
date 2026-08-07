@@ -2,7 +2,18 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { A, G, M, not, P, Query, QueryError } from "../query/index.js";
+import {
+  A,
+  Agg,
+  C,
+  G,
+  M,
+  not,
+  P,
+  Query,
+  QueryError,
+  Year,
+} from "../query/index.js";
 
 interface Case {
   name: string;
@@ -39,7 +50,9 @@ function norm(value: any): any {
     for (const key of Object.keys(value)) {
       let v = norm(value[key]);
       if ((key === "and" || key === "or") && Array.isArray(v)) {
-        v = [...v].sort((a, b) => (canon(a) < canon(b) ? -1 : canon(a) > canon(b) ? 1 : 0));
+        v = [...v].sort((a, b) =>
+          canon(a) < canon(b) ? -1 : canon(a) > canon(b) ? 1 : 0,
+        );
       }
       out[key] = v;
     }
@@ -83,7 +96,11 @@ for (const c of cases) {
         expected,
         "toRql roundtrip",
       );
-      assert.deepEqual(norm(Query.fromRql(c.rql).toDict()), expected, "fromRql");
+      assert.deepEqual(
+        norm(Query.fromRql(c.rql).toDict()),
+        expected,
+        "fromRql",
+      );
     }
   });
 }
@@ -105,12 +122,11 @@ test("builder composes a nested tree", () => {
 });
 
 test("toRequestParams falls back to rql for a nested tree", () => {
-  const q = new Query().where(G({ countries: "de" }).or(G({ countries: "at" })));
-  const params = q.toRequestParams();
-  assert.equal(
-    params.get("rql"),
-    "or(eq(countries,de),eq(countries,at))",
+  const q = new Query().where(
+    G({ countries: "de" }).or(G({ countries: "at" })),
   );
+  const params = q.toRequestParams();
+  assert.equal(params.get("rql"), "or(eq(group.countries,de),eq(group.countries,at))");
 });
 
 test("toRequestParams uses flat aleph params for a flat tree", () => {
@@ -127,11 +143,43 @@ test("toRequestParams uses flat aleph params for a flat tree", () => {
 test("aggregate node builds specs and round-trips via dict", () => {
   const q = new Query()
     .where(M({ schema: "Payment" }))
-    .aggregate(A({ sum: "amountEur", by: "beneficiary" }), A({ count: "id" }));
+    .aggregate(
+      A({ sum: P("amountEur"), by: P("beneficiary") }),
+      A({ count: M("id") }),
+    );
   assert.deepEqual(norm(Query.fromDict(q.toDict()).toDict()), norm(q.toDict()));
   assert.equal(q.aggregations.length, 2);
 });
 
 test("invalid comparator throws QueryError", () => {
   assert.throws(() => M({ schema__bogus: "x" }), QueryError);
+});
+
+// mirrors `test_agg_refs` in tests/test_aggregation.py
+test("a family marker with a bare field name builds a reference", () => {
+  assert.equal(P("amountEur").wire, "properties.amountEur");
+  assert.equal(G("countries").wire, "group.countries");
+  assert.equal(M("dataset").wire, "dataset");
+  assert.equal(C("origin").wire, "context.origin");
+  assert.equal(Year().wire, "year");
+  // `topics` is both a property and a property-type group - a name alone
+  // cannot say which, the marker can
+  assert.equal(P("topics").wire, "properties.topics");
+  assert.equal(G("topics").wire, "group.topics");
+  assert.throws(() => M("nope"), QueryError);
+});
+
+// mirrors `test_aggregate_params` in tests/test_query.py - a surface that
+// cannot round-trip through a fixture, since `toParams` always emits a metric
+test("a bare facet groups an entity count", () => {
+  const q = Query.fromParams({ facet: ["dataset"] });
+  assert.deepEqual(
+    q.aggregations.map((a) => a.key()),
+    [new Agg("count", M("id"), [M("dataset")]).key()],
+  );
+  // ... but a query with no facet at all still has no aggregations
+  assert.deepEqual(
+    Query.fromParams({ "filter:schema": ["Payment"] }).aggregations,
+    [],
+  );
 });

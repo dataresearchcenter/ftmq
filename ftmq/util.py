@@ -16,10 +16,10 @@ from rigour.names import NameTypeTag, Symbol, analyze_names
 from rigour.territories import lookup_territory
 from rigour.text.scripts import can_latinize
 
-from ftmq.enums import Comparators
 from ftmq.types import Entity
 
 DEFAULT_DATASET = "default"
+SCOPE_DATASET = "ftmq_scope"
 
 
 @cache
@@ -28,8 +28,12 @@ def make_dataset(name: str | None = DEFAULT_DATASET) -> Dataset:
     return Dataset.make({"name": name, "title": name.title()})
 
 
-@cache
 def ensure_dataset(ds: str | Dataset | None = None) -> Dataset:
+    # deliberately not cached: followthemoney identifies datasets by name
+    # alone, so caching would hand back an *equal but different* dataset - two
+    # scopes spanning different members share a name (see `get_scope_dataset`)
+    # and the first one built would win. The name -> dataset construction it
+    # delegates to is cached instead.
     if not ds:
         return make_dataset()
     if isinstance(ds, str):
@@ -39,18 +43,18 @@ def ensure_dataset(ds: str | Dataset | None = None) -> Dataset:
 
 @cache
 def get_scope_dataset(*names: str) -> Dataset:
-    ds = Dataset({"name": "default", "datasets": names})
+    """A store's read scope over `names`: a single dataset is its own scope,
+    several are wrapped in a synthetic `ftmq_scope` collection.
+
+    The collection name must differ from every member: followthemoney
+    identifies datasets by name, and a collection sharing a member's name
+    would absorb that member and drop it from `leaf_names`.
+    """
+    if len(names) == 1:
+        return make_dataset(names[0])
+    ds = Dataset({"name": SCOPE_DATASET, "datasets": names})
     ds.children = {make_dataset(n) for n in names}
     return ds
-
-
-def parse_comparator(key: str) -> tuple[str, Comparators]:
-    key, *comparator = key.split("__", 1)
-    if comparator:
-        comparator = Comparators[comparator[0]]
-    else:
-        comparator = Comparators["eq"]
-    return key, comparator
 
 
 def make_entity(
@@ -407,25 +411,6 @@ def make_fingerprint_id(*values: Any) -> str | None:
         The computed hash id or `None` if a parts fingerprinted value is `None`
     """
     return make_entity_id(*map(make_fingerprint, values))
-
-
-@cache
-def prop_is_numeric(schema: Schema, prop: str) -> bool:
-    """
-    Indicate if the given property is numeric type
-
-    Args:
-        schema: followthemoney schema
-        prop: Property
-
-    Returns:
-        `False` if the property is not numeric type or not found in the schema
-            at all
-    """
-    prop_ = schema.get(prop)
-    if prop_ is not None:
-        return prop_.type == registry.number
-    return False
 
 
 def get_entity_caption_property(e: Entity) -> SDict:

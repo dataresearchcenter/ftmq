@@ -7,10 +7,12 @@ the `& | ~` boolean tree the `M`/`P`/`G`/`C` filter nodes build. It is declared
 with [`Query.aggregate`][ftmq.Query.aggregate], parallel to `where()` and
 `order_by()`.
 
-`A(sum="amountEur", by="beneficiary")` builds one immutable [`Agg`][ftmq.query.aggregations.Agg]
-spec per `func=prop` pair. [`Aggregator`][ftmq.query.aggregations.Aggregator] is
+`A(sum=P("amountEur"), by=P("beneficiary"))` builds one immutable
+[`Agg`][ftmq.query.aggregations.Agg] spec per `func=<ref>` pair, where the
+field is a [`Ref`][ftmq.query.refs.Ref] built by the same `M` / `P` / `G` / `C`
+markers as a filter leaf. [`Aggregator`][ftmq.query.aggregations.Aggregator] is
 the in-memory accumulator that runs those specs over a stream of entities; the
-SQL backend reads the same specs (see [`ftmq.query.sql`][ftmq.query.sql]).
+SQL backend reads the same specs (see `ftmq.query.sql`).
 """
 
 from __future__ import annotations
@@ -22,68 +24,64 @@ from typing import Any, Iterable, Iterator, TypeAlias, cast
 
 from anystore.util import clean_dict
 from banal import ensure_list
-from followthemoney import model
 from followthemoney.types import registry
 
 from ftmq.query.exceptions import QueryError
+from ftmq.query.refs import Ref, ref_from_wire
 from ftmq.types import Entity
-from ftmq.util import prop_is_numeric
 
 Value: TypeAlias = int | float | str
 Values: TypeAlias = list[Value]
 
 AggregatorResult: TypeAlias = dict[str, Any]
 
-# the aggregation functions this module implements (see `reduce_values`);
-# mirrors `ftmq.enums.Aggregations`
+# the aggregation functions this module implements (see `reduce_values`)
 FUNCTIONS: frozenset[str] = frozenset({"min", "max", "sum", "avg", "count"})
-# non-property fields aggregatable via `Agg.values`; mirrors `ftmq.enums.Fields`
-FIELDS: frozenset[str] = frozenset({"id", "dataset", "schema", "year"})
-_PROP_NAMES: frozenset[str] = frozenset(p.name for p in model.properties)
-
-
-def _validate_field(name: str) -> str:
-    """A property/field name valid as an aggregation target or group."""
-    if name in _PROP_NAMES or name in FIELDS:
-        return name
-    raise QueryError(f"Invalid aggregation field: `{name}`")
 
 
 @dataclass(frozen=True)
 class Agg:
-    """An immutable aggregation spec: a function over a property, optionally
-    grouped. Built via the [`A`][ftmq.query.aggregations.A] node or
+    """An immutable aggregation spec: a function over a field reference,
+    optionally grouped by others. Built via the
+    [`A`][ftmq.query.aggregations.A] node or
     [`Query.aggregate`][ftmq.Query.aggregate]."""
 
     func: str
-    prop: str
-    groups: tuple[str, ...] = ()
+    ref: Ref
+    groups: tuple[Ref, ...] = ()
 
-    def values(self, proxy: Entity, prop: str | None = None) -> Iterator[str]:
-        """Yield the entity values for this spec's property (or a group prop)."""
-        prop = prop or self.prop
-        if prop == "id":
-            if proxy.id is not None:
-                yield proxy.id
-        elif prop == "dataset":
-            yield from proxy.datasets
-        elif prop == "schema":
-            yield proxy.schema.name
-        elif prop == "year":
-            for value in proxy.get_type_values(registry.date):
-                yield value[:4]
-        else:
-            yield from proxy.get(prop, quiet=True)
+    @property
+    def key(self) -> str:
+        """The wire spelling of the aggregated field."""
+        return self.ref.wire
 
 
-def make_agg(func: str, prop: str, groups: Iterable[str] = ()) -> Agg:
-    """Validate and build a single [`Agg`][ftmq.query.aggregations.Agg] spec."""
+def make_agg(func: str, ref: Ref, groups: Iterable[Ref] = ()) -> Agg:
+    """Validate and build a single [`Agg`][ftmq.query.aggregations.Agg] spec.
+
+    Groups are sorted (by wire spelling), so two specs over the same fields
+    compare and serialize identically regardless of input order.
+    """
     if func not in FUNCTIONS:
-        raise QueryError(f"Invalid aggregation function: `{func}`")
+        raise QueryError(
+            f"Invalid aggregation function: `{func}` - one of "
+            f"({', '.join(sorted(FUNCTIONS))})"
+        )
     return Agg(
-        func=func,
-        prop=_validate_field(prop),
-        groups=tuple(_validate_field(g) for g in groups),
+        func=func, ref=_ensure_ref(ref), groups=tuple(sorted(map(_ensure_ref, groups)))
+    )
+
+
+def _ensure_ref(ref: Ref) -> Ref:
+    """Aggregations address fields by reference, not by name: the family a
+    bare string belongs to is exactly what the `M` / `P` / `G` / `C` markers
+    carry (and what a name alone cannot - `topics` is both a property and a
+    property-type group)."""
+    if isinstance(ref, Ref):
+        return ref
+    raise QueryError(
+        f"Invalid aggregation field: `{ref}` - expected a field reference such "
+        'as `P("amountEur")`, `G("countries")`, `M("dataset")` or `Year()`'
     )
 
 
@@ -105,35 +103,38 @@ def reduce_values(func: str, values: Values) -> Value | None:
 
 
 class A:
-    """An aggregation projection node: `A(sum="amountEur", by="beneficiary")`.
+    """An aggregation projection node: `A(sum=P("amountEur"), by=P("beneficiary"))`.
 
     Each keyword is an aggregation function (`min`, `max`, `sum`, `avg`,
-    `count`) whose value is the property (or properties) to aggregate; `by=`
-    groups by one or more properties / fields. Unlike the `M`/`P`/`G`/`C`
-    filter nodes, `A` is not a boolean leaf - it does not compose with
-    `& | ~`; pass it to [`Query.aggregate`][ftmq.Query.aggregate].
+    `count`) whose value is the field reference (or references) to aggregate;
+    `by=` groups by one or more references. Fields are addressed with the same
+    `M` / `P` / `G` / `C` markers the filter families use, called with a bare
+    field name (plus `Year()`), so an aggregation says which family it means
+    instead of leaving it to be guessed from the name. Unlike the filter nodes,
+    `A` is not a boolean leaf - it does not compose with `& | ~`; pass it to
+    [`Query.aggregate`][ftmq.Query.aggregate].
 
     Examples:
         ```python
-        A(sum="amountEur", by="beneficiary")
-        A(count="id")
-        A(sum=["amountEur", "amount"])
+        A(sum=P("amountEur"), by=P("beneficiary"))
+        A(count=M("id"), by=[G("countries"), Year()])
+        A(sum=[P("amountEur"), P("amount")])
         ```
     """
 
     def __init__(
         self,
         *,
-        by: str | Iterable[str] | None = None,
-        **funcs: str | Iterable[str],
+        by: Ref | Iterable[Ref] | None = None,
+        **funcs: Ref | Iterable[Ref],
     ) -> None:
-        groups: tuple[str, ...] = tuple(str(g) for g in ensure_list(by))
+        groups: tuple[Ref, ...] = tuple(cast("list[Ref]", ensure_list(by)))
         aggs: list[Agg] = []
-        for func, props in funcs.items():
-            for prop in ensure_list(props):
-                aggs.append(make_agg(func, prop, groups))
+        for func, refs in funcs.items():
+            for ref in cast("list[Ref]", ensure_list(refs)):
+                aggs.append(make_agg(func, ref, groups))
         if not aggs:
-            raise QueryError("Empty aggregation: pass at least one `func=prop`")
+            raise QueryError("Empty aggregation: pass at least one `func=<ref>`")
         self.aggs: tuple[Agg, ...] = tuple(aggs)
 
 
@@ -148,21 +149,22 @@ class Aggregator:
     def __init__(self, aggs: Iterable[Agg]) -> None:
         self.aggs: list[Agg] = list(aggs)
         self._values: dict[Agg, Values] = defaultdict(list)
-        self._grouped: dict[Agg, dict[str, dict[str, Values]]] = defaultdict(
+        self._grouped: dict[Agg, dict[Ref, dict[str, Values]]] = defaultdict(
             lambda: defaultdict(lambda: defaultdict(list))
         )
 
     def collect(self, proxy: Entity) -> None:
         """Accumulate one entity's values into every spec."""
         for agg in self.aggs:
-            is_numeric = prop_is_numeric(proxy.schema, agg.prop)
-            for raw in agg.values(proxy):
-                value: Any = registry.number.to_number(raw) if is_numeric else raw
+            for raw in agg.ref.values(proxy):
+                value: Any = (
+                    registry.number.to_number(raw) if agg.ref.is_numeric else raw
+                )
                 if value is None:
                     continue
                 self._values[agg].append(value)
                 for group in agg.groups:
-                    for g in agg.values(proxy, group):
+                    for g in group.values(proxy):
                         self._grouped[agg][group][g].append(value)
 
     def apply(self, proxies: Iterable[Entity]) -> Iterator[Entity]:
@@ -173,14 +175,15 @@ class Aggregator:
 
     @property
     def result(self) -> AggregatorResult:
-        """The reduced result: `{func: {prop: value}, "groups": {group: {func:
-        {prop: {group_value: value}}}}}` (empties removed)."""
+        """The reduced result, keyed by the wire spelling of each field:
+        `{func: {field: value}, "groups": {group: {func: {field: {group_value:
+        value}}}}}` (empties removed)."""
         res: Any = defaultdict(dict)
         groups: Any = defaultdict(lambda: defaultdict(dict))
         for agg in self.aggs:
-            res[agg.func][agg.prop] = reduce_values(agg.func, self._values[agg])
+            res[agg.func][agg.key] = reduce_values(agg.func, self._values[agg])
             for group in agg.groups:
-                groups[group][agg.func][agg.prop] = {
+                groups[group.wire][agg.func][agg.key] = {
                     g: reduce_values(agg.func, values)
                     for g, values in self._grouped[agg][group].items()
                 }
@@ -188,32 +191,27 @@ class Aggregator:
         return clean_dict(res)
 
 
-def aggregations_to_dict(aggs: Iterable[Agg]) -> dict[str, Any]:
-    """Serialize aggregation specs to the query `to_dict` shape:
-    `{func: {props}, "groups": {group: {func: {props}}}}`."""
-    data: dict[str, Any] = defaultdict(set)
-    data["groups"] = defaultdict(lambda: defaultdict(set))
-    for agg in aggs:
-        data[agg.func].add(agg.prop)
-        for group in agg.groups:
-            data["groups"][group][agg.func].add(agg.prop)
-    return clean_dict(data)
+def aggregations_to_dict(aggs: Iterable[Agg]) -> list[dict[str, Any]]:
+    """Serialize aggregation specs to the query `to_dict` shape: one
+    `{"func": ..., "field": ..., "by": [...]}` mapping per spec (fields spelled
+    as on the wire, `by` omitted when ungrouped), deterministically ordered."""
+    specs: list[dict[str, Any]] = []
+    for agg in sorted(aggs, key=lambda a: (a.func, a.key, a.groups)):
+        spec: dict[str, Any] = {"func": agg.func, "field": agg.key}
+        if agg.groups:
+            spec["by"] = [g.wire for g in agg.groups]
+        specs.append(spec)
+    return specs
 
 
-def aggregations_from_dict(data: dict[str, Any]) -> set[Agg]:
+def aggregations_from_dict(data: Iterable[dict[str, Any]]) -> set[Agg]:
     """Rebuild aggregation specs from the output of
-    [`aggregations_to_dict`][ftmq.query.aggregations.aggregations_to_dict],
-    restoring each spec's groups from the nested `groups` mapping."""
-    data = dict(data)
-    nested = data.pop("groups", None) or {}
-    groups_by_agg: dict[tuple[str, str], set[str]] = defaultdict(set)
-    for group, funcs in nested.items():
-        for func, props in funcs.items():
-            for prop in ensure_list(props):
-                groups_by_agg[(func, prop)].add(group)
-    aggs: set[Agg] = set()
-    for func, props in data.items():
-        for prop in ensure_list(props):
-            groups = tuple(sorted(groups_by_agg.get((func, prop), ())))
-            aggs.add(make_agg(func, prop, groups))
-    return aggs
+    [`aggregations_to_dict`][ftmq.query.aggregations.aggregations_to_dict]."""
+    return {
+        make_agg(
+            spec["func"],
+            ref_from_wire(spec["field"]),
+            [ref_from_wire(g) for g in spec.get("by", [])],
+        )
+        for spec in data
+    }

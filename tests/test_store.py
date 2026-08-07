@@ -1,6 +1,6 @@
 from followthemoney import EntityProxy, StatementEntity
 
-from ftmq.query import A, C, G, M, P, Query
+from ftmq.query import A, C, G, M, P, Query, Year
 from ftmq.store import MemoryStore, Store, get_store
 from ftmq.store.aleph import AlephStore, parse_uri
 from ftmq.store.base import get_resolver
@@ -152,14 +152,17 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
     assert res[0].caption == "Dr.-Ing. E. h. Martin Herrenknecht"
 
     # aggregation
-    q = Query().aggregate(A(max="date"), A(min="date"))
+    q = Query().aggregate(A(max=P("date")), A(min=P("date")))
     res = view.aggregations(q)
-    assert res == {"max": {"date": "2011-12-29"}, "min": {"date": "2002-07-04"}}
+    assert res == {
+        "max": {"properties.date": "2011-12-29"},
+        "min": {"properties.date": "2002-07-04"},
+    }
 
-    q = Query().aggregate(A(count="id", by="beneficiary"))
+    q = Query().aggregate(A(count=M("id"), by=P("beneficiary")))
     res = view.aggregations(q)
     assert (
-        res["groups"]["beneficiary"]["count"]["id"][
+        res["groups"]["properties.beneficiary"]["count"]["id"][
             "6d03aec76fdeec8f9697d8b19954ab6fc2568bc8"
         ]
         == 10
@@ -169,14 +172,14 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
     q = (
         Query()
         .where(M(dataset="donations"))
-        .aggregate(A(sum="amountEur", by="beneficiary"))
+        .aggregate(A(sum=P("amountEur"), by=P("beneficiary")))
     )
     res = view.aggregations(q)
     assert res == {
         "groups": {
-            "beneficiary": {
+            "properties.beneficiary": {
                 "sum": {
-                    "amountEur": {
+                    "properties.amountEur": {
                         "6d03aec76fdeec8f9697d8b19954ab6fc2568bc8": 3368136.15,
                         "783d918df9f9178400d6b3386439ab3b3679979c": 6039987,
                         "6d8377d3938b85fa1bfd1985486f0f913c42e224": 6394282,
@@ -192,15 +195,19 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
                 }
             }
         },
-        "sum": {"amountEur": 40589689.15},
+        "sum": {"properties.amountEur": 40589689.15},
     }
-    q = Query().where(M(dataset="donations")).aggregate(A(sum="amountEur", by="year"))
+    q = (
+        Query()
+        .where(M(dataset="donations"))
+        .aggregate(A(sum=P("amountEur"), by=Year()))
+    )
     res = view.aggregations(q)
     assert res == {
         "groups": {
             "year": {
                 "sum": {
-                    "amountEur": {
+                    "properties.amountEur": {
                         "2011": 1953402.15,
                         "2010": 3899002,
                         "2009": 6451130,
@@ -215,12 +222,12 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
                 }
             }
         },
-        "sum": {"amountEur": 40589689.15},
+        "sum": {"properties.amountEur": 40589689.15},
     }
 
-    q = Query().where(M(dataset="donations")).aggregate(A(avg="amountEur"))
+    q = Query().where(M(dataset="donations")).aggregate(A(avg=P("amountEur")))
     res = view.aggregations(q)
-    assert res == {"avg": {"amountEur": 139964.44534482757}}
+    assert res == {"avg": {"properties.amountEur": 139964.44534482757}}
 
     # reverse lookup (the `entities` group)
     entity_id = "783d918df9f9178400d6b3386439ab3b3679979c"
@@ -607,3 +614,104 @@ def test_store_fragments_to_lake(tmp_path):
     entities = list(lake.iterate())
     assert len(entities) == 2
     assert lake.get_origins() == {"ingest", "source1", "source2"}
+
+
+def _numeric_fixture() -> list[StatementEntity]:
+    """Payments whose amounts arrive display-formatted, as followthemoney's
+    `number` type stores them verbatim (it neither normalizes nor rejects)."""
+    return [
+        make_entity(
+            {
+                "id": f"pay-{i}",
+                "schema": "Payment",
+                "properties": {"amountEur": [raw], "date": ["2023-01-01"]},
+            },
+            StatementEntity,
+            "numbers",
+        )
+        for i, raw in enumerate(["1,000.50", "2000", "3,000,000.00", "1,500"])
+    ]
+
+
+def test_store_writer_casts_types():
+    # a store writer normalizes statement values on the way in, so the read
+    # side can assume the canonical format of the property type
+    proxy = _numeric_fixture()[0]
+    store = MemoryStore(dataset="numbers", linker=get_resolver())
+    with store.writer() as bulk:
+        bulk.add_entity(proxy)
+    entity = list(store.iterate())[0]
+    assert entity.get("amountEur") == ["1000.50"]
+    # the raw value survives as the source value
+    amounts = [s for s in entity.statements if s.prop == "amountEur"]
+    assert [s.original_value for s in amounts] == ["1,000.50"]
+
+    # opt out for a store that gets its values normalized elsewhere
+    store = MemoryStore(dataset="numbers", linker=get_resolver(), cast_types=False)
+    with store.writer() as bulk:
+        bulk.add_entity(proxy)
+    assert list(store.iterate())[0].get("amountEur") == ["1,000.50"]
+
+
+def test_store_numeric_aggregation_agrees_with_memory(tmp_path):
+    # the sql backends cast `value` to NUMERIC, so they agree with the
+    # in-memory evaluator (which reads through `registry.number.to_number`)
+    # only for values in the canonical format - which is what every store
+    # writer casts them into on the way in (see `ftmq.statements`)
+    entities = _numeric_fixture()
+    scope = get_scope_dataset("numbers")
+    q = (
+        Query()
+        .where(M(schema="Payment"))
+        .aggregate(
+            A(
+                sum=P("amountEur"),
+                min=P("amountEur"),
+                max=P("amountEur"),
+                count=M("id"),
+            )
+        )
+    )
+
+    expected = {"sum": 3004500.5, "min": 1000.5, "max": 3000000.0}
+    stores: dict[str, Store] = {
+        "memory": MemoryStore(dataset=scope, linker=get_resolver()),
+        "sqlite": SQLStore(
+            dataset=scope, linker=get_resolver(), uri=f"sqlite:///{tmp_path}/num.db"
+        ),
+        "lake": LakeStore(dataset=scope, linker=get_resolver(), uri=tmp_path / "lake"),
+    }
+    for name, store in stores.items():
+        with store.writer() as bulk:
+            for proxy in entities:
+                bulk.add_entity(proxy)
+        res = store.default_view().aggregations(q)
+        for func, value in expected.items():
+            assert res[func]["properties.amountEur"] == value, (name, func)
+        # the meta field counts entities, not the `value` of a `prop = "id"`
+        # row - which is the *unresolved* id, i.e. referents
+        assert res["count"]["id"] == len(entities) == store.default_view().count(q)
+
+
+def test_store_default_dataset_name_resolves(tmp_path):
+    # regression: an implicit scope over a dataset literally named "default"
+    # collapsed to an empty `leaf_names`, so `get_entity` filtered on
+    # `dataset IN ()` and every entity 404'd while list queries still worked
+    entity = make_entity(
+        {"id": "e1", "schema": "Company", "properties": {"name": ["Acme"]}},
+        StatementEntity,
+        "default",
+    )
+    for cls, kwargs in (
+        (MemoryStore, {}),
+        (SQLStore, {"uri": f"sqlite:///{tmp_path}/default.db"}),
+        (LakeStore, {"uri": tmp_path / "default_lake"}),
+    ):
+        store = cls(linker=get_resolver(), **kwargs)
+        with store.writer() as bulk:
+            bulk.add_entity(entity)
+        assert store.scope.leaf_names == {"default"}
+        view = store.default_view()
+        assert [e.id for e in view.query(Query())] == ["e1"]
+        # the detail path has to resolve what the list path returned
+        assert view.get_entity("e1") is not None

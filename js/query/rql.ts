@@ -3,6 +3,7 @@ import { resolveField } from "./aleph.js";
 import { QueryError } from "./exceptions.js";
 import { type Leaf } from "./leaves.js";
 import { AND, combine, Expr, FAMILIES, OR } from "./nodes.js";
+import { refFromWire, type Ref } from "./refs.js";
 import { byString } from "./util.js";
 
 // --- the self-contained RQL codec (pyrql-compatible `{name, args}` AST) ------
@@ -125,7 +126,16 @@ function rqlLeaf(op: string, args: RqlArg[]): Expr {
   }
   const field = args[0] as string;
   let value = args[1] as unknown;
-  const [family, key] = resolveField(field);
+  let family: ReturnType<typeof resolveField>[0];
+  let key: string;
+  try {
+    [family, key] = resolveField(field);
+  } catch (error) {
+    if (!(error instanceof QueryError)) throw error;
+    // RQL convenience (mirrors the Python side): a bare name that is not a
+    // known field spelling is a property
+    [family, key] = ["P", field];
+  }
   if (comparator === "in" || comparator === "not_in") {
     value = Array.isArray(value) ? value : [value];
   } else if (
@@ -154,10 +164,6 @@ export function rqlToExpr(node: RqlNode): Expr {
   return rqlLeaf(name, args);
 }
 
-function alephField(leaf: Leaf): string {
-  return leaf.family === "P" ? `properties.${leaf.field}` : leaf.field;
-}
-
 function leafToRql(leaf: Leaf): RqlNode {
   const op = TO_RQL_OPERATORS[leaf.comparator];
   if (op === undefined) {
@@ -169,7 +175,7 @@ function leafToRql(leaf: Leaf): RqlNode {
   if (op === "in" || op === "out") {
     value = (leaf.value as string[]).map((v) => String(v)).sort(byString);
   }
-  return { name: op, args: [alephField(leaf), value] };
+  return { name: op, args: [leaf.wire, value] };
 }
 
 export function exprToRql(expr: Expr): RqlNode {
@@ -197,17 +203,23 @@ export function exprToRql(expr: Expr): RqlNode {
 
 // --- aggregations <-> RQL ----------------------------------------------------
 
-function metricAggs(node: RqlNode, groups: string[]): Agg[] {
+function metricAggs(node: RqlNode, groups: Ref[]): Agg[] {
   const func = RQL_FUNCTIONS[node.name];
   if (func === undefined) {
-    throw new QueryError(`Unsupported RQL aggregate operator: \`${node.name}\``);
+    throw new QueryError(
+      `Unsupported RQL aggregate operator: \`${node.name}\``,
+    );
   }
-  return node.args.map((prop) => new Agg(func, String(prop), groups));
+  return node.args.map(
+    (field) => new Agg(func, refFromWire(String(field)), groups),
+  );
 }
 
 function nodeAggs(node: RqlNode): Agg[] {
   if (node.name === "aggregate") {
-    const groups = node.args.filter((a) => typeof a === "string") as string[];
+    const groups = (
+      node.args.filter((a) => typeof a === "string") as string[]
+    ).map(refFromWire);
     const aggs: Agg[] = [];
     for (const arg of node.args) {
       if (isNode(arg)) aggs.push(...metricAggs(arg, groups));
@@ -220,17 +232,24 @@ function nodeAggs(node: RqlNode): Agg[] {
 function aggsToRql(aggs: Agg[]): RqlNode[] {
   const ungrouped: RqlNode[] = [];
   const grouped = new Map<string, { groups: string[]; nodes: RqlNode[] }>();
+  const groupKey = (agg: Agg): string =>
+    agg.groups.map((g) => g.wire).join(",");
   const sorted = [...aggs].sort(
     (a, b) =>
-      byString(a.groups.join(","), b.groups.join(",")) ||
+      byString(groupKey(a), groupKey(b)) ||
       byString(a.func, b.func) ||
-      byString(a.prop, b.prop),
+      byString(a.field, b.field),
   );
   for (const agg of sorted) {
-    const node: RqlNode = { name: TO_RQL_FUNCTIONS[agg.func], args: [agg.prop] };
+    const node: RqlNode = {
+      name: TO_RQL_FUNCTIONS[agg.func],
+      args: [agg.field],
+    };
     if (agg.groups.length) {
-      const gk = agg.groups.join(",");
-      if (!grouped.has(gk)) grouped.set(gk, { groups: agg.groups, nodes: [] });
+      const gk = groupKey(agg);
+      if (!grouped.has(gk)) {
+        grouped.set(gk, { groups: agg.groups.map((g) => g.wire), nodes: [] });
+      }
       grouped.get(gk)!.nodes.push(node);
     } else {
       ungrouped.push(node);

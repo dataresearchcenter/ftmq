@@ -64,6 +64,8 @@ from ftmq.io import smart_write_proxies
 smart_write_proxies("sqlite:///followthemoney.store", proxies)
 ```
 
+The writer normalizes number and date values on the way in (`"324,687.00"` is stored as `"324687.00"`, the raw string as the statement's `original_value`); the SQL backends rely on this format when aggregating or sorting numerically. Pass `cast_types=False` to `get_store` to skip it, and migrate existing data with [`ftmq statements cast-types`](./cli.md#statements).
+
 ### Command line
 
 ```bash

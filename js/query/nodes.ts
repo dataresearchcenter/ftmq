@@ -1,4 +1,5 @@
 import { Leaf, leafFromDict, makeLeaf, type Family } from "./leaves.js";
+import { makeRef, type Ref } from "./refs.js";
 import { byString, canon } from "./util.js";
 
 export const AND = "AND";
@@ -13,7 +14,11 @@ export class Expr {
   negated: boolean;
   children: Child[];
 
-  constructor(children: Child[] = [], connector: Connector = AND, negated = false) {
+  constructor(
+    children: Child[] = [],
+    connector: Connector = AND,
+    negated = false,
+  ) {
     this.connector = connector;
     this.negated = negated;
     this.children = children;
@@ -87,29 +92,50 @@ export class Expr {
   }
 }
 
-function family(fam: Family, lookups: Record<string, unknown>): Expr {
-  const children = Object.entries(lookups).map(([k, v]) => makeLeaf(fam, k, v));
-  return new Expr(children, AND);
+/**
+ * A family constructor: called with `field=value` lookups it builds a condition
+ * (an `Expr`), called with a bare field name it builds a reference (a `Ref`) -
+ * the same field, no condition, which is what an aggregation projects over.
+ *
+ * ```ts
+ * P({ amountEur__gte: 1000 })   // a condition
+ * P("amountEur")                // a field reference
+ * ```
+ */
+export interface FamilyNode {
+  (field: string): Ref;
+  (lookups: Record<string, unknown>): Expr;
 }
 
-/** Meta-field conditions: `dataset`, `schema`, `schemata`, `id`, ... */
-export const M = (lookups: Record<string, unknown>): Expr => family("M", lookups);
-/** Specific-property conditions, e.g. `P({ name__ilike: "jane" })`. */
-export const P = (lookups: Record<string, unknown>): Expr => family("P", lookups);
-/** Property-type group conditions, e.g. `G({ countries: "de" })`. */
-export const G = (lookups: Record<string, unknown>): Expr => family("G", lookups);
-/** Context / storage-column conditions, e.g. `C({ origin: "crawl" })`. */
-export const C = (lookups: Record<string, unknown>): Expr => family("C", lookups);
+function makeFamily(fam: Family): FamilyNode {
+  return ((arg: string | Record<string, unknown>) => {
+    if (typeof arg === "string") return makeRef(fam, arg);
+    const children = Object.entries(arg).map(([k, v]) => makeLeaf(fam, k, v));
+    return new Expr(children, AND);
+  }) as FamilyNode;
+}
+
+/** Meta fields: `dataset`, `schema`, `schemata`, `id`, ... */
+export const M: FamilyNode = makeFamily("M");
+/** A specific FtM property, e.g. `P({ name__ilike: "jane" })` / `P("amountEur")`. */
+export const P: FamilyNode = makeFamily("P");
+/** A property-type group, e.g. `G({ countries: "de" })` / `G("countries")`. */
+export const G: FamilyNode = makeFamily("G");
+/** A context / storage column, e.g. `C({ origin: "crawl" })` / `C("origin")`. */
+export const C: FamilyNode = makeFamily("C");
 
 export const FAMILIES: Record<Family, (l: Record<string, unknown>) => Expr> = {
-  M,
-  P,
-  G,
-  C,
+  M: M as (l: Record<string, unknown>) => Expr,
+  P: P as (l: Record<string, unknown>) => Expr,
+  G: G as (l: Record<string, unknown>) => Expr,
+  C: C as (l: Record<string, unknown>) => Expr,
 };
 
 /** Combine nodes with a single connector, skipping empties (`null` if none). */
-export function combine(nodes: Expr[], connector: Connector = AND): Expr | null {
+export function combine(
+  nodes: Expr[],
+  connector: Connector = AND,
+): Expr | null {
   let result: Expr | null = null;
   for (const node of nodes) {
     if (node.isEmpty) continue;
@@ -119,6 +145,7 @@ export function combine(nodes: Expr[], connector: Connector = AND): Expr | null 
   return result;
 }
 
-export const and = (...nodes: Expr[]): Expr => combine(nodes, AND) ?? new Expr();
+export const and = (...nodes: Expr[]): Expr =>
+  combine(nodes, AND) ?? new Expr();
 export const or = (...nodes: Expr[]): Expr => combine(nodes, OR) ?? new Expr();
 export const not = (node: Expr): Expr => node.not();

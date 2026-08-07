@@ -1,6 +1,6 @@
 import pytest
 
-from ftmq import A, C, G, M, P, Query, QueryError
+from ftmq import A, C, G, M, P, Query, QueryError, Year
 from ftmq.query import Expr
 from ftmq.util import make_entity
 
@@ -133,15 +133,11 @@ def test_apply_notlike():
     assert not Query().where(P(name__notilike="jane")).apply(PERSON)
 
 
-def test_apply_between_not_implemented():
-    # `between` is grammar-valid (it serializes) but cannot evaluate yet: the
-    # leaf layer casts values to a single scalar. Fail loudly on both the
-    # in-memory and the SQL side instead of silently diverging.
-    q = Query().where(P(name__between="a"))
-    with pytest.raises(QueryError, match="between"):
-        q.apply(PERSON)
-    with pytest.raises(QueryError, match="between"):
-        str(q.sql.statements)
+def test_apply_between_removed():
+    # `between` never evaluated (both evaluators raised); it is no longer part
+    # of the grammar and is rejected when the lookup is parsed
+    with pytest.raises(QueryError, match="Invalid comparator"):
+        Query().where(P(name__between="a"))
 
 
 def test_serialization_dict_roundtrip():
@@ -152,7 +148,7 @@ def test_serialization_dict_roundtrip():
         .order_by("name", ascending=False)[10:20]
     )
     data = q.to_dict()
-    assert "q" in data and data["order_by"] == ["-name"]
+    assert "q" in data and data["order_by"] == "-name"
     assert data["limit"] == 10 and data["offset"] == 10
     assert Query.from_dict(data).to_dict() == data
 
@@ -161,10 +157,10 @@ def test_params_bridge():
     q = Query().where(M(schema="Person"), G(countries="de"))
     assert q.to_params() == {
         "filter:schema": ["Person"],
-        "filter:countries": ["de"],
+        "filter:group.countries": ["de"],
     }
     # keys are sorted for deterministic output
-    assert q.to_string() == "filter:countries=de&filter:schema=Person"
+    assert q.to_string() == "filter:group.countries=de&filter:schema=Person"
     assert Query.from_string(q.to_string()).to_dict() == q.to_dict()
 
     # property, exclude, empty, range
@@ -263,11 +259,16 @@ def test_collectors():
 
 def test_order_and_slice():
     q = Query().order_by("date")
-    assert q.to_dict() == {"order_by": ["date"]}
-    q = Query().order_by("date", "name")
-    assert q.to_dict() == {"order_by": ["date", "name"]}
+    assert q.to_dict() == {"order_by": "date"}
     q = Query().order_by("date", ascending=False)
-    assert q.to_dict() == {"order_by": ["-date"]}
+    assert q.to_dict() == {"order_by": "-date"}
+    # sorting is single-field (the SQL adapter never supported more)
+    with pytest.raises(TypeError):
+        Query().order_by("date", "name")
+    # a builder never mutates the receiver
+    q1 = Query().order_by("date")
+    q2 = q1.order_by("name")
+    assert q1.sort.value == "date" and q2.sort.value == "name"
 
     assert Query()[10].slice == slice(10, 11, None)
     assert Query()[:10].slice == slice(None, 10, None)
@@ -306,41 +307,64 @@ def test_validation():
 
 def test_aggregate_untouched():
     q = Query().where(M(schema="Payment"), P(date__gte="2023"), P(amount__null=False))
-    q = q.aggregate(A(sum=["amountEur", "amount"]))
+    q = q.aggregate(A(sum=[P("amountEur"), P("amount")]))
     data = q.to_dict()
-    assert data["aggregations"] == {"sum": {"amount", "amountEur"}}
+    assert data["aggregations"] == [
+        {"func": "sum", "field": "properties.amount"},
+        {"func": "sum", "field": "properties.amountEur"},
+    ]
     assert "q" in data
 
 
 def test_aggregate_params():
-    # openaleph metric aggregations: `metric:<func>=<prop>`, groups as `facet`
+    # openaleph metric aggregations: `metric:<func>=<field>`, groups as `facet`;
+    # fields take the same spelling as the filter keys
     q = (
         Query()
         .where(M(schema="Payment"))
-        .aggregate(A(sum="amountEur", by="beneficiary"))
+        .aggregate(A(sum=P("amountEur"), by=P("beneficiary")))
     )
     params = q.to_params()
-    assert params["metric:sum"] == ["amountEur"]
-    assert params["facet"] == ["beneficiary"]
+    assert params["metric:sum"] == ["properties.amountEur"]
+    assert params["facet"] == ["properties.beneficiary"]
     assert Query.from_string(q.to_string()).aggregations == q.aggregations
 
     # ungrouped, multiple funcs / props
-    q = Query().aggregate(A(sum=["amountEur", "amount"]), A(max="date"))
+    q = Query().aggregate(A(sum=[P("amountEur"), P("amount")]), A(max=P("date")))
     params = q.to_params()
-    assert params["metric:sum"] == ["amount", "amountEur"]
-    assert params["metric:max"] == ["date"]
+    assert params["metric:sum"] == ["properties.amount", "properties.amountEur"]
+    assert params["metric:max"] == ["properties.date"]
     assert "facet" not in params
     assert Query.from_string(q.to_string()).aggregations == q.aggregations
 
     # parsed straight from openaleph-style params
-    q = Query.from_params({"metric:avg": ["amountEur"], "facet": ["year"]})
-    assert q.aggregations == set(A(avg="amountEur", by="year").aggs)
+    q = Query.from_params({"metric:avg": ["properties.amountEur"], "facet": ["year"]})
+    assert q.aggregations == set(A(avg=P("amountEur"), by=Year()).aggs)
+
+    # a `facet` with no `metric:` groups an entity count - dropping it would
+    # discard the param in silence and answer with empty facets
+    q = Query.from_params({"facet": ["dataset"]})
+    assert q.aggregations == set(A(count=M("id"), by=M("dataset")).aggs)
+    # ... but a bare query still has no aggregations at all
+    assert Query.from_params({"filter:schema": ["Payment"]}).aggregations == set()
+
+    # property-type groups are aggregatable under the same name the filter
+    # grammar uses (`filter:group.countries=de` / `facet=group.countries`),
+    # while a
+    # property keeps its prefix - so `topics` stays distinguishable
+    q = Query.from_params({"metric:count": ["id"], "facet": ["group.countries"]})
+    assert q.aggregations == set(A(count=M("id"), by=G("countries")).aggs)
+    q = Query.from_params(
+        {"metric:count": ["properties.topics"], "facet": ["group.topics"]}
+    )
+    assert q.aggregations == set(A(count=P("topics"), by=G("topics")).aggs)
+    assert Query.from_string(q.to_string()).aggregations == q.aggregations
 
 
 def test_rql():
     # nested cross-field OR: M(schema=Person) & (P(name=jane) | G(countries=de))
     q = Query.from_rql(
-        "and(eq(schema,Person),or(eq(properties.name,jane),eq(countries,de)))"
+        "and(eq(schema,Person),or(eq(properties.name,jane),eq(group.countries,de)))"
     )
     manual = Query().where(M(schema="Person") & (P(name="jane") | G(countries="de")))
     assert q.to_dict() == manual.to_dict()
@@ -366,7 +390,7 @@ def test_rql():
     # to_rql: nested tree round-trips through the string
     q = Query().where(M(schema="Person") & (P(name="jane") | G(countries="de")))
     assert q.to_rql() == (
-        "and(eq(schema,Person),or(eq(properties.name,jane),eq(countries,de)))"
+        "and(eq(schema,Person),or(eq(properties.name,jane),eq(group.countries,de)))"
     )
     assert Query.from_rql(q.to_rql()).to_dict() == q.to_dict()
 
@@ -387,46 +411,60 @@ def test_rql():
 
 def test_rql_aggregations():
     # ungrouped metrics are bare `func(prop)` calls (avg <-> mean)
-    assert Query().aggregate(A(sum="amountEur")).to_rql() == "sum(amountEur)"
-    assert Query().aggregate(A(avg="amountEur")).to_rql() == "mean(amountEur)"
     assert (
-        Query().aggregate(A(min="date"), A(max="date")).to_rql()
-        == "and(max(date),min(date))"
+        Query().aggregate(A(sum=P("amountEur"))).to_rql() == "sum(properties.amountEur)"
+    )
+    assert (
+        Query().aggregate(A(avg=P("amountEur"))).to_rql()
+        == "mean(properties.amountEur)"
+    )
+    assert (
+        Query().aggregate(A(min=P("date")), A(max=P("date"))).to_rql()
+        == "and(max(properties.date),min(properties.date))"
     )
 
     # grouped metrics batch into one `aggregate(groups..., funcs...)`
     assert (
-        Query().aggregate(A(sum="amountEur", by="beneficiary")).to_rql()
-        == "aggregate(beneficiary,sum(amountEur))"
+        Query().aggregate(A(sum=P("amountEur"), by=P("beneficiary"))).to_rql()
+        == "aggregate(properties.beneficiary,sum(properties.amountEur))"
     )
     assert (
-        Query().aggregate(A(max="amountEur", by=["country", "year"])).to_rql()
-        == "aggregate(country,year,max(amountEur))"
+        Query().aggregate(A(max=P("amountEur"), by=[P("country"), Year()])).to_rql()
+        == "aggregate(properties.country,year,max(properties.amountEur))"
     )
 
     # filter + aggregation sit side by side under the top-level `and`
-    q = Query().where(M(schema="Payment")).aggregate(A(count="id", by="beneficiary"))
-    assert q.to_rql() == "and(eq(schema,Payment),aggregate(beneficiary,count(id)))"
+    q = (
+        Query()
+        .where(M(schema="Payment"))
+        .aggregate(A(count=M("id"), by=P("beneficiary")))
+    )
+    assert q.to_rql() == (
+        "and(eq(schema,Payment),aggregate(properties.beneficiary,count(id)))"
+    )
 
     # a full filter + multi-aggregation query round-trips losslessly
     q = (
         Query()
         .where(M(schema="Payment"), P(date__gte="2023"))
-        .aggregate(A(sum="amountEur", by="beneficiary"), A(avg="amountEur"))
+        .aggregate(A(sum=P("amountEur"), by=P("beneficiary")), A(avg=P("amountEur")))
     )
     rt = Query.from_rql(q.to_rql())
     assert rt.aggregations == q.aggregations
     assert rt.to_dict() == q.to_dict()
 
     # a hand-written aggregate() batches its metrics under the shared group
-    q = Query.from_rql("aggregate(beneficiary,sum(amountEur),count(id))")
+    q = Query.from_rql(
+        "aggregate(properties.beneficiary,sum(properties.amountEur),count(id))"
+    )
     assert q.aggregations == set(
-        A(sum="amountEur", by="beneficiary").aggs + A(count="id", by="beneficiary").aggs
+        A(sum=P("amountEur"), by=P("beneficiary")).aggs
+        + A(count=M("id"), by=P("beneficiary")).aggs
     )
 
     # an unsupported aggregate operator raises
     with pytest.raises(QueryError):
-        Query.from_rql("aggregate(beneficiary,median(amountEur))")
+        Query.from_rql("aggregate(properties.beneficiary,median(properties.amountEur))")
 
 
 def test_context_node():
@@ -450,7 +488,10 @@ def test_context_node():
     assert len(q.context) == 1
     # serialization round-trips
     assert Query.from_dict(q.to_dict()).to_dict() == q.to_dict()
-    # Aleph bridge: `origin` is a known context field, others are not
+    # every context field is expressible: the family is in the spelling
+    # (`context.<key>`), so a backend-specific column round-trips like any
+    # other field instead of being rejected
     assert Query.from_string(q.to_string()).to_dict() == q.to_dict()
-    with pytest.raises(QueryError):
-        Query().where(C(fragment="x")).to_params()
+    q = Query().where(C(fragment="x"))
+    assert q.to_params() == {"filter:context.fragment": ["x"]}
+    assert Query.from_string(q.to_string()).to_dict() == q.to_dict()

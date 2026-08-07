@@ -13,6 +13,7 @@ export {
   combine,
   type Connector,
   Expr,
+  type FamilyNode,
   G,
   M,
   not,
@@ -20,6 +21,7 @@ export {
   or,
   P,
 } from "./nodes.js";
+export { makeRef, Ref, type RefFamily, refFromWire, Year } from "./refs.js";
 export {
   A,
   Agg,
@@ -29,9 +31,4 @@ export {
 } from "./aggregations.js";
 export { type Params } from "./aleph.js";
 export { type ParamsInput, Query, Sort } from "./query.js";
-export {
-  parseRql,
-  type RqlArg,
-  type RqlNode,
-  unparseRql,
-} from "./rql.js";
+export { parseRql, type RqlArg, type RqlNode, unparseRql } from "./rql.js";

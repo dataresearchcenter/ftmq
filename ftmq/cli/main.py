@@ -1,28 +1,25 @@
-from datetime import datetime
 from typing import Annotated, Callable, Optional
 
 import typer
 from anystore.cli import ErrorHandler
-from anystore.io import smart_write, smart_write_json, smart_write_model
+from anystore.io import smart_write_json, smart_write_model
 from anystore.logging import configure_logging, get_logger
 from anystore.settings import Settings
 from followthemoney import ValueEntity
-from nomenklatura import settings as nk_settings
 from rich import print
 from typer.main import get_group
 
 from ftmq import __version__
 from ftmq.aggregate import aggregate
+from ftmq.cli.dataset import catalog_cli, dataset_cli
+from ftmq.cli.fragments import fragments_cli
+from ftmq.cli.statements import statements_cli
+from ftmq.cli.store import store_cli
 from ftmq.cli_util import DefaultCmdTyperGroup
 from ftmq.io import smart_read_proxies, smart_write_proxies
-from ftmq.model.dataset import Catalog, Dataset
 from ftmq.model.stats import Collector
-from ftmq.query import A, C, Expr, G, M, P, Query
+from ftmq.query import A, C, Expr, G, M, P, Query, ref_from_wire
 from ftmq.search.cli import search_cli
-from ftmq.store import get_store
-from ftmq.store.fragments import get_fragments
-from ftmq.store.fragments import get_store as get_fragments_store
-from ftmq.store.fragments.settings import Settings as FragmentsSettings
 from ftmq.util import apply_dataset
 
 log = get_logger(__name__)
@@ -80,7 +77,7 @@ def cli_q(
         typer.Option(
             "-q",
             "--query",
-            help="Aleph filter query string, e.g. 'filter:schema=Person&filter:countries=de'",
+            help="Filter query string, e.g. 'filter:schema=Person&filter:group.countries=de'",
         ),
     ] = None,
     rql: Annotated[
@@ -88,7 +85,7 @@ def cli_q(
         typer.Option(
             "--rql",
             help="RQL query string (nested & | ~), e.g. "
-            "'and(eq(schema,Person),or(eq(countries,de),eq(countries,at)))'",
+            "'and(eq(schema,Person),or(eq(group.countries,de),eq(group.countries,at)))'",
         ),
     ] = None,
     meta: Annotated[
@@ -112,7 +109,7 @@ def cli_q(
         typer.Option("-c", "--context", help="Context filter, e.g. origin=crawl"),
     ] = None,
     sort: Annotated[
-        Optional[list[str]], typer.Option("--sort", help="Properties to sort for")
+        Optional[str], typer.Option("--sort", help="Property to sort by")
     ] = None,
     sort_ascending: Annotated[
         bool,
@@ -136,27 +133,27 @@ def cli_q(
     ] = None,
     sum: Annotated[
         Optional[list[str]],
-        typer.Option("--sum", help="Properties for sum aggregation"),
+        typer.Option("--sum", help="Field(s) for sum aggregation"),
     ] = None,
     min: Annotated[
         Optional[list[str]],
-        typer.Option("--min", help="Properties for min aggregation"),
+        typer.Option("--min", help="Field(s) for min aggregation"),
     ] = None,
     max: Annotated[
         Optional[list[str]],
-        typer.Option("--max", help="Properties for max aggregation"),
+        typer.Option("--max", help="Field(s) for max aggregation"),
     ] = None,
     avg: Annotated[
         Optional[list[str]],
-        typer.Option("--avg", help="Properties for avg aggregation"),
+        typer.Option("--avg", help="Field(s) for avg aggregation"),
     ] = None,
     count: Annotated[
         Optional[list[str]],
-        typer.Option("--count", help="Properties for count (distinct) aggregation"),
+        typer.Option("--count", help="Field(s) for count (distinct) aggregation"),
     ] = None,
     groups: Annotated[
         Optional[list[str]],
-        typer.Option("--groups", help="Properties for grouping aggregation"),
+        typer.Option("--groups", help="Field(s) to group the aggregations by"),
     ] = None,
     aggregation_uri: Annotated[
         Optional[str],
@@ -195,12 +192,15 @@ def cli_q(
             for arg in args or ():
                 q = q.where(_node(family, arg))
         if sort:
-            q = q.order_by(*sort, ascending=sort_ascending)
+            q = q.order_by(sort, ascending=sort_ascending)
 
         if dataset and len(dataset) == 1:
             store_dataset = store_dataset or dataset[0]
+        # aggregation fields are spelled as in a query string / rql (a property
+        # is `properties.<name>`, a group / meta field is bare), so one
+        # spelling covers `--sum`, `-q` and `--rql`
         aggs = {
-            k: v
+            k: [ref_from_wire(f) for f in v]
             for k, v in {
                 "sum": sum,
                 "min": min,
@@ -211,7 +211,8 @@ def cli_q(
             if v
         }
         if aggregation_uri and aggs:
-            q = q.aggregate(A(**aggs, by=list(groups or ())))
+            by = [ref_from_wire(g) for g in groups or ()]
+            q = q.aggregate(A(**aggs, by=by))
         proxies = smart_read_proxies(input_uri, dataset=store_dataset, query=q)
         stats = Collector()
         if stats_uri:
@@ -243,221 +244,13 @@ def cli_apply_dataset(
         smart_write_proxies(output_uri, proxies)
 
 
-dataset_cli = typer.Typer(no_args_is_help=True)
+# sub-command groups
 cli.add_typer(dataset_cli, name="dataset")
-
-
-@dataset_cli.command("iterate")
-def cli_dataset_iterate(
-    input_uri: Annotated[
-        str, typer.Option("-i", "--input-uri", help="input file or uri")
-    ] = "-",
-    output_uri: Annotated[
-        str, typer.Option("-o", "--output-uri", help="output file or uri")
-    ] = "-",
-) -> None:
-    with ErrorHandler():
-        dataset = Dataset._from_uri(input_uri)
-        smart_write_proxies(output_uri, dataset.iterate())
-
-
-@dataset_cli.command("generate")
-def cli_dataset_generate(
-    input_uri: Annotated[
-        str, typer.Option("-i", "--input-uri", help="input file or uri")
-    ] = "-",
-    output_uri: Annotated[
-        str, typer.Option("-o", "--output-uri", help="output file or uri")
-    ] = "-",
-    stats: Annotated[bool, typer.Option("--stats", help="Calculate stats")] = False,
-) -> None:
-    """
-    Convert dataset YAML specification into json and optionally calculate statistics
-    """
-    with ErrorHandler():
-        dataset = Dataset._from_uri(input_uri)
-        if stats:
-            collector = Collector()
-            statistics = collector.collect_many(dataset.iterate())
-            dataset.apply_stats(statistics)
-        smart_write(output_uri, dataset.model_dump_json().encode())
-
-
-catalog_cli = typer.Typer(no_args_is_help=True)
 cli.add_typer(catalog_cli, name="catalog")
-
-
-@catalog_cli.command("iterate")
-def cli_catalog_iterate(
-    input_uri: Annotated[
-        str, typer.Option("-i", "--input-uri", help="input file or uri")
-    ] = "-",
-    output_uri: Annotated[
-        str, typer.Option("-o", "--output-uri", help="output file or uri")
-    ] = "-",
-) -> None:
-    with ErrorHandler():
-        catalog = Catalog._from_uri(input_uri)
-        smart_write_proxies(output_uri, catalog.iterate())
-
-
-@catalog_cli.command("generate")
-def cli_catalog_generate(
-    input_uri: Annotated[
-        str, typer.Option("-i", "--input-uri", help="input file or uri")
-    ] = "-",
-    output_uri: Annotated[
-        str, typer.Option("-o", "--output-uri", help="output file or uri")
-    ] = "-",
-    stats: Annotated[
-        bool, typer.Option("--stats", help="Calculate stats for each dataset")
-    ] = False,
-) -> None:
-    """
-    Convert catalog YAML specification into json and fetch dataset metadata
-    """
-    with ErrorHandler():
-        catalog = Catalog._from_uri(input_uri)
-        if stats:
-            for dataset in catalog.datasets:
-                log.info(f"Generating stats for `{dataset.name}` ...")
-                collector = Collector()
-                statistics = collector.collect_many(dataset.iterate())
-                dataset.apply_stats(statistics)
-        smart_write(output_uri, catalog.model_dump_json().encode())
-
-
-store_cli = typer.Typer(no_args_is_help=True)
 cli.add_typer(store_cli, name="store")
-
-
-@store_cli.command("list-datasets")
-def cli_store_list_datasets(
-    input_uri: Annotated[
-        str, typer.Option("-i", "--input-uri", help="input file or uri")
-    ] = nk_settings.DB_URL,
-    output_uri: Annotated[
-        str, typer.Option("-o", "--output-uri", help="output file or uri")
-    ] = "-",
-) -> None:
-    """
-    List datasets within a store
-    """
-    with ErrorHandler():
-        store = get_store(input_uri)
-        catalog = store.get_scope()
-        datasets = [ds.name for ds in catalog.datasets]
-        smart_write(output_uri, "\n".join(datasets).encode() + b"\n")
-
-
-@store_cli.command("iterate")
-def cli_store_iterate(
-    input_uri: Annotated[
-        str, typer.Option("-i", "--input-uri", help="store input uri")
-    ] = nk_settings.DB_URL,
-    output_uri: Annotated[
-        str, typer.Option("-o", "--output-uri", help="output file or uri")
-    ] = "-",
-) -> None:
-    """
-    Iterate all entities from in to out
-    """
-    with ErrorHandler():
-        store = get_store(input_uri)
-        smart_write_proxies(output_uri, store.iterate())
-
-
 cli.add_typer(search_cli, name="search")
-
-fragments_cli = typer.Typer(no_args_is_help=True)
 cli.add_typer(fragments_cli, name="fragments")
-
-fragments_settings = FragmentsSettings()
-
-
-@fragments_cli.command("list-datasets")
-def cli_fragments_list_datasets(
-    input_uri: Annotated[
-        str, typer.Option("-i", "--input-uri", help="input file or uri")
-    ] = fragments_settings.database_uri,
-    output_uri: Annotated[
-        str, typer.Option("-o", "--output-uri", help="output file or uri")
-    ] = "-",
-) -> None:
-    """
-    List datasets within a fragments store
-    """
-    with ErrorHandler():
-        store = get_fragments_store(input_uri)
-        datasets = [ds.name for ds in store.all()]
-        smart_write(output_uri, "\n".join(datasets).encode() + b"\n")
-
-
-@fragments_cli.command("iterate")
-def cli_fragments_iterate(
-    dataset: Annotated[
-        str, typer.Option("-d", "--dataset", help="Dataset name to iterate")
-    ],
-    input_uri: Annotated[
-        str, typer.Option("-i", "--input-uri", help="fragments store input uri")
-    ] = fragments_settings.database_uri,
-    output_uri: Annotated[
-        str, typer.Option("-o", "--output-uri", help="output file or uri")
-    ] = "-",
-    schema: Annotated[
-        Optional[str], typer.Option("-s", "--schema", help="Filter by schema")
-    ] = None,
-    since: Annotated[
-        Optional[str],
-        typer.Option(
-            "--since",
-            help="Filter by timestamp (since), ISO format: YYYY-MM-DDTHH:MM:SS",
-        ),
-    ] = None,
-    until: Annotated[
-        Optional[str],
-        typer.Option(
-            "--until",
-            help="Filter by timestamp (until), ISO format: YYYY-MM-DDTHH:MM:SS",
-        ),
-    ] = None,
-) -> None:
-    """
-    Iterate all entities from a fragments dataset
-    """
-    with ErrorHandler():
-        fragments = get_fragments(dataset, database_uri=input_uri)
-
-        # Parse timestamp strings to datetime objects
-        since_dt = datetime.fromisoformat(since) if since else None
-        until_dt = datetime.fromisoformat(until) if until else None
-
-        smart_write_proxies(
-            output_uri, fragments.iterate(schema=schema, since=since_dt, until=until_dt)
-        )
-
-
-@fragments_cli.command("iterate-fragments")
-def cli_fragments_iterate_fragments(
-    dataset: Annotated[
-        str, typer.Option("-d", "--dataset", help="Dataset name to iterate")
-    ],
-    input_uri: Annotated[
-        str, typer.Option("-i", "--input-uri", help="fragments store input uri")
-    ] = fragments_settings.database_uri,
-    output_uri: Annotated[
-        str, typer.Option("-o", "--output-uri", help="output file or uri")
-    ] = "-",
-) -> None:
-    """
-    Iterate all fragments from a dataset, unsorted and not aggregated. Useful
-    for streaming into another storage that does dedupe by itself.
-    """
-    with ErrorHandler():
-        fragments = get_fragments(dataset, database_uri=input_uri)
-        smart_write_json(
-            output_uri, fragments.fragments(sort=False, include_fragment=True)
-        )
+cli.add_typer(statements_cli, name="statements")
 
 
 @cli.command("aggregate")

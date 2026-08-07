@@ -86,7 +86,7 @@ Possible lookups:
 Alternatively pass a full [Aleph](https://openaleph.org) filter string via `-q` / `--query` (parsed by [`Query.from_string`][ftmq.Query.from_string]); repeatable and combinable with the family flags:
 
 ```bash
-cat entities.ftm.json | ftmq -q 'filter:schema=Person&filter:countries=de'
+cat entities.ftm.json | ftmq -q 'filter:schema=Person&filter:group.countries=de'
 cat entities.ftm.json | ftmq -q 'filter:properties.name=Jane&exclude:properties.country=ru'
 cat entities.ftm.json | ftmq -q 'filter:gte:properties.date=2020&empty:properties.deathDate'
 ```
@@ -95,7 +95,35 @@ The Aleph string is flat (no cross-field `OR`). For a **nested** filter tree, pa
 
 ```bash
 # schema=Person AND (countries=de OR countries=at)
-cat entities.ftm.json | ftmq --rql 'and(eq(schema,Person),or(eq(countries,de),eq(countries,at)))'
+cat entities.ftm.json | ftmq --rql 'and(eq(schema,Person),or(eq(group.countries,de),eq(group.countries,at)))'
 # NOT Organization, with a name in a list
 cat entities.ftm.json | ftmq --rql 'and(not(eq(schema,Organization)),in(name,(jane,joe)))'
+```
+
+## Aggregations
+
+`--sum` / `--min` / `--max` / `--avg` / `--count` take a field, `--groups` groups them, and `--aggregation-uri` says where to write the result. Fields use the wire spelling: `properties.<name>` for a property, `group.<name>` for a property-type group, `context.<name>` for a context column; meta fields (`id`, `dataset`, `schema`) and `year` are bare.
+
+```bash
+cat entities.ftm.json | ftmq -s Payment \
+  --sum properties.amountEur --groups year \
+  --aggregation-uri - -o /dev/null
+```
+
+## Statements
+
+`ftmq statements` works on raw statement streams (`csv`, `json` or `pack`, via `--input-format` / `--output-format`) instead of entities.
+
+`cast-types` normalizes statement values into the canonical format of their property type: numbers lose their thousands separators and unit (`"324,687.00"` -> `"324687.00"`, `"5 kg"` -> `"5"`), dates become ISO (partial dates are kept). The raw string moves into the `original_value` column and the statement id (a content hash over the value) is regenerated:
+
+```bash
+cat statements.csv | ftmq statements cast-types > statements.typed.csv
+```
+
+The SQL backends `CAST` the `value` column when aggregating or sorting by a number, so stored values must be in this format. Statement stores apply the same casting on write; use `cast-types` to migrate data written outside ftmq.
+
+Values that do not parse are logged and passed through unchanged; `--drop-invalid` drops them instead. Restrict the casting with `-t` / `--type` (`number`, `date`):
+
+```bash
+cat statements.csv | ftmq statements cast-types -t number --drop-invalid -o s3://data/statements.csv
 ```

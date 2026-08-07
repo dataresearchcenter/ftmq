@@ -57,7 +57,14 @@ def build_query(request: Request, authenticated: bool | None = False) -> Query:
         limit = min(limit, settings.default_limit)
     offset = q.offset or 0
     q = q[offset : offset + limit]
-    invalid = q.dataset_names - get_catalog().names
+    names = get_catalog().names
+    invalid = q.dataset_names - names
     if invalid:
-        raise HTTPException(422, detail=[f"Invalid dataset: `{', '.join(invalid)}`"])
+        raise HTTPException(
+            422,
+            detail=[
+                f"Invalid dataset: `{', '.join(sorted(invalid))}` - "
+                f"available: `{', '.join(sorted(names)) or 'none'}`"
+            ],
+        )
     return q

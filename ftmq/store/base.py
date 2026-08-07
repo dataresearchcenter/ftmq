@@ -1,8 +1,9 @@
 from functools import cache, wraps
-from typing import Iterable
+from typing import Any, Iterable, TypeAlias
 from urllib.parse import urlparse
 
 from anystore.logging import get_logger
+from followthemoney import Statement
 from followthemoney.dataset.dataset import Dataset
 from nomenklatura import db as nk_db
 from nomenklatura import store as nk
@@ -15,6 +16,7 @@ from sqlalchemy.pool import StaticPool
 from ftmq.model.stats import Collector, DatasetStats
 from ftmq.query import Query
 from ftmq.query.aggregations import AggregatorResult
+from ftmq.statements import cast_statement
 from ftmq.types import StatementEntities, StatementEntity
 from ftmq.util import ensure_dataset
 
@@ -80,6 +82,29 @@ def get_resolver(uri: str | None = None) -> Resolver[StatementEntity]:
     return Resolver[StatementEntity](Session(engine), create=True)
 
 
+_CASTING_WRITERS: dict[type[Any], type[Any]] = {}
+
+
+def _casting_writer(cls: type[Any]) -> type[Any]:
+    """A backend writer class that casts statement values on the way in."""
+    if cls not in _CASTING_WRITERS:
+
+        class CastingWriter(cls):  # type: ignore[misc]
+            # no attributes of its own, so an instance can be reblessed into it
+            __slots__ = ()
+
+            def add_statement(self, stmt: Statement, *args: Any, **kwargs: Any) -> None:
+                # a value that doesn't parse is written as it came in
+                super().add_statement(cast_statement(stmt) or stmt, *args, **kwargs)
+
+        CastingWriter.__name__ = f"Casting{cls.__name__}"
+        _CASTING_WRITERS[cls] = CastingWriter
+    return _CASTING_WRITERS[cls]
+
+
+Writer: TypeAlias = nk.Writer[Dataset, StatementEntity]
+
+
 class Store(nk.Store[Dataset, StatementEntity]):
     """
     Feature add-ons to `nomenklatura.store.Store`
@@ -89,6 +114,7 @@ class Store(nk.Store[Dataset, StatementEntity]):
         self,
         dataset: Dataset | str | None = None,
         linker: Resolver | None = None,
+        cast_types: bool = True,
         **kwargs,
     ) -> None:
         """
@@ -98,6 +124,8 @@ class Store(nk.Store[Dataset, StatementEntity]):
         Args:
             dataset: A `followthemoney.Dataset` instance to limit the scope to
             linker: A `nomenklatura.Resolver` instance with linked / deduped data
+            cast_types: Normalize statement values on write (see
+                [`ftmq.statements`][ftmq.statements])
         """
         # An unscoped store (no explicit `dataset`) implicitly spans every
         # dataset present in the backend. nomenklatura scopes a view to
@@ -105,8 +133,29 @@ class Store(nk.Store[Dataset, StatementEntity]):
         # entities literally tagged `dataset="default"`. Resolved lazily (see
         # `scope`) so opening a store never queries the backend.
         self._implicit_scope = dataset is None
+        self.cast_types = cast_types
         linker = linker or get_resolver(kwargs.get("uri"))
         super().__init__(dataset=ensure_dataset(dataset), linker=linker, **kwargs)
+
+    def writer(self, *args: Any, **kwargs: Any) -> Writer:
+        """The backend writer, normalizing statement values on the way in.
+
+        Values are cast into the canonical format of their property type (see
+        [`ftmq.statements`][ftmq.statements]); values that don't parse are
+        passed through unchanged (`ftmq statements cast-types --drop-invalid`
+        cleans those out of an existing dump). Disable with the store's
+        `cast_types=False`.
+        """
+        return self.casting_writer(super().writer(*args, **kwargs))
+
+    def casting_writer(self, writer: Writer) -> Writer:
+        """Rebless a backend writer so it casts statement values on write (see
+        [`writer`][ftmq.store.base.Store.writer]). A store that builds its
+        writer itself has to route it through here."""
+        if self.cast_types:
+            cls: type[Any] = type(writer)
+            writer.__class__ = _casting_writer(cls)
+        return writer
 
     def get_scope(self) -> Dataset:
         """

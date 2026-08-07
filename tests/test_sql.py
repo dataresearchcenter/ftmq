@@ -1,7 +1,18 @@
 import pytest
+from sqlalchemy import literal_column
 from sqlalchemy.sql.selectable import Select
 
-from ftmq.query import A, C, G, M, P, Query
+from ftmq.query import A, C, G, M, P, Query, Year
+from ftmq.query.sql import numeric_value
+
+
+def _literal(stmt) -> str:
+    return str(stmt.compile(compile_kwargs={"literal_binds": True}))
+
+
+# how a numeric read of a statement `value` renders (see `numeric_value`: the
+# stored value is assumed to be in canonical number format already)
+NUMERIC = _literal(numeric_value(literal_column("test_table.value")))
 
 
 def _compare_str(s1, s2) -> bool:
@@ -52,118 +63,6 @@ def test_sql():
         """,
     )
 
-    assert isinstance(q.sql.datasets, Select)
-    assert _compare_str(
-        q.sql.datasets,
-        f"""
-        SELECT test_table.dataset, count(DISTINCT test_table.canonical_id) AS count
-        FROM test_table {idsclause}
-        GROUP BY test_table.dataset
-        ORDER BY count DESC
-        """,
-    )
-
-    assert isinstance(q.sql.schemata, Select)
-    assert _compare_str(
-        q.sql.schemata,
-        f"""
-        SELECT test_table.schema, count(DISTINCT test_table.canonical_id) AS count
-        FROM test_table {idsclause}
-        GROUP BY test_table.schema
-        ORDER BY count DESC
-        """,
-    )
-
-    assert isinstance(q.sql.things, Select)
-    assert _compare_str(
-        q.sql.things,
-        f"""
-        SELECT test_table.schema, count(DISTINCT test_table.canonical_id) AS count
-        FROM test_table {idsclause}
-        AND test_table.schema IN (__[POSTCOMPILE_schema_2])
-        GROUP BY test_table.schema
-        ORDER BY count DESC
-        """,
-    )
-
-    assert isinstance(q.sql.intervals, Select)
-    assert _compare_str(
-        q.sql.intervals,
-        f"""
-        SELECT test_table.schema, count(DISTINCT test_table.canonical_id) AS count
-        FROM test_table {idsclause}
-        AND test_table.schema IN (__[POSTCOMPILE_schema_2])
-        GROUP BY test_table.schema
-        ORDER BY count DESC
-        """,
-    )
-
-    assert isinstance(q.sql.countries, Select)
-    assert _compare_str(
-        q.sql.countries,
-        f"""
-        SELECT test_table.value, count(DISTINCT test_table.canonical_id) AS count
-        FROM test_table
-        WHERE test_table.prop_type = :prop_type_1 AND test_table.canonical_id IN
-        (SELECT DISTINCT test_table.canonical_id FROM test_table {whereclause})
-        GROUP BY test_table.value
-        ORDER BY count DESC
-        """,
-    )
-
-    assert isinstance(q.sql.things_countries, Select)
-    assert _compare_str(
-        q.sql.things_countries,
-        f"""
-        SELECT test_table.value, count(DISTINCT test_table.canonical_id) AS count
-        FROM test_table
-        WHERE test_table.prop_type = :prop_type_1 AND test_table.canonical_id IN
-        (SELECT DISTINCT test_table.canonical_id FROM test_table {whereclause})
-        AND test_table.schema IN (__[POSTCOMPILE_schema_2])
-        GROUP BY test_table.value
-        ORDER BY count DESC
-        """,
-    )
-
-    assert isinstance(q.sql.intervals_countries, Select)
-    assert _compare_str(
-        q.sql.intervals_countries,
-        f"""
-        SELECT test_table.value, count(DISTINCT test_table.canonical_id) AS count
-        FROM test_table
-        WHERE test_table.prop_type = :prop_type_1 AND test_table.canonical_id IN
-        (SELECT DISTINCT test_table.canonical_id FROM test_table {whereclause})
-        AND test_table.schema IN (__[POSTCOMPILE_schema_2])
-        GROUP BY test_table.value
-        ORDER BY count DESC
-        """,
-    )
-
-    assert isinstance(q.sql.countries_flat, Select)
-    assert _compare_str(
-        q.sql.countries_flat,
-        f"""
-        SELECT DISTINCT test_table.value
-        FROM test_table
-        WHERE test_table.prop_type = :prop_type_1 AND test_table.canonical_id IN
-        (SELECT DISTINCT test_table.canonical_id
-        FROM test_table {whereclause})
-        """,
-    )
-
-    assert isinstance(q.sql.dates, Select)
-    assert _compare_str(
-        q.sql.dates,
-        f"""
-        SELECT test_table.value, count(DISTINCT test_table.canonical_id) AS count
-        FROM test_table
-        WHERE test_table.prop_type = :prop_type_1 AND test_table.canonical_id IN
-        (SELECT DISTINCT test_table.canonical_id FROM test_table {whereclause})
-        GROUP BY test_table.value
-        ORDER BY count DESC
-        """,
-    )
-
     assert isinstance(q.sql.date_range, Select)
     assert _compare_str(
         q.sql.date_range,
@@ -198,12 +97,7 @@ def test_sql():
 
     # cast order by
     q = Query().order_by("amount")
-    assert "CAST(test_table.value AS NUMERIC)" in str(q.sql.statements)
-
-    # no multi-value sort
-    q = Query().order_by("name", "title")
-    with pytest.raises(ValueError):
-        q.sql.statements
+    assert NUMERIC in _literal(q.sql.statements)
 
     # slice
     q = (
@@ -240,22 +134,40 @@ def test_sql():
     )
 
     # aggregation
-    q = q.aggregate(A(sum="amount"), A(max="date"))
-    q = str(q.sql.aggregations)
+    q = q.aggregate(A(sum=P("amount")), A(max=P("date")))
+    q = _literal(q.sql.aggregations)
     assert len(q.split("UNION")) == 2
-    assert "SELECT 'date', 'max', max(test_table.value) AS max" in q
-    assert "SELECT 'amount', 'sum', sum(CAST(test_table.value AS NUMERIC)) AS sum" in q
+    assert "SELECT 'properties.date', 'max', max(test_table.value) AS max" in q
+    assert f"SELECT 'properties.amount', 'sum', sum({NUMERIC}) AS sum" in q
 
-    q = Query().aggregate(A(avg="amount"))
-    q = str(q.sql.aggregations)
-    assert "SELECT 'amount', 'avg', avg(CAST(test_table.value AS NUMERIC)) AS avg" in q
+    q = _literal(Query().aggregate(A(avg=P("amount"))).sql.aggregations)
+    assert f"SELECT 'properties.amount', 'avg', avg({NUMERIC}) AS avg" in q
 
-    q = Query().aggregate(A(count="location"))
-    q = str(q.sql.aggregations)
-    assert "SELECT 'location', 'count', count(DISTINCT test_table.value) AS count" in q
+    # min / max over a numeric property read as numbers, not strings
+    q = _literal(Query().aggregate(A(min=P("amount"))).sql.aggregations)
+    assert f"SELECT 'properties.amount', 'min', min({NUMERIC}) AS min" in q
+
+    # `count` stays over the raw values - it needs no arithmetic
+    q = _literal(Query().aggregate(A(count=P("amount"))).sql.aggregations)
+    assert (
+        "SELECT 'properties.amount', 'count', count(DISTINCT test_table.value) AS count"
+        in q
+    )
+
+    q = _literal(Query().aggregate(A(count=P("location"))).sql.aggregations)
+    assert (
+        "SELECT 'properties.location', 'count', "
+        "count(DISTINCT test_table.value) AS count" in q
+    )
+
+    # a meta field aggregates its own column, not the `value` of a `prop = id`
+    # row (which holds the *unresolved* entity id, i.e. referents)
+    q = _literal(Query().aggregate(A(count=M("id"))).sql.aggregations)
+    assert "SELECT 'id', 'count', count(DISTINCT test_table.canonical_id) AS count" in q
+    assert "test_table.prop = 'id'" not in q
 
     q = Query().where(P(date=2023))
-    q = q.sql.get_group_counts("country")
+    q = q.sql.get_group_counts(P("country"))
     res = q.compile(compile_kwargs={"literal_binds": True})
     assert _compare_str(
         res,
@@ -268,48 +180,37 @@ def test_sql():
         """,
     )
 
+    # grouped aggregations: one select per grouper, the specs' rows joined
+    # against the distinct (entity, group value) pairs and grouped - one round
+    # trip per grouper instead of one per group value
     q = (
         Query()
         .where(M(dataset="test"), M(schema="Project"))
-        .aggregate(A(max="amountEur", by="country"))
+        .aggregate(A(max=P("amountEur"), by=[P("country"), Year(), M("dataset")]))
     )
-    assert q.sql.group_props == {"country"}
-    res = q.sql.get_group_aggregations("country", "de").compile(
+    assert q.sql.group_props == {P("country"), Year(), M("dataset")}
+    res = q.sql.grouped_aggregations(Year()).compile(
         compile_kwargs={"literal_binds": True}
     )
     assert _compare_str(
         res,
-        """
-        SELECT 'amountEur', 'max', max(test_table.value) AS max_1
+        f"""
+        SELECT 'properties.amountEur', 'max', anon_1.gval, max({NUMERIC}) AS max_1
+        FROM test_table JOIN (SELECT DISTINCT test_table.canonical_id AS cid, substring(test_table.value, 1, 4) AS gval
         FROM test_table
-        WHERE test_table.prop = 'amountEur' AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
+        WHERE test_table.prop_type = 'date' AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
         FROM test_table
-        WHERE test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
-        FROM test_table
-        WHERE test_table.dataset = 'test' AND test_table.schema = 'Project') AND test_table.prop = 'country' AND test_table.value = 'de')
+        WHERE test_table.dataset = 'test' AND test_table.schema = 'Project')) AS anon_1 ON test_table.canonical_id = anon_1.cid
+        WHERE test_table.prop = 'amountEur' GROUP BY anon_1.gval
         """,
     )
-    q = (
-        Query()
-        .where(M(dataset="test"), M(schema="Project"))
-        .aggregate(A(max="amountEur", by=["country", "year", "dataset"]))
+    # a limit caps to the most frequent group values (by entity count)
+    res = str(
+        q.sql.grouped_aggregations(M("dataset"), limit=5).compile(
+            compile_kwargs={"literal_binds": True}
+        )
     )
-    assert q.sql.group_props == {"country", "year", "dataset"}
-    res = q.sql.get_group_aggregations("year", "2023").compile(
-        compile_kwargs={"literal_binds": True}
-    )
-    assert _compare_str(
-        res,
-        """
-        SELECT 'amountEur', 'max', max(test_table.value) AS max_1
-        FROM test_table
-        WHERE test_table.prop = 'amountEur' AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
-        FROM test_table
-        WHERE test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
-        FROM test_table
-        WHERE test_table.dataset = 'test' AND test_table.schema = 'Project') AND test_table.prop_type = 'date' AND substring(test_table.value, 1, 4) = '2023')
-        """,
-    )
+    assert "ORDER BY count DESC" in res and "LIMIT 5" in res
 
     # reversed: the `entities` group is not special, it is the `entity`
     # prop-type group lifted to a canonical_id subquery like any other group

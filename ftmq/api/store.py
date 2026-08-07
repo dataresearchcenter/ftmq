@@ -21,11 +21,41 @@ log = get_logger(__name__)
 settings = Settings()
 
 
+def get_store_datasets() -> set[str]:
+    """The dataset names the configured store actually holds."""
+    try:
+        return set(get_store().scope.leaf_names)
+    except Exception as e:
+        # never make the catalog (and with it the app's import) depend on the
+        # store being reachable - an unconfigured catalog degrades to empty
+        log.error(f"Cannot read datasets from store: `{e}`", store=settings.store_uri)
+        return set()
+
+
 @cache
 def get_catalog() -> Catalog:
+    """The catalog of queryable datasets, reconciled with the store.
+
+    `settings.catalog` *describes* datasets, but the store *decides* which
+    exist. A name present in the store and missing from the catalog is added
+    as a bare dataset, so a catalog naming something else - or no catalog at
+    all - can never leave the store's own datasets un-queryable (the dataset
+    filter validates against this catalog).
+    """
+    catalog = Catalog()
     if settings.catalog is not None:
-        return Catalog._from_uri(settings.catalog)
-    return Catalog()
+        catalog = Catalog._from_uri(settings.catalog)
+    undeclared = get_store_datasets() - catalog.names
+    if undeclared:
+        if catalog.names:
+            log.warning(
+                f"Datasets in store but not in catalog: `{', '.join(sorted(undeclared))}`",
+                catalog=settings.catalog,
+            )
+        catalog.datasets = catalog.datasets + [
+            Dataset(name=name, title=name) for name in sorted(undeclared)
+        ]
+    return catalog
 
 
 @cache

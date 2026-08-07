@@ -11,9 +11,8 @@ column they target:
 - the context leaf (`C`): a provenance / storage column such as `origin`,
   `fragment` or `first_seen` (read from `entity.context` in-memory).
 
-`Lookup` / `BaseFilter` handle comparator matching and value casting; the
-`Leaf` subclasses add the per-family entity access plus correct `null`
-(present/absent) semantics.
+`Leaf` handles comparator matching and value casting; its subclasses add the
+per-family entity access plus correct `null` (present/absent) semantics.
 """
 
 from __future__ import annotations
@@ -25,101 +24,93 @@ from followthemoney import model
 from followthemoney.property import Property
 from followthemoney.proxy import EntityProxy
 from followthemoney.schema import Schema
-from followthemoney.types import registry
 
 from ftmq.query.exceptions import QueryError
-from ftmq.util import parse_comparator
+from ftmq.query.refs import (
+    CanonicalIdRef,
+    ContextRef,
+    DatasetRef,
+    EntityIdRef,
+    GroupRef,
+    IdRef,
+    PropRef,
+    Ref,
+    SchemaRef,
+)
 
 
-class Lookup:
-    """Applies a single comparator to values (the in-memory match logic).
+class LeafDict(TypedDict):
+    """Serialized form of a single [`Leaf`][ftmq.query.leaves.Leaf] condition."""
 
-    The comparator is a plain string, already validated by
-    [`parse_lookup`][ftmq.query.leaves.parse_lookup].
+    t: str  # family tag: "M" (meta) | "P" (property) | "G" (group)
+    f: str  # field / property / group name
+    op: str  # comparator, e.g. "eq", "in", "gte", "null"
+    v: "str | bool | list[str]"  # cast value (list for `in` / `not_in`)
+
+
+# the value comparators of the query grammar (in-memory semantics in
+# `Leaf.match`, SQL translation in `Sql.get_expression`)
+COMPARATORS: frozenset[str] = frozenset(
+    {
+        "eq",
+        "not",
+        "in",
+        "not_in",
+        "null",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "like",
+        "ilike",
+        "notlike",
+        "notilike",
+        "startswith",
+        "endswith",
+    }
+)
+
+
+def parse_lookup(key: str) -> tuple[str, str]:
+    """Split a `field__comparator` lookup key into its parts.
+
+    Args:
+        key: A lookup key such as `name`, `date__gte` or `schema__in`.
+
+    Returns:
+        A `(field, comparator)` tuple; the comparator defaults to `eq`.
+
+    Raises:
+        QueryError: If the comparator suffix is not a valid comparator.
     """
-
-    def __init__(self, comparator: str, value: Any = None) -> None:
-        self.comparator = comparator
-        self.value = value
-
-    def __str__(self) -> str:
-        return self.comparator
-
-    def apply(self, value: Any) -> bool:
-        c = self.comparator
-        if c == "eq":
-            return bool(value == self.value)
-        if c == "not":
-            return bool(value != self.value)
-        if c == "in":
-            return value in self.value
-        if c == "not_in":
-            return value not in self.value
-        if c == "startswith":
-            return bool(value.startswith(self.value))
-        if c == "endswith":
-            return bool(value.endswith(self.value))
-        if c == "null":
-            return not value == self.value
-        if c == "gt":
-            return bool(value > self.value)
-        if c == "gte":
-            return bool(value >= self.value)
-        if c == "lt":
-            return bool(value < self.value)
-        if c == "lte":
-            return bool(value <= self.value)
-        if c == "like":
-            return self.value in value
-        if c == "ilike":
-            return self.value.lower() in value.lower()
-        if c == "notlike":
-            return self.value not in value
-        if c == "notilike":
-            return self.value.lower() not in value.lower()
-        # `between` is accepted by the grammar (it serializes) but the leaf
-        # layer casts values to a single scalar, so it cannot evaluate yet -
-        # fail loudly instead of silently matching nothing (the SQL layer
-        # raises the same)
-        raise QueryError(f"Comparator not implemented: `{c}`")
+    field, _, comparator = key.partition("__")
+    comparator = comparator or "eq"
+    if comparator not in COMPARATORS:
+        raise QueryError(f"Invalid comparator in lookup: `{key}`")
+    return field, comparator
 
 
-class BaseFilter:
-    """Comparator + cast value; the shared base for all query `Leaf` classes.
+class Leaf:
+    """A single condition: a comparator plus a cast value. Subclasses set
+    `family` and implement `values()` (the entity values to test) or override
+    `apply()`.
 
     The comparator is validated upstream by
     [`parse_lookup`][ftmq.query.leaves.parse_lookup]; here it is a plain string.
     """
 
+    family: str = ""
     key: str = ""
 
     def __init__(self, value: Any, comparator: str | None = None) -> None:
         self.comparator: str = comparator or "eq"
         self.value: Any = self.get_casted_value(value)
-        self.lookup: Lookup = Lookup(self.comparator, self.value)
 
     def __hash__(self) -> int:
         return hash((self.key, self.comparator, str(self.value)))
 
     def __eq__(self, other: Any) -> bool:
         return hash(self) == hash(other)
-
-    def __lt__(self, other: Any) -> bool:
-        # allow ordering (helpful for testing and stable sql output)
-        return hash(self) < hash(other)
-
-    def __le__(self, other: Any) -> bool:
-        return hash(self) <= hash(other)
-
-    def __gt__(self, other: Any) -> bool:
-        return hash(self) > hash(other)
-
-    def __ge__(self, other: Any) -> bool:
-        return hash(self) >= hash(other)
-
-    def to_dict(self) -> dict[str, Any]:
-        key = self.key if self.comparator == "eq" else f"{self.key}__{self.comparator}"
-        return {key: self.value}
 
     def get_casted_value(self, value: Any) -> Any:
         if self.comparator in ("in", "not_in"):
@@ -135,42 +126,6 @@ class BaseFilter:
             return str(value.name)
         return str(value)
 
-
-class LeafDict(TypedDict):
-    """Serialized form of a single [`Leaf`][ftmq.query.leaves.Leaf] condition."""
-
-    t: str  # family tag: "M" (meta) | "P" (property) | "G" (group)
-    f: str  # field / property / group name
-    op: str  # comparator, e.g. "eq", "in", "gte", "null"
-    v: "str | bool | list[str]"  # cast value (list for `in` / `not_in`)
-
-
-def parse_lookup(key: str) -> tuple[str, str]:
-    """Split a `field__comparator` lookup key into its parts.
-
-    Args:
-        key: A lookup key such as `name`, `date__gte` or `schema__in`.
-
-    Returns:
-        A `(field, comparator)` tuple; the comparator defaults to `eq`.
-
-    Raises:
-        QueryError: If the comparator suffix is not a valid comparator.
-    """
-    try:
-        field, comparator = parse_comparator(key)
-    except KeyError:
-        raise QueryError(f"Invalid comparator in lookup: `{key}`")
-    return field, str(comparator)
-
-
-class Leaf(BaseFilter):
-    """A single condition. Subclasses set `family` and implement `values()`
-    (the entity values to test) or override `apply()`."""
-
-    family: str = ""
-    key: str = ""
-
     def values(self, entity: EntityProxy) -> Iterator[str]:
         """Yield the entity values this leaf tests against.
 
@@ -182,6 +137,39 @@ class Leaf(BaseFilter):
         """
         raise NotImplementedError
 
+    def match(self, value: Any) -> bool:
+        """Apply the comparator to one entity value (the in-memory match)."""
+        c = self.comparator
+        if c == "eq":
+            return bool(value == self.value)
+        if c == "not":
+            return bool(value != self.value)
+        if c == "in":
+            return value in self.value
+        if c == "not_in":
+            return value not in self.value
+        if c == "startswith":
+            return bool(value.startswith(self.value))
+        if c == "endswith":
+            return bool(value.endswith(self.value))
+        if c == "gt":
+            return bool(value > self.value)
+        if c == "gte":
+            return bool(value >= self.value)
+        if c == "lt":
+            return bool(value < self.value)
+        if c == "lte":
+            return bool(value <= self.value)
+        if c == "like":
+            return self.value in value
+        if c == "ilike":
+            return bool(self.value.lower() in value.lower())
+        if c == "notlike":
+            return self.value not in value
+        if c == "notilike":
+            return bool(self.value.lower() not in value.lower())
+        raise QueryError(f"Comparator not implemented: `{c}`")
+
     def apply(self, entity: EntityProxy) -> bool:
         """Test whether the entity matches this condition.
 
@@ -192,11 +180,18 @@ class Leaf(BaseFilter):
             `True` if any of the entity's values satisfy the comparator (or,
             for the `null` comparator, the presence / absence check).
         """
-        if str(self.comparator) == "null":
+        if self.comparator == "null":
             present = any(True for _ in self.values(entity))
-            # value was cast to a bool by `BaseFilter.get_casted_value`
+            # value was cast to a bool by `get_casted_value`
             return (not present) if self.value else present
-        return any(self.lookup.apply(v) for v in self.values(entity))
+        return any(self.match(v) for v in self.values(entity))
+
+    @property
+    def wire(self) -> str:
+        """How this leaf's field is spelled on a string surface (Aleph params,
+        RQL). Ref-backed leaves defer to their ref, so a filter and an
+        aggregation over the same field are spelled identically."""
+        return self.key
 
     def field_dict(self) -> LeafDict:
         """Serialize this leaf to a family-tagged mapping.
@@ -211,20 +206,33 @@ class Leaf(BaseFilter):
         return LeafDict(t=self.family, f=self.key, op=str(self.comparator), v=value)
 
 
-class DatasetLeaf(Leaf):
+class RefLeaf(Leaf):
+    """A leaf whose field access is a [`Ref`][ftmq.query.refs.Ref]: the ref
+    validates the field name and reads the entity values, the leaf adds the
+    comparator. Aggregations project over the same refs."""
+
+    ref: Ref
+
+    def values(self, entity: EntityProxy) -> Iterator[str]:
+        yield from self.ref.values(entity)
+
+    @property
+    def wire(self) -> str:
+        return self.ref.wire
+
+
+class DatasetLeaf(RefLeaf):
     """Matches an entity's `datasets` membership."""
 
     family, key = "M", "dataset"
-
-    def values(self, entity: EntityProxy) -> Iterator[str]:
-        # `.datasets` is added by the StatementEntity / ValueEntity subclasses
-        yield from getattr(entity, "datasets", [])
+    ref = DatasetRef()
 
 
-class SchemaLeaf(Leaf):
+class SchemaLeaf(RefLeaf):
     """Exact schema match."""
 
     family, key = "M", "schema"
+    ref = SchemaRef()
 
     def __init__(self, value: Any, comparator: str | None = None) -> None:
         super().__init__(value, comparator)
@@ -234,9 +242,6 @@ class SchemaLeaf(Leaf):
             for name in ensure_list(value):
                 if model.get(name) is None:
                     raise QueryError(f"Invalid schema: `{name}`")
-
-    def values(self, entity: EntityProxy) -> Iterator[str]:
-        yield entity.schema.name
 
 
 class SchemataLeaf(Leaf):
@@ -265,69 +270,52 @@ class SchemataLeaf(Leaf):
         return hit
 
 
-class IdLeaf(Leaf):
+class IdLeaf(RefLeaf):
     """Matches an entity's id."""
 
     family, key = "M", "id"
-
-    def values(self, entity: EntityProxy) -> Iterator[str]:
-        if entity.id is not None:
-            yield entity.id
+    ref = IdRef()
 
 
 class EntityIdLeaf(IdLeaf):
     """Matches the `entity_id` column (the pre-resolution id)."""
 
     key = "entity_id"
+    ref = EntityIdRef()
 
 
 class CanonicalIdLeaf(IdLeaf):
     """Matches the `canonical_id` column (the resolved id)."""
 
     key = "canonical_id"
+    ref = CanonicalIdRef()
 
 
-class PropertyLeaf(Leaf):
+class PropertyLeaf(RefLeaf):
     """Matches a specific FtM property value (the `prop` column)."""
 
     family = "P"
 
     def __init__(self, prop: str | Property, value: Any, comparator: str | None = None):
         super().__init__(value, comparator)
-        self.key = self._validate(prop)
-
-    @staticmethod
-    def _validate(prop: str | Property) -> str:
-        if isinstance(prop, Property):
-            return prop.name
-        if isinstance(prop, str):
-            for p in model.properties:
-                if p.name == prop or p.qname == prop:
-                    return prop
-        raise QueryError(f"Invalid prop: `{prop}`")
-
-    def values(self, entity: EntityProxy) -> Iterator[str]:
-        yield from entity.get(self.key, quiet=True)
+        self.ref = PropRef(prop)
+        self.key = self.ref.key
 
 
-class GroupLeaf(Leaf):
+class GroupLeaf(RefLeaf):
     """A property-type group (the `prop_type` column). `entities` is the
     reverse-lookup group."""
 
     family = "G"
 
     def __init__(self, group: str, value: Any, comparator: str | None = None):
-        if group not in registry.groups:
-            raise QueryError(f"Invalid property group: `{group}`")
+        self.ref = GroupRef(group)
         super().__init__(value, comparator)
-        self.key = group
-        self.prop_type = registry.groups[group]
-
-    def values(self, entity: EntityProxy) -> Iterator[str]:
-        yield from entity.get_type_values(self.prop_type)
+        self.key = self.ref.key
+        self.prop_type = self.ref.prop_type
 
 
-class ContextLeaf(Leaf):
+class ContextLeaf(RefLeaf):
     """A context field (the `C` family).
 
     In-memory it reads `entity.context[key]` (always treated as multi-valued);
@@ -341,12 +329,8 @@ class ContextLeaf(Leaf):
 
     def __init__(self, key: str, value: Any, comparator: str | None = None):
         super().__init__(value, comparator)
+        self.ref = ContextRef(key)
         self.key = key
-
-    def values(self, entity: EntityProxy) -> Iterator[str]:
-        context = getattr(entity, "context", None) or {}
-        value: Any = context.get(self.key)
-        yield from ensure_list(value)
 
 
 _META_LEAVES: dict[str, type[Leaf]] = {

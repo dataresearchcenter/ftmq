@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from ftmq import A, C, G, M, P, Query
+from ftmq import A, C, G, M, P, Query, Year
 from ftmq.query.exceptions import QueryError
 
 OUT = Path(__file__).parent.parent / "js" / "tests" / "fixtures" / "query_cases.json"
@@ -56,14 +56,20 @@ CASES: dict[str, Query] = {
     "sort_asc": Query().where(M(schema="Person")).order_by("name")[:25],
     "agg_ungrouped": Query()
     .where(M(schema="Payment"))
-    .aggregate(A(min="date", max="date", sum="amountEur")),
+    .aggregate(A(min=P("date"), max=P("date"), sum=P("amountEur"))),
     "agg_grouped": Query()
     .where(M(schema="Payment"))
-    .aggregate(A(sum="amountEur", by="beneficiary"), A(count="id")),
+    .aggregate(A(sum=P("amountEur"), by=P("beneficiary")), A(count=M("id"))),
     "combined": Query()
     .where(M(dataset="donations"), M(schema="Payment"), P(date__gte="2010"))
     .order_by("-amountEur")[0:50]
-    .aggregate(A(sum="amountEur", by="year")),
+    .aggregate(A(sum=P("amountEur"), by=Year())),
+    # every family is addressable as an aggregation field, spelled as in the
+    # filter grammar (`topics` the group vs `properties.topics` the property)
+    "agg_group_field": Query().aggregate(A(count=M("id"), by=G("countries"))),
+    "agg_families": Query().aggregate(
+        A(count=P("topics"), by=[G("topics"), C("origin"), M("dataset")])
+    ),
 }
 
 

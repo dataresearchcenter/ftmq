@@ -10,9 +10,9 @@ carries aggregations: RQL's native `sum` / `min` / `max` / `mean` / `count` and
 `aggregate(...)` operators map onto ftmq `A` nodes, side by side with the filter
 under a top-level `and`.
 
-Field names follow the Aleph convention (`schema`, `dataset`, `properties.<name>`,
-a `registry.groups` name, or `origin`); a bare name that matches none of those is
-treated as an FtM property.
+Field names use the shared wire spelling (`properties.<name>`, `group.<name>`,
+`context.<name>`, bare meta fields and `year`); a bare name that matches none of
+those is treated as an FtM property.
 """
 
 from __future__ import annotations
@@ -36,10 +36,11 @@ warnings.filterwarnings(
 )
 
 from ftmq.query.aggregations import Agg, make_agg  # noqa: E402
-from ftmq.query.aleph import _FAMILIES, _aleph_field, _resolve_field  # noqa: E402
+from ftmq.query.aleph import _FAMILIES, _resolve_field  # noqa: E402
 from ftmq.query.exceptions import QueryError  # noqa: E402
 from ftmq.query.leaves import Leaf  # noqa: E402
 from ftmq.query.nodes import AND, OR, Expr, combine  # noqa: E402
+from ftmq.query.refs import Ref, ref_from_wire  # noqa: E402
 
 # RQL comparison operator -> ftmq comparator
 RQL_COMPARATORS = {
@@ -57,7 +58,7 @@ RQL_COMPARATORS = {
 }
 
 # ftmq comparator -> RQL operator (the expressible subset; `null`, `startswith`,
-# `endswith`, `notlike`, `notilike`, `between` have no RQL equivalent)
+# `endswith`, `notlike`, `notilike` have no RQL equivalent)
 TO_RQL_OPERATORS = {
     "eq": "eq",
     "not": "ne",
@@ -125,22 +126,24 @@ def rql_to_expr(data: dict[str, Any]) -> Expr:
     return result
 
 
-def _metric_aggs(node: dict[str, Any], groups: tuple[str, ...]) -> list[Agg]:
+def _metric_aggs(node: dict[str, Any], groups: tuple[Ref, ...]) -> list[Agg]:
     """One RQL metric call (`sum(prop, ...)`) -> `Agg` specs."""
     func = RQL_FUNCTIONS.get(node["name"])
     if func is None:
         raise QueryError(f"Unsupported RQL aggregate operator: `{node['name']}`")
-    return [make_agg(func, str(prop), groups) for prop in node["args"]]
+    return [make_agg(func, ref_from_wire(str(field)), groups) for field in node["args"]]
 
 
 def _node_aggs(node: dict[str, Any]) -> list[Agg]:
     """One RQL aggregate node -> `Agg` specs.
 
     `aggregate(g1, ..., f1(p), ...)` groups the trailing metric calls by the
-    leading property names; a bare metric call (`sum(p)`) is ungrouped.
+    leading field names; a bare metric call (`sum(p)`) is ungrouped.
     """
     if node["name"] == "aggregate":
-        groups = tuple(a for a in node["args"] if not isinstance(a, dict))
+        groups = tuple(
+            ref_from_wire(str(a)) for a in node["args"] if not isinstance(a, dict)
+        )
         aggs: list[Agg] = []
         for arg in node["args"]:
             if isinstance(arg, dict):
@@ -185,7 +188,7 @@ def _leaf_to_rql(leaf: Leaf) -> dict[str, Any]:
     value = leaf.value
     if op in ("in", "out"):
         value = tuple(sorted(str(v) for v in value))
-    return {"name": op, "args": [_aleph_field(leaf), value]}
+    return {"name": op, "args": [leaf.wire, value]}
 
 
 def expr_to_rql(expr: Expr) -> dict[str, Any]:
@@ -218,16 +221,16 @@ def _aggs_to_rql(aggs: Iterable[Agg]) -> list[dict[str, Any]]:
     are batched into one `aggregate(groups..., funcs...)` node.
     """
     ungrouped: list[dict[str, Any]] = []
-    grouped: dict[tuple[str, ...], list[dict[str, Any]]] = defaultdict(list)
-    for agg in sorted(aggs, key=lambda a: (a.groups, a.func, a.prop)):
-        node: dict[str, Any] = {"name": TO_RQL_FUNCTIONS[agg.func], "args": [agg.prop]}
+    grouped: dict[tuple[Ref, ...], list[dict[str, Any]]] = defaultdict(list)
+    for agg in sorted(aggs, key=lambda a: (a.groups, a.func, a.key)):
+        node: dict[str, Any] = {"name": TO_RQL_FUNCTIONS[agg.func], "args": [agg.key]}
         if agg.groups:
             grouped[agg.groups].append(node)
         else:
             ungrouped.append(node)
     nodes: list[dict[str, Any]] = list(ungrouped)
     for groups, metrics in grouped.items():
-        nodes.append({"name": "aggregate", "args": [*groups, *metrics]})
+        nodes.append({"name": "aggregate", "args": [g.wire for g in groups] + metrics})
     return nodes
 
 

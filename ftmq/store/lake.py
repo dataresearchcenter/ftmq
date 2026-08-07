@@ -52,11 +52,9 @@ from sqlalchemy import Boolean, DateTime, column, select, table
 from sqlalchemy.sql import Select
 from sqlalchemy.sql.elements import ColumnElement
 
-from ftmq.query import Query
 from ftmq.query.sql import SqlSource
 from ftmq.store.base import DEFAULT_ORIGIN, Store
 from ftmq.store.sql import SQLQueryView, SQLStore
-from ftmq.types import StatementEntities
 from ftmq.util import apply_dataset, ensure_entity, get_scope_dataset
 
 log = get_logger(__name__)
@@ -326,14 +324,6 @@ class Row:
         return list(self.__iter__())[i]
 
 
-class LakeQueryView(SQLQueryView):
-    def query(self, query: Query | None = None) -> StatementEntities:
-        if query:
-            yield from self.store._iterate(self._sql(query).statements)
-        else:
-            yield from super().query(query)
-
-
 class LakeStore(SQLStore):
     @property
     def source(self) -> SqlSource:
@@ -341,7 +331,7 @@ class LakeStore(SQLStore):
         pruning and the view filter folded into every compiled query."""
         return SqlSource(
             self.table,
-            prune={"schema": get_schema_bucket},
+            prune_schema=get_schema_bucket,
             prune_column="bucket",
             base_filter=self._view_filter,
         )
@@ -460,14 +450,15 @@ class LakeStore(SQLStore):
 
     def view(
         self, scope: Dataset | None = None, external: bool = False
-    ) -> LakeQueryView:
+    ) -> SQLQueryView:
         scope = scope or self.dataset
-        return LakeQueryView(self, scope, external)
+        return SQLQueryView(self, scope, external)
 
     def writer(
         self, origin: str | None = DEFAULT_ORIGIN, source: str | None = None
     ) -> "LakeWriter":
-        return LakeWriter(self, origin=origin or DEFAULT_ORIGIN, source=source)
+        writer = LakeWriter(self, origin=origin or DEFAULT_ORIGIN, source=source)
+        return cast("LakeWriter", self.casting_writer(writer))
 
     def get_origins(self) -> set[str]:
         q = select(self.table.c.origin).distinct()

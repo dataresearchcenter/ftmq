@@ -4,6 +4,7 @@ pytest.importorskip("fastapi")
 
 from fastapi import HTTPException, Request  # noqa: E402
 
+from ftmq import M, P, Year  # noqa: E402
 from ftmq.query import QueryError  # noqa: E402
 from ftmq.query.aggregations import Agg  # noqa: E402
 
@@ -51,17 +52,17 @@ def test_api_query_filters():
     assert ("M", "canonical_id", "startswith") in leaves
 
     # reverse lookup via the `entities` group
-    q = _build("filter:entities=some-id")
+    q = _build("filter:group.entities=some-id")
     assert {g.key for g in q.groups} == {"entities"}
 
     # countries group (feeds the search stores)
-    q = _build("filter:countries=de&filter:countries=lu")
+    q = _build("filter:group.countries=de&filter:group.countries=lu")
     assert q.countries == {"de", "lu"}
 
 
 def test_api_query_sort_paging():
     q = _build("sort=name:desc&limit=10&offset=20")
-    assert q.sort.serialize() == ["-name"]
+    assert q.sort.serialize() == "-name"
     assert q.limit == 10 and q.offset == 20
 
     # limit is capped for unauthenticated requests
@@ -72,10 +73,10 @@ def test_api_query_sort_paging():
 
 
 def test_api_query_aggregations():
-    q = _build("metric:sum=amountEur&metric:count=id&facet=year")
+    q = _build("metric:sum=properties.amountEur&metric:count=id&facet=year")
     assert q.aggregations == {
-        Agg(func="sum", prop="amountEur", groups=("year",)),
-        Agg(func="count", prop="id", groups=("year",)),
+        Agg(func="sum", ref=P("amountEur"), groups=(Year(),)),
+        Agg(func="count", ref=M("id"), groups=(Year(),)),
     }
 
 
@@ -93,8 +94,8 @@ def test_api_query_rql():
     assert q.limit == 5 and q.offset == 10
 
     # rql aggregations flow through
-    q = _build("rql=aggregate(year,sum(amountEur))")
-    assert q.aggregations == {Agg(func="sum", prop="amountEur", groups=("year",))}
+    q = _build("rql=aggregate(year,sum(properties.amountEur))")
+    assert q.aggregations == {Agg(func="sum", ref=P("amountEur"), groups=(Year(),))}
 
 
 def test_api_query_invalid():

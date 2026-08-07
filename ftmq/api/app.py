@@ -131,9 +131,11 @@ async def entities(
     (e.g. `filter:schemata=LegalEntity` includes companies, people, ...).
 
     Filtering works for all [FollowTheMoney](https://followthemoney.tech/explorer/)
-    properties via `filter:properties.<name>=`, property-type groups via their
-    group name (e.g. `filter:countries=de`, `filter:entities=<id>` for reverse
-    lookups), and comparator prefixes:
+    properties via `filter:properties.<name>=`, property-type groups via
+    `filter:group.<name>=` (e.g. `filter:group.countries=de`,
+    `filter:group.entities=<id>` for reverse lookups), context columns via
+    `filter:context.<name>=` (e.g. `filter:context.origin=`), and comparator
+    prefixes:
 
     * range: `filter:gte:properties.date=2023`, `filter:lt:properties.amountEur=1000`
     * substring: `filter:ilike:properties.name=jane`
@@ -146,10 +148,9 @@ async def entities(
     `?sort={prop}` or `?sort={prop}:desc`
 
     [Numeric](https://followthemoney.tech/explorer/types/number/)
-    property types are casted via sql `CAST(value AS NUMERIC)` (ignoring
-    errors, results in 0) before sorting, and the first property in the value
-    array is used as the sorting value. (The entity property dict remains
-    uncasted, aka all properties are multi values as string)
+    property types are read as numbers before sorting; the first value of a
+    multi-valued property is the sorting value. The entity property dict
+    itself stays uncast (all properties are multi-valued strings).
 
     ## pagination
 
@@ -157,23 +158,31 @@ async def entities(
 
     ## aggregations
 
-    Aggregations ride on the same query (as in the Aleph api). Request metrics
-    and optionally group them by properties or fields (`id`, `dataset`,
-    `schema`, `year`):
+    Aggregations ride on the same query. Request metrics and optionally group
+    them by a property (`properties.<name>`), a property-type group
+    (`group.countries`, `group.names`, ...), a context column
+    (`context.<name>`) or a field (`id`, `dataset`, `schema`, `year`) - the
+    same spelling as in `filter:`:
 
-        ?metric:sum=amountEur&metric:count=id&facet=year
+        ?metric:sum=properties.amountEur&metric:count=id&facet=year
 
-    Set `limit=0` to return only the aggregations (plus `total` / `stats`), no
-    entities:
+    A `facet` on its own groups an entity count; these are equivalent:
 
-        ?filter:schema=Payment&metric:sum=amountEur&limit=0
+        ?facet=group.countries
+        ?metric:count=id&facet=group.countries
+
+    Grouped metrics come back as `facets` (Aleph value/count buckets),
+    ungrouped ones as `metrics`. Set `limit=0` to return only the aggregations
+    (plus `total` / `stats`), no entities:
+
+        ?filter:schema=Payment&metric:sum=properties.amountEur&limit=0
 
     ## searching
 
     A `q` term routes the query to full-text search via `ftmq.search`
     (relevance-ranked, dehydrated hits), combined with the same filters:
 
-        ?q=jane+doe&filter:dataset=my_dataset&filter:countries=de
+        ?q=jane+doe&filter:dataset=my_dataset&filter:group.countries=de
 
     Autocomplete on entity names is at `/autocomplete?q=<term>`.
     """

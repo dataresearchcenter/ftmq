@@ -3,21 +3,26 @@ from collections import defaultdict
 from decimal import Decimal
 
 from anystore.util import clean_dict
+from followthemoney import model
 from followthemoney.dataset.dataset import Dataset
 from nomenklatura.db import get_metadata
 from nomenklatura.store import sql as nk
 from sqlalchemy import select
 
-from ftmq.enums import Fields
 from ftmq.model.stats import DatasetStats, compile_stats
 from ftmq.query import Query
 from ftmq.query.aggregations import AggregatorResult
+from ftmq.query.refs import GroupRef, SchemaRef
 from ftmq.query.sql import Sql, SqlSource
 from ftmq.store.base import Store, View
 from ftmq.types import StatementEntities
 from ftmq.util import get_scope_dataset
 
 MAX_SQL_AGG_GROUPS = int(os.environ.get("MAX_SQL_AGG_GROUPS", 10))
+
+# schema-name partitions of the model, for the dataset coverage stats
+THINGS = sorted(k for k, s in model.schemata.items() if s.is_a("Thing"))
+INTERVALS = sorted(k for k, s in model.schemata.items() if s.is_a("Interval"))
 
 
 def clean_agg_value(value: str | Decimal) -> str | float | int | None:
@@ -45,15 +50,20 @@ class SQLQueryView(View, nk.SQLView):
     def stats(self, query: Query | None = None) -> DatasetStats:
         query = query or Query()
         sql = self._sql(query)
+        things = sql.table.c.schema.in_(THINGS)
+        intervals = sql.table.c.schema.in_(INTERVALS)
+        countries = GroupRef("countries")
 
         def ex(sub):
             return self.store._execute(sub, stream=False)
 
         stats = compile_stats(
-            things=ex(sql.things),
-            intervals=ex(sql.intervals),
-            things_countries=ex(sql.things_countries),
-            intervals_countries=ex(sql.intervals_countries),
+            things=ex(sql.get_group_counts(SchemaRef(), extra_where=things)),
+            intervals=ex(sql.get_group_counts(SchemaRef(), extra_where=intervals)),
+            things_countries=ex(sql.get_group_counts(countries, extra_where=things)),
+            intervals_countries=ex(
+                sql.get_group_counts(countries, extra_where=intervals)
+            ),
             date_range=next(iter(ex(sql.date_range)), None),
             entity_count=self.count(query),
         )
@@ -72,33 +82,19 @@ class SQLQueryView(View, nk.SQLView):
         sql = self._sql(query)
         res: AggregatorResult = defaultdict(dict)
 
-        for prop, func, value in self.store._execute(sql.aggregations, stream=False):
-            res[func][prop] = clean_agg_value(value)
+        for field, func, value in self.store._execute(sql.aggregations, stream=False):
+            res[func][field] = clean_agg_value(value)
 
         if sql.group_props:
             res["groups"] = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
-            for prop in sql.group_props:
-                if prop == Fields.year:
-                    start, end = self.stats(query).years
-                    if start or end:
-                        groups = range(start or end, (end or start) + 1)
-                    else:
-                        groups = []
-                else:
-                    groups = [
-                        r[0]
-                        for r in self.store._execute(
-                            sql.get_group_counts(prop, limit=MAX_SQL_AGG_GROUPS),
-                            stream=False,
-                        )
-                    ]
-                for group in groups:
-                    for agg_prop, func, value in self.store._execute(
-                        sql.get_group_aggregations(prop, group), stream=False
-                    ):
-                        res["groups"][prop][func][agg_prop][group] = clean_agg_value(
-                            value
-                        )
+            for ref in sorted(sql.group_props):
+                # one round trip per grouper: the select carries the group
+                # value per row, capped to the most frequent group values
+                grouped = sql.grouped_aggregations(ref, limit=MAX_SQL_AGG_GROUPS)
+                for field, func, group, value in self.store._execute(
+                    grouped, stream=False
+                ):
+                    res["groups"][ref.wire][func][field][group] = clean_agg_value(value)
         res = clean_dict(res)
         return res
 

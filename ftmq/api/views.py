@@ -13,11 +13,7 @@ from followthemoney import EntityProxy
 from furl import furl
 
 from ftmq.api.query import RetrieveParams, build_query
-from ftmq.api.serialize import (
-    AutocompleteResponse,
-    EntitiesResponse,
-    EntityResponse,
-)
+from ftmq.api.serialize import AutocompleteResponse, EntitiesResponse, EntityResponse
 from ftmq.api.settings import Settings
 from ftmq.api.store import get_catalog, get_dataset, get_view
 from ftmq.model import Catalog, Dataset
@@ -110,13 +106,15 @@ def entity_list(
                 query_q=q,
             )
         entities: list = []
-        adjacents = []
+        adjacents: Iterable[EntityProxy] = []
         # `limit=0` returns only aggregations / stats (openaleph-style facets),
         # so the entity fetch is skipped
         if query.limit != 0:
             entities = [e for e in view.get_entities(query, retrieve_params)]
             if retrieve_params.nested:
                 adjacents = view.get_adjacents(entities)
+                if retrieve_params.dehydrate_nested:
+                    adjacents = [get_dehydrated_entity(e) for e in adjacents]
         aggregations = view.aggregations(query) if query.aggregations else None
         return EntitiesResponse.from_view(
             request=request,

@@ -1,7 +1,5 @@
-import sys
 from datetime import datetime
 
-import cloudpickle
 import pytest
 from followthemoney import EntityProxy, model
 from followthemoney.dataset import Dataset
@@ -9,10 +7,9 @@ from followthemoney.entity import ValueEntity
 from followthemoney.statement.entity import StatementEntity
 
 from ftmq import util
-from ftmq.enums import Comparators, StrEnum
-
-if sys.version_info >= (3, 11):
-    from enum import EnumType
+from ftmq.query.exceptions import QueryError
+from ftmq.query.leaves import parse_lookup
+from ftmq.query.refs import NUMERIC_PROPS
 
 
 def test_util_make_dataset():
@@ -42,28 +39,44 @@ def test_util_ensure_dataset():
     assert ds.name == "default"
 
 
-def test_util_str_enum():
-    enum = StrEnum("Foo", ["a", "b", 2])
-    assert enum.a == "a"
-    assert str(enum.a) == "a"
-    assert "a" in enum
-    if sys.version_info >= (3, 11):
-        assert isinstance(enum, EnumType)
+def test_util_get_scope_dataset():
+    ds = util.get_scope_dataset("donations", "eu_authorities")
+    assert ds.leaf_names == {"donations", "eu_authorities"}
 
-        # https://gist.github.com/simonwoerpel/bdb9959de75e550349961677549624fb
-        enum = StrEnum("Foo", ["name", "name2"])
-        assert "name" in enum.__dict__
-        dump = cloudpickle.dumps(enum)
-        assert isinstance(dump, bytes)
-        enum2 = cloudpickle.loads(dump)
-        assert enum2 == enum
+    # a single dataset is its own scope - no synthetic collection to collide
+    assert util.get_scope_dataset("default") is util.make_dataset("default")
+
+    # regression: the scope collection used to be named "default" too, and
+    # followthemoney identifies datasets by name - so a member called
+    # "default" (the conventional store-side name) was absorbed by its own
+    # parent and dropped from `leaf_names`, emptying the scope of every
+    # dataset-filtered read (`View.get_entity` -> 404 for every entity)
+    assert util.get_scope_dataset("default").leaf_names == {"default"}
+    assert util.get_scope_dataset("default", "other").leaf_names == {
+        "default",
+        "other",
+    }
+
+
+def test_util_ensure_dataset_identity():
+    # regression: `ensure_dataset` used to be cached, and followthemoney
+    # compares datasets by name - so two scopes spanning different datasets
+    # (both named `ftmq_scope`) collided and the second store silently read
+    # through the first one's scope
+    a = util.get_scope_dataset("a", "b")
+    b = util.get_scope_dataset("c", "d")
+    assert a == b  # same name, so followthemoney considers them equal ...
+    assert util.ensure_dataset(a) is a  # ... but each is passed through as-is
+    assert util.ensure_dataset(b) is b
 
 
 def test_util_parse_lookup_key():
-    assert util.parse_comparator("foo") == ("foo", Comparators.eq)
-    assert util.parse_comparator("foo__gte") == ("foo", Comparators.gte)
-    with pytest.raises(KeyError):  # unknown operator
-        util.parse_comparator("foo__bar")
+    assert parse_lookup("foo") == ("foo", "eq")
+    assert parse_lookup("foo__gte") == ("foo", "gte")
+    with pytest.raises(QueryError):  # unknown operator
+        parse_lookup("foo__bar")
+    with pytest.raises(QueryError):  # `between` never worked and is gone
+        parse_lookup("foo__between")
 
 
 def test_util_country():
@@ -115,9 +128,9 @@ def test_util_fingerprints():
     assert util.make_fingerprints("乌克兰语") == {"乌克兰语"}
 
 
-def test_util_prop_is_numeric():
-    assert not util.prop_is_numeric(model.get("Person"), "name")
-    assert util.prop_is_numeric(model.get("Payment"), "amountEur")
+def test_util_numeric_props():
+    assert "name" not in NUMERIC_PROPS
+    assert "amountEur" in NUMERIC_PROPS
 
 
 def test_util_ensure_entity():

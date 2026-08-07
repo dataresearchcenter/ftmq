@@ -58,7 +58,7 @@ const query = new Query()
   .slice(0, 25); // offset, offset + limit
 ```
 
-`.where()` AND-combines its nodes (chained `.where()` also ANDs); `.slice(start, stop)` sets offset / limit; `.orderBy(...fields)` sorts.
+`.where()` AND-combines its nodes (chained `.where()` also ANDs); `.slice(start, stop)` sets offset / limit; `.orderBy(field)` sorts by a single field (leading `-` = descending).
 
 ### Comparators
 
@@ -76,18 +76,20 @@ Validity of schema / property / group names is not checked client-side; the api 
 
 ### Aggregations
 
-Aggregations ride on the entities query (as in the Aleph api): add `A(...)` nodes and read the response `metrics` (ungrouped) and `facets` (grouped). Slice to `limit=0` (via `.slice(0, 0)`) to fetch only the aggregations, no entities.
+Aggregations ride on the entities query: add `A(...)` nodes and read the response `metrics` (ungrouped) and `facets` (grouped). Slice to `limit=0` (via `.slice(0, 0)`) to fetch only the aggregations, no entities.
+
+An aggregation addresses a field by *reference*: the same `M` / `P` / `G` / `C` markers, called with a bare field name instead of `field: value` lookups (plus `Year()`). Fields are keyed by their wire spelling in the response, as in a url.
 
 ```ts
-import { Query, M, A } from "@dataresearchcenter/ftmq";
+import { Query, M, P, A, Year } from "@dataresearchcenter/ftmq";
 
 const query = new Query()
   .where(M({ schema: "Payment" }))
-  .aggregate(A({ count: "id", by: "year" }), A({ sum: "amountEur" }));
+  .aggregate(A({ count: M("id"), by: Year() }), A({ sum: P("amountEur") }));
 
 // alongside a page of entities
 const page = await api.getEntities(query.slice(0, 25));
-page.metrics; // ungrouped: { amountEur: { sum: ... } }
+page.metrics; // ungrouped: { "properties.amountEur": { sum: ... } }
 page.facets; // grouped: { year: { values: [{ value, label, count }], total } }
 
 // aggregations only: slice to limit 0 (no entities)
@@ -96,7 +98,7 @@ const { facets, metrics } = await api.getEntities(query.slice(0, 0));
 
 ## Parsing urls into a Query
 
-Every serialization surface round-trips, so a client app can reconstruct a `Query` from an incoming url (the point of sharing the query model with the server):
+Every serialization surface round-trips, so a client app can reconstruct a `Query` from an incoming url:
 
 ```ts
 // e.g. from a browser location or a link

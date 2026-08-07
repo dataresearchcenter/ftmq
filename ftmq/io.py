@@ -33,7 +33,7 @@ def smart_read_proxies(
 
     Example:
         ```python
-        from ftmq import Query, M, P
+        from ftmq import Query, M
         from ftmq.io import smart_read_proxies
 
         # remote file-like source
@@ -41,7 +41,7 @@ def smart_read_proxies(
             print(proxy.schema)
 
         # multiple files
-        for proxy in smart_read_proxies("./1.json", "./2.json"):
+        for proxy in smart_read_proxies(["./1.json", "./2.json"]):
             print(proxy.schema)
 
         # nomenklatura store
@@ -49,7 +49,7 @@ def smart_read_proxies(
             print(proxy.schema)
 
         # apply a query to sql storage
-        q = Query().where(M(dataset="my_dataset"), P(schema="Person"))
+        q = Query().where(M(dataset="my_dataset"), M(schema="Person"))
         for proxy in smart_read_proxies("sqlite:///data/ftm.db", query=q):
             print(proxy.schema)
         ```

@@ -248,7 +248,7 @@
     },
     "params": null,
     "string": null,
-    "rql": "and(eq(schema,Person),or(eq(countries,de),eq(countries,at)))",
+    "rql": "and(eq(schema,Person),or(eq(group.countries,de),eq(group.countries,at)))",
     "params_dict": null,
     "rql_dict": {
       "q": {
@@ -465,12 +465,12 @@
       }
     },
     "params": {
-      "filter:entities": [
+      "filter:group.entities": [
         "some-id"
       ]
     },
-    "string": "filter:entities=some-id",
-    "rql": "eq(entities,some-id)",
+    "string": "filter:group.entities=some-id",
+    "rql": "eq(group.entities,some-id)",
     "params_dict": {
       "q": {
         "and": [
@@ -517,12 +517,12 @@
       }
     },
     "params": {
-      "filter:origin": [
+      "filter:context.origin": [
         "crawl"
       ]
     },
-    "string": "filter:origin=crawl",
-    "rql": "eq(origin,crawl)",
+    "string": "filter:context.origin=crawl",
+    "rql": "eq(context.origin,crawl)",
     "params_dict": {
       "q": {
         "and": [
@@ -658,9 +658,7 @@
           }
         ]
       },
-      "order_by": [
-        "-date"
-      ],
+      "order_by": "-date",
       "limit": 10,
       "offset": 10
     },
@@ -693,9 +691,7 @@
           }
         ]
       },
-      "order_by": [
-        "-date"
-      ],
+      "order_by": "-date",
       "limit": 10,
       "offset": 10
     },
@@ -729,9 +725,7 @@
           }
         ]
       },
-      "order_by": [
-        "name"
-      ],
+      "order_by": "name",
       "limit": 25,
       "offset": 0
     },
@@ -761,9 +755,7 @@
           }
         ]
       },
-      "order_by": [
-        "name"
-      ],
+      "order_by": "name",
       "limit": 25,
       "offset": 0
     },
@@ -797,34 +789,37 @@
           }
         ]
       },
-      "aggregations": {
-        "sum": [
-          "amountEur"
-        ],
-        "max": [
-          "date"
-        ],
-        "min": [
-          "date"
-        ]
-      }
+      "aggregations": [
+        {
+          "func": "max",
+          "field": "properties.date"
+        },
+        {
+          "func": "min",
+          "field": "properties.date"
+        },
+        {
+          "func": "sum",
+          "field": "properties.amountEur"
+        }
+      ]
     },
     "params": {
       "filter:schema": [
         "Payment"
       ],
       "metric:max": [
-        "date"
+        "properties.date"
       ],
       "metric:min": [
-        "date"
+        "properties.date"
       ],
       "metric:sum": [
-        "amountEur"
+        "properties.amountEur"
       ]
     },
-    "string": "filter:schema=Payment&metric:max=date&metric:min=date&metric:sum=amountEur",
-    "rql": "and(eq(schema,Payment),max(date),min(date),sum(amountEur))",
+    "string": "filter:schema=Payment&metric:max=properties.date&metric:min=properties.date&metric:sum=properties.amountEur",
+    "rql": "and(eq(schema,Payment),max(properties.date),min(properties.date),sum(properties.amountEur))",
     "params_dict": {
       "q": {
         "and": [
@@ -838,17 +833,20 @@
           }
         ]
       },
-      "aggregations": {
-        "sum": [
-          "amountEur"
-        ],
-        "min": [
-          "date"
-        ],
-        "max": [
-          "date"
-        ]
-      }
+      "aggregations": [
+        {
+          "func": "max",
+          "field": "properties.date"
+        },
+        {
+          "func": "min",
+          "field": "properties.date"
+        },
+        {
+          "func": "sum",
+          "field": "properties.amountEur"
+        }
+      ]
     },
     "rql_dict": {
       "q": {
@@ -863,17 +861,20 @@
           }
         ]
       },
-      "aggregations": {
-        "sum": [
-          "amountEur"
-        ],
-        "min": [
-          "date"
-        ],
-        "max": [
-          "date"
-        ]
-      }
+      "aggregations": [
+        {
+          "func": "max",
+          "field": "properties.date"
+        },
+        {
+          "func": "min",
+          "field": "properties.date"
+        },
+        {
+          "func": "sum",
+          "field": "properties.amountEur"
+        }
+      ]
     }
   },
   {
@@ -891,21 +892,19 @@
           }
         ]
       },
-      "aggregations": {
-        "groups": {
-          "beneficiary": {
-            "sum": [
-              "amountEur"
-            ]
-          }
+      "aggregations": [
+        {
+          "func": "count",
+          "field": "id"
         },
-        "sum": [
-          "amountEur"
-        ],
-        "count": [
-          "id"
-        ]
-      }
+        {
+          "func": "sum",
+          "field": "properties.amountEur",
+          "by": [
+            "properties.beneficiary"
+          ]
+        }
+      ]
     },
     "params": {
       "filter:schema": [
@@ -915,14 +914,14 @@
         "id"
       ],
       "metric:sum": [
-        "amountEur"
+        "properties.amountEur"
       ],
       "facet": [
-        "beneficiary"
+        "properties.beneficiary"
       ]
     },
-    "string": "facet=beneficiary&filter:schema=Payment&metric:count=id&metric:sum=amountEur",
-    "rql": "and(eq(schema,Payment),count(id),aggregate(beneficiary,sum(amountEur)))",
+    "string": "facet=properties.beneficiary&filter:schema=Payment&metric:count=id&metric:sum=properties.amountEur",
+    "rql": "and(eq(schema,Payment),count(id),aggregate(properties.beneficiary,sum(properties.amountEur)))",
     "params_dict": {
       "q": {
         "and": [
@@ -936,24 +935,22 @@
           }
         ]
       },
-      "aggregations": {
-        "groups": {
-          "beneficiary": {
-            "count": [
-              "id"
-            ],
-            "sum": [
-              "amountEur"
-            ]
-          }
+      "aggregations": [
+        {
+          "func": "count",
+          "field": "id",
+          "by": [
+            "properties.beneficiary"
+          ]
         },
-        "count": [
-          "id"
-        ],
-        "sum": [
-          "amountEur"
-        ]
-      }
+        {
+          "func": "sum",
+          "field": "properties.amountEur",
+          "by": [
+            "properties.beneficiary"
+          ]
+        }
+      ]
     },
     "rql_dict": {
       "q": {
@@ -968,21 +965,19 @@
           }
         ]
       },
-      "aggregations": {
-        "groups": {
-          "beneficiary": {
-            "sum": [
-              "amountEur"
-            ]
-          }
+      "aggregations": [
+        {
+          "func": "count",
+          "field": "id"
         },
-        "sum": [
-          "amountEur"
-        ],
-        "count": [
-          "id"
-        ]
-      }
+        {
+          "func": "sum",
+          "field": "properties.amountEur",
+          "by": [
+            "properties.beneficiary"
+          ]
+        }
+      ]
     }
   },
   {
@@ -1016,23 +1011,18 @@
           }
         ]
       },
-      "order_by": [
-        "-amountEur"
-      ],
+      "order_by": "-amountEur",
       "limit": 50,
       "offset": 0,
-      "aggregations": {
-        "groups": {
-          "year": {
-            "sum": [
-              "amountEur"
-            ]
-          }
-        },
-        "sum": [
-          "amountEur"
-        ]
-      }
+      "aggregations": [
+        {
+          "func": "sum",
+          "field": "properties.amountEur",
+          "by": [
+            "year"
+          ]
+        }
+      ]
     },
     "params": {
       "filter:dataset": [
@@ -1045,7 +1035,7 @@
         "2010"
       ],
       "metric:sum": [
-        "amountEur"
+        "properties.amountEur"
       ],
       "facet": [
         "year"
@@ -1057,8 +1047,8 @@
         "50"
       ]
     },
-    "string": "facet=year&filter:dataset=donations&filter:gte:properties.date=2010&filter:schema=Payment&limit=50&metric:sum=amountEur&sort=amountEur%3Adesc",
-    "rql": "and(eq(dataset,donations),eq(schema,Payment),ge(properties.date,2010),aggregate(year,sum(amountEur)))",
+    "string": "facet=year&filter:dataset=donations&filter:gte:properties.date=2010&filter:schema=Payment&limit=50&metric:sum=properties.amountEur&sort=amountEur%3Adesc",
+    "rql": "and(eq(dataset,donations),eq(schema,Payment),ge(properties.date,2010),aggregate(year,sum(properties.amountEur)))",
     "params_dict": {
       "q": {
         "and": [
@@ -1088,23 +1078,18 @@
           }
         ]
       },
-      "order_by": [
-        "-amountEur"
-      ],
+      "order_by": "-amountEur",
       "limit": 50,
       "offset": 0,
-      "aggregations": {
-        "groups": {
-          "year": {
-            "sum": [
-              "amountEur"
-            ]
-          }
-        },
-        "sum": [
-          "amountEur"
-        ]
-      }
+      "aggregations": [
+        {
+          "func": "sum",
+          "field": "properties.amountEur",
+          "by": [
+            "year"
+          ]
+        }
+      ]
     },
     "rql_dict": {
       "q": {
@@ -1135,18 +1120,115 @@
           }
         ]
       },
-      "aggregations": {
-        "groups": {
-          "year": {
-            "sum": [
-              "amountEur"
-            ]
-          }
-        },
-        "sum": [
-          "amountEur"
-        ]
-      }
+      "aggregations": [
+        {
+          "func": "sum",
+          "field": "properties.amountEur",
+          "by": [
+            "year"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "agg_group_field",
+    "dict": {
+      "aggregations": [
+        {
+          "func": "count",
+          "field": "id",
+          "by": [
+            "group.countries"
+          ]
+        }
+      ]
+    },
+    "params": {
+      "metric:count": [
+        "id"
+      ],
+      "facet": [
+        "group.countries"
+      ]
+    },
+    "string": "facet=group.countries&metric:count=id",
+    "rql": "aggregate(group.countries,count(id))",
+    "params_dict": {
+      "aggregations": [
+        {
+          "func": "count",
+          "field": "id",
+          "by": [
+            "group.countries"
+          ]
+        }
+      ]
+    },
+    "rql_dict": {
+      "aggregations": [
+        {
+          "func": "count",
+          "field": "id",
+          "by": [
+            "group.countries"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "agg_families",
+    "dict": {
+      "aggregations": [
+        {
+          "func": "count",
+          "field": "properties.topics",
+          "by": [
+            "context.origin",
+            "dataset",
+            "group.topics"
+          ]
+        }
+      ]
+    },
+    "params": {
+      "metric:count": [
+        "properties.topics"
+      ],
+      "facet": [
+        "context.origin",
+        "dataset",
+        "group.topics"
+      ]
+    },
+    "string": "facet=context.origin&facet=dataset&facet=group.topics&metric:count=properties.topics",
+    "rql": "aggregate(context.origin,dataset,group.topics,count(properties.topics))",
+    "params_dict": {
+      "aggregations": [
+        {
+          "func": "count",
+          "field": "properties.topics",
+          "by": [
+            "context.origin",
+            "dataset",
+            "group.topics"
+          ]
+        }
+      ]
+    },
+    "rql_dict": {
+      "aggregations": [
+        {
+          "func": "count",
+          "field": "properties.topics",
+          "by": [
+            "context.origin",
+            "dataset",
+            "group.topics"
+          ]
+        }
+      ]
     }
   }
 ]

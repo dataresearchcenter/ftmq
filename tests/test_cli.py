@@ -2,8 +2,9 @@ from pathlib import Path
 
 import orjson
 from anystore.logging import configure_logging
-from followthemoney import ValueEntity
+from followthemoney import Statement, ValueEntity
 from followthemoney.dataset.dataset import DatasetModel
+from followthemoney.statement import read_statements, write_statements
 from typer.testing import CliRunner
 
 from ftmq.cli import cli
@@ -185,12 +186,13 @@ def test_cli_aggregation(fixtures_path: Path):
             "--aggregation-uri",
             "-",
             "--sum",
-            "amountEur",
+            # aggregation fields take the wire spelling, as in `-q` / `--rql`
+            "properties.amountEur",
         ],
     )
     assert result.exit_code == 0
     result = orjson.loads(result.output)
-    assert result == {"sum": {"amountEur": 40589689.15}}
+    assert result == {"sum": {"properties.amountEur": 40589689.15}}
 
     result = runner.invoke(
         cli,
@@ -202,19 +204,19 @@ def test_cli_aggregation(fixtures_path: Path):
             "--aggregation-uri",
             "-",
             "--max",
-            "name",
+            "properties.name",
             "--groups",
-            "country",
+            "properties.country",
         ],
     )
     assert result.exit_code == 0
     result = orjson.loads(result.output)
     assert result == {
-        "max": {"name": "YOC AG"},
+        "max": {"properties.name": "YOC AG"},
         "groups": {
-            "country": {
+            "properties.country": {
                 "max": {
-                    "name": {
+                    "properties.name": {
                         "de": "YOC AG",
                         "cy": "Schoeller Holdings Ltd.",
                         "gb": "Matthias Rath Limited",
@@ -303,3 +305,69 @@ def test_cli_fragments_iterate_fragments(tmp_path: Path):
     key1 = next(e for e in entities if e["id"] == "key1")
     assert key1["properties"].get("name") == ["Alice"]
     assert key1["properties"].get("lastName") == ["Smith"]
+
+
+def test_cli_statements_cast_types(tmp_path: Path):
+    configure_logging()
+
+    stmts = [
+        Statement(
+            entity_id="pay-1",
+            prop=prop,
+            schema="Payment",
+            value=value,
+            dataset="donations",
+        )
+        for prop, value in (
+            ("amountEur", "1,000.50"),
+            ("date", "2023-01-01"),
+            ("amountEur", "not-a-number"),
+        )
+    ]
+    in_uri = tmp_path / "statements.csv"
+    with open(in_uri, "wb") as fh:
+        write_statements(fh, "csv", stmts)
+
+    out_uri = tmp_path / "typed.csv"
+    result = runner.invoke(
+        cli, ["statements", "cast-types", "-i", str(in_uri), "-o", str(out_uri)]
+    )
+    assert result.exit_code == 0, result.output
+    with open(out_uri, "rb") as fh:
+        res = list(read_statements(fh, "csv"))
+    assert [s.value for s in res] == ["1000.50", "2023-01-01", "not-a-number"]
+    assert [s.original_value for s in res] == ["1,000.50", None, None]
+
+    # unparseable values can be dropped, and other formats round-trip
+    out_uri = tmp_path / "typed.json"
+    result = runner.invoke(
+        cli,
+        [
+            "statements",
+            "cast-types",
+            "-i",
+            str(in_uri),
+            "-o",
+            str(out_uri),
+            "--output-format",
+            "json",
+            "--drop-invalid",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    with open(out_uri, "rb") as fh:
+        res = list(read_statements(fh, "json"))
+    assert [s.value for s in res] == ["1000.50", "2023-01-01"]
+
+    # only the given types are cast
+    result = runner.invoke(
+        cli,
+        ["statements", "cast-types", "-i", str(in_uri), "-t", "date"],
+    )
+    assert result.exit_code == 0, result.output
+    assert "1,000.50" in result.output
+
+    result = runner.invoke(
+        cli, ["statements", "cast-types", "-i", str(in_uri), "--output-format", "xml"]
+    )
+    assert result.exit_code == 1

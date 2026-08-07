@@ -1,9 +1,8 @@
-from collections import defaultdict
-from functools import cached_property
+from dataclasses import dataclass
+from functools import cached_property, singledispatchmethod
 from typing import TYPE_CHECKING, Any, Callable, Iterable, TypeAlias
 
 from banal import as_bool
-from followthemoney.types import PropertyType, registry
 from nomenklatura.db import make_statement_table
 from sqlalchemy import (
     NUMERIC,
@@ -24,16 +23,7 @@ from sqlalchemy import (
     union_all,
 )
 
-from ftmq.enums import (
-    Aggregations,
-    Comparators,
-    Fields,
-    Intervals,
-    Properties,
-    PropertyTypes,
-    PropertyTypesMap,
-    Things,
-)
+from ftmq.query.aggregations import Agg
 from ftmq.query.exceptions import QueryError
 from ftmq.query.leaves import (
     ContextLeaf,
@@ -46,23 +36,48 @@ from ftmq.query.leaves import (
     SchemataLeaf,
 )
 from ftmq.query.nodes import OR, Expr
+from ftmq.query.refs import (
+    NUMERIC_PROPS,
+    ContextRef,
+    DatasetRef,
+    EntityIdRef,
+    GroupRef,
+    IdRef,
+    PropRef,
+    Ref,
+    SchemaRef,
+    YearRef,
+)
 
 if TYPE_CHECKING:
     from ftmq.query.main import Query
 
 
-Field: TypeAlias = Properties | PropertyTypes | Fields
-
 # a schema-value -> partition-value function (e.g. schema name -> `bucket`)
 PruneFn: TypeAlias = Callable[[str], str]
 
 
-def _by_key(leaves: "Iterable[Any]") -> "dict[str, list[Any]]":
-    """Group leaves by the field they filter on."""
-    grouped: dict[str, list[Any]] = defaultdict(list)
-    for f in leaves:
-        grouped[f.key].append(f)
-    return grouped
+@dataclass
+class Lookup:
+    """Where a [`Ref`][ftmq.query.refs.Ref] reads from in a statement table:
+    the expression carrying its value, and the row predicate selecting its rows
+    (none for a column every statement of an entity carries)."""
+
+    value: Any
+    where: Any | None = None
+
+    @property
+    def clauses(self) -> list[Any]:
+        return [] if self.where is None else [self.where]
+
+
+def numeric_value(column: Any) -> Any:
+    """Read a statement `value` as a number. Stored values must be in the
+    canonical format written by
+    [`ftmq.statements.cast_number`][ftmq.statements.cast_number] (no thousands
+    separators, no unit suffix); a store fed raw display-formatted amounts has
+    to be migrated first (`ftmq statements cast-types`)."""
+    return func.cast(column, NUMERIC)
 
 
 class SqlSource:
@@ -71,18 +86,17 @@ class SqlSource:
     optional partition-pruning rule.
 
     Stores own one and pass it to [`Sql`][ftmq.query.sql.Sql] /
-    [`Query.compile`][ftmq.Query.compile], replacing the old
-    `query.table` mutation. A downstream store with extra columns (a lake /
-    sharded table) supplies its own `SqlSource` so the same `Query` compiles
-    against it unchanged.
+    [`Query.compile`][ftmq.Query.compile]. A downstream store with extra
+    columns (a lake / sharded table) supplies its own `SqlSource` so the same
+    `Query` compiles against it unchanged.
 
     Args:
         table: The SQLAlchemy `Table` / `TableClause` to query.
         id_column: The entity-identity column name (default `canonical_id`).
-        prune: Optional `{meta_field: fn}` mapping folding a partition filter
-            into every compiled query - e.g. `{"schema": get_schema_bucket}`
-            maps a schema/schemata filter to a `prune_column IN (...)` predicate.
-        prune_column: The partition column the `prune` values target
+        prune_schema: Optional function folding a schema/schemata filter into a
+            `prune_column IN (...)` partition predicate on every compiled query
+            (e.g. the lake store's schema -> `bucket` mapping).
+        prune_column: The partition column the pruned values target
             (e.g. `bucket`).
         base_filter: Optional SQLAlchemy predicate folded into every compiled
             select *and* sub-select (e.g. a lake store's view filter). Unlike a
@@ -94,26 +108,26 @@ class SqlSource:
         self,
         table: "Any",
         id_column: str = "canonical_id",
-        prune: "dict[str, PruneFn] | None" = None,
+        prune_schema: "PruneFn | None" = None,
         prune_column: str | None = None,
         base_filter: "Any | None" = None,
     ) -> None:
         self.table = table
         self.id_column = id_column
-        self.prune = prune or {}
+        self.prune_schema = prune_schema
         self.prune_column = prune_column
         self.base_filter = base_filter
 
 
 class Sql:
     COMPARATORS = {
-        Comparators["eq"]: "__eq__",
-        Comparators["not"]: "__ne__",
-        Comparators["in"]: "in_",
-        Comparators.gt: "__gt__",
-        Comparators.gte: "__ge__",
-        Comparators.lt: "__lt__",
-        Comparators.lte: "__le__",
+        "eq": "__eq__",
+        "not": "__ne__",
+        "in": "in_",
+        "gt": "__gt__",
+        "gte": "__ge__",
+        "lt": "__lt__",
+        "lte": "__le__",
     }
 
     def __init__(
@@ -130,11 +144,6 @@ class Sql:
         self.table = source.table
         self.id_col = self.table.c[source.id_column]
         self.scope: set[str] | None = set(scope) if scope else None
-        self.META_COLUMNS = {
-            "id": self.id_col,
-            "dataset": self.table.c.dataset,
-            "schema": self.table.c.schema,
-        }
 
     @cached_property
     def _base_clauses(self) -> list[Any]:
@@ -149,16 +158,12 @@ class Sql:
         return []
 
     def get_expression(self, column: Column, f: Leaf):
-        c = str(f.comparator)
+        c = f.comparator
         if c == "null":
             # `null` tests presence, not a value: `null=True` means the column
             # is unset. (For the `prop` / `prop_type` families presence is a
             # row-existence test, handled in `clause`.)
             return column.is_(None) if f.value else column.is_not(None)
-        if c == "between":
-            # the leaf layer casts values to a single scalar, so a two-bound
-            # between cannot be expressed yet (in-memory raises the same)
-            raise QueryError(f"Comparator not implemented: `{c}`")
         # substring / prefix / suffix comparators: autoescape so `%` and `_` in
         # the value match literally, like the in-memory substring test
         if c in ("like", "notlike"):
@@ -186,7 +191,7 @@ class Sql:
 
     @staticmethod
     def _is_null(f: Leaf) -> bool:
-        return str(f.comparator) == Comparators.null
+        return f.comparator == "null"
 
     def _entity_ids(self, pred: Any) -> Select:
         """A sub-select of the entity ids having a row matching `pred`,
@@ -203,44 +208,26 @@ class Sql:
         """
         return self.id_col.not_in(self._entity_ids(present))
 
-    def _family_clauses(
-        self, leaves: "list[Any]", selector: Callable[[Any], Any]
-    ) -> tuple[list[Any], list[Any]]:
-        """Split leaves over one statement family (`prop` / `prop_type`) into
-        row predicates to OR together, plus entity-level absence clauses.
+    def _membership(self, pred: Any) -> Any:
+        """Lift a row predicate to an entity-level membership clause: the
+        entity has at least one row matching it."""
+        return self.id_col.in_(self._entity_ids(pred))
 
-        `selector` builds the family predicate for a leaf (e.g.
-        `prop = "name"`). `null` tests presence of such a row, not the value:
-        `null=False` is any row for the family, `null=True` the absence of one.
+    def _family_clause(self, leaf: Leaf, selector: Callable[[Any], Any]) -> Any:
+        """One entity-level clause for a property / group leaf.
+
+        `selector` builds the family predicate (e.g. `prop = "name"`). `null`
+        tests presence of such a row, not the value: `null=False` is any row
+        for the family, `null=True` the absence of one.
         """
-        rows: list[Any] = []
-        absent: list[Any] = []
-        for f in leaves:
-            family = selector(f)
-            if self._is_null(f):
-                if f.value:
-                    absent.append(self._absent(family))
-                else:
-                    rows.append(family)
-            else:
-                rows.append(and_(family, self.get_expression(self.table.c.value, f)))
-        return rows, absent
-
-    def _membership(self, rows: list[Any]) -> Any:
-        """Lift row predicates to an entity-level membership clause: the entity
-        has at least one row matching any of them."""
-        return self.id_col.in_(self._entity_ids(or_(*rows)))
-
-    def _family_clause(
-        self, leaves: "list[Any]", selector: Callable[[Any], Any]
-    ) -> Any:
-        """One entity-level clause for the leaves of a single family key
-        (e.g. every `P(name=...)` leaf), OR-ed together."""
-        rows, absent = self._family_clauses(leaves, selector)
-        clauses = list(absent)
-        if rows:
-            clauses.append(self._membership(rows))
-        return and_(*clauses)
+        family = selector(leaf)
+        if self._is_null(leaf):
+            if leaf.value:
+                return self._absent(family)
+            return self._membership(family)
+        return self._membership(
+            and_(family, self.get_expression(self.table.c.value, leaf))
+        )
 
     def _prop_selector(self, f: Any) -> Any:
         return self.table.c.prop == f.key
@@ -257,7 +244,7 @@ class Sql:
         resolved schema, and a row predicate would wrongly match any merged
         entity that has one statement row outside the excluded set.
         """
-        negated = str(f.comparator) in ("not", "not_in")
+        negated = f.comparator in ("not", "not_in")
         if isinstance(f, SchemataLeaf):
             names: set[str] = set()
             for schema in f.schemata:
@@ -287,36 +274,28 @@ class Sql:
 
     def _context_clauses(self) -> tuple[list[Any], list[Any]]:
         """`(row, entity)` clauses for context / storage columns
-        (`C(origin=...)`, `C(fragment=...)`, ...), OR-ed per column.
+        (`C(origin=...)`, `C(fragment=...)`, ...).
 
         A single column stays a row predicate; several distinct columns each
         lift to an entity-level membership - in-memory a context value is the
         entity's aggregate over its statements, so `C(origin=..) & C(lang=..)`
         may be satisfied by two different rows.
         """
-        row_clauses: list[Any] = []
-        entity_clauses: list[Any] = []
-        context_by_key: dict[str, list[ContextLeaf]] = defaultdict(list)
-        for f in self.q.context:
-            context_by_key[f.key].append(f)
-        entity_level = len(context_by_key) > 1
-        for _, fs in sorted(context_by_key.items()):
-            rows = []
-            for f in sorted(fs):
-                # "unset" means no row carries the column
-                if self._is_null(f) and f.value:
-                    entity_clauses.append(
-                        self._absent(self._context_column(f).is_not(None))
-                    )
-                else:
-                    rows.append(self.get_expression(self._context_column(f), f))
-            if rows:
-                row_clause = or_(*rows)
-                if entity_level:
-                    entity_clauses.append(self._membership([row_clause]))
-                else:
-                    row_clauses.append(row_clause)
-        return row_clauses, entity_clauses
+        rows: list[Any] = []
+        entities: list[Any] = []
+        context = sorted(self.q.context, key=lambda f: f.key)
+        entity_level = len(context) > 1
+        for f in context:
+            # "unset" means no row carries the column
+            if self._is_null(f) and f.value:
+                entities.append(self._absent(self._context_column(f).is_not(None)))
+            elif entity_level:
+                entities.append(
+                    self._membership(self.get_expression(self._context_column(f), f))
+                )
+            else:
+                rows.append(self.get_expression(self._context_column(f), f))
+        return rows, entities
 
     def _leaf_clause(self, leaf: Leaf) -> Any:
         """An entity-level predicate for a single leaf.
@@ -327,14 +306,14 @@ class Sql:
         entity ("this entity has no name" is not a property of any one row).
         """
         if isinstance(leaf, PropertyLeaf):
-            return self._family_clause([leaf], self._prop_selector)
+            return self._family_clause(leaf, self._prop_selector)
         if isinstance(leaf, GroupLeaf):
-            return self._family_clause([leaf], self._group_selector)
+            return self._family_clause(leaf, self._group_selector)
         if isinstance(leaf, (SchemaLeaf, SchemataLeaf)):
             clause = self._schema_clause(leaf)
-            if str(leaf.comparator) in ("not", "not_in"):
+            if leaf.comparator in ("not", "not_in"):
                 return clause  # already an entity-level anti-join
-            return self._membership([clause])
+            return self._membership(clause)
         if isinstance(leaf, ContextLeaf):
             if self._is_null(leaf) and leaf.value:
                 return self._absent(self._context_column(leaf).is_not(None))
@@ -345,7 +324,7 @@ class Sql:
             row = self.get_expression(self.table.c.dataset, leaf)
         else:
             raise QueryError(f"Cannot compile filter to sql: `{leaf.key}`")
-        return self._membership([row])
+        return self._membership(row)
 
     def _expr_clause(self, expr: Expr) -> Any:
         """Compile a boolean node by combining its children's entity-level
@@ -391,7 +370,7 @@ class Sql:
         a `not` comparator the filter no longer restricts matching entities to
         those partitions, so any such shape disables pruning entirely.
         """
-        prune_fn = self.source.prune.get("schema")
+        prune_fn = self.source.prune_schema
         if (
             prune_fn is None
             or not self.source.prune_column
@@ -402,7 +381,7 @@ class Sql:
             return None
         for f in self.q._leaves:
             if isinstance(f, (SchemaLeaf, SchemataLeaf)):
-                if str(f.comparator) not in ("eq", "in"):
+                if f.comparator not in ("eq", "in"):
                     return None
         return {prune_fn(s) for s in self.q.schemata_names}
 
@@ -431,9 +410,7 @@ class Sql:
         # matching entities.
         if self.scope:
             entities.append(
-                self.id_col.in_(
-                    self._entity_ids(self.table.c.dataset.in_(sorted(self.scope)))
-                )
+                self._membership(self.table.c.dataset.in_(sorted(self.scope)))
             )
         return rows, entities
 
@@ -458,26 +435,25 @@ class Sql:
 
     def _flat_clauses(self) -> tuple[list[Any], list[Any]]:
         """Compile a flat conjunction from the query's leaf collectors into
-        `(row, entity)` clauses: one per field, AND-ed together. `_is_flat_and`
-        guarantees at most one leaf per field here."""
+        `(row, entity)` clauses: one per field, AND-ed together (`_is_flat_and`
+        guarantees at most one leaf per field)."""
         rows: list[Any] = []
         entities: list[Any] = []
+        by_key: Callable[[Leaf], str] = lambda f: f.key  # noqa: E731
         # the different id fields (`id` / `entity_id` / `canonical_id`) are
         # separate fields and AND together like any other
-        for _, fs in sorted(_by_key(self.q.ids).items()):
-            rows.append(
-                or_(self.get_expression(self._id_column(f), f) for f in sorted(fs))
-            )
-        for f in sorted(self.q.datasets):
+        for f in sorted(self.q.ids, key=by_key):
+            rows.append(self.get_expression(self._id_column(f), f))
+        for f in self.q.datasets:  # at most one in a flat tree
             rows.append(self.get_expression(self.table.c.dataset, f))
         # exact-schema and is-a (`schemata`) filters; negations compile as
         # entity-level anti-joins
-        schema_leaves = sorted(self.q.schemata) + sorted(
+        schema_leaves = list(self.q.schemata) + [
             s for s in self.q._leaves if isinstance(s, SchemataLeaf)
-        )
+        ]
         for f in schema_leaves:
             clause = self._schema_clause(f)
-            if str(f.comparator) in ("not", "not_in"):
+            if f.comparator in ("not", "not_in"):
                 entities.append(clause)
             else:
                 rows.append(clause)
@@ -485,16 +461,15 @@ class Sql:
         rows.extend(context_rows)
         entities.extend(context_entities)
         # properties and prop-type groups: one entity-level clause per field, so
-        # they AND across fields ("has a name AND a german country") while the
-        # leaves of one field OR together. A single row predicate would instead
-        # force one statement row to satisfy every field at once, which no row
-        # can - a row holds exactly one prop.
-        for _, fs in sorted(_by_key(self.q.properties).items()):
-            entities.append(self._family_clause(sorted(fs), self._prop_selector))
+        # they AND across fields ("has a name AND a german country"). A single
+        # row predicate would instead force one statement row to satisfy every
+        # field at once, which no row can - a row holds exactly one prop.
+        for f in sorted(self.q.properties, key=by_key):
+            entities.append(self._family_clause(f, self._prop_selector))
         # the reverse lookup `G(entities=...)` is not special here, it is just
         # the `entity` prop-type group
-        for _, fs in sorted(_by_key(self.q.groups).items()):
-            entities.append(self._family_clause(sorted(fs), self._group_selector))
+        for f in sorted(self.q.groups, key=by_key):
+            entities.append(self._family_clause(f, self._group_selector))
         return rows, entities
 
     @property
@@ -519,15 +494,12 @@ class Sql:
 
     @cached_property
     def _unsorted_statements(self) -> Select:
-        rows, _ = self._clauses
+        rows, entities = self._clauses
         # a slice (even offset-only or limit 0) must go through the
-        # `canonical_ids` sub-select, where limit/offset are applied. So must a
-        # row-constrained filter on prop / prop_type / context rows, or only
-        # the matching rows come back instead of the whole entity.
-        row_constrained = bool(rows) and bool(
-            self.q.properties or self.q.groups or self.q.context
-        )
-        if self.q.slice is not None or row_constrained:
+        # `canonical_ids` sub-select, where limit/offset are applied. So must
+        # any mix of row and entity clauses, or only the row-matching rows of
+        # the matching entities come back instead of the whole entity.
+        if self.q.slice is not None or (rows and entities):
             where = and_(
                 true(), *self._base_clauses, self.id_col.in_(self.canonical_ids)
             )
@@ -540,55 +512,45 @@ class Sql:
 
     @cached_property
     def _sorted_statements(self) -> Select:
-        if self.q.sort:
-            if len(self.q.sort.values) > 1:
-                raise ValueError(
-                    f"Multi-valued sort not supported for `{self.__class__.__name__}`"
-                )
-            prop = self.q.sort.values[0]
-            value = self.table.c.value
-            if PropertyTypesMap[prop].value == registry.number:
-                value = func.cast(self.table.c.value, NUMERIC)
-            group_func = func.min if self.q.sort.ascending else func.max
-            inner = (
-                select(
-                    self.id_col,
-                    group_func(value).label("sortable_value"),
-                )
-                .where(
-                    and_(
-                        true(),
-                        *self._base_clauses,
-                        self.table.c.prop == prop,
-                        self.id_col.in_(self.canonical_ids),
-                    )
-                )
-                .group_by(self.id_col)
-                .limit(self._limit)
-                .offset(self.q.offset or None)
-            )
-
-            order_by = "sortable_value"
-            if not self.q.sort.ascending:
-                order_by = desc(order_by)
-
-            # an explicit subquery: reading `.c` off a `Select` builds one
-            # implicitly, which sqlalchemy deprecates
-            sub = inner.order_by(order_by, self.id_col).subquery()
-            sortable = sub.c["sortable_value"]
-            order_by = [
-                sortable if self.q.sort.ascending else desc(sortable),
+        prop = self.q.sort.value
+        value = self.table.c.value
+        if prop in NUMERIC_PROPS:
+            value = numeric_value(self.table.c.value)
+        group_func = func.min if self.q.sort.ascending else func.max
+        inner = (
+            select(
                 self.id_col,
-            ]
-
-            outer = select(
-                self.table.join(sub, self.id_col == sub.c[self.source.id_column])
+                group_func(value).label("sortable_value"),
             )
-            # the join rows still need the base scope - a matching entity may
-            # have out-of-scope statements
-            if self._base_clauses:
-                outer = outer.where(*self._base_clauses)
-            return outer.order_by(*order_by)
+            .where(
+                and_(
+                    true(),
+                    *self._base_clauses,
+                    self.table.c.prop == prop,
+                    self.id_col.in_(self.canonical_ids),
+                )
+            )
+            .group_by(self.id_col)
+            .limit(self._limit)
+            .offset(self.q.offset or None)
+        )
+        inner_order = (
+            "sortable_value" if self.q.sort.ascending else desc("sortable_value")
+        )
+        # an explicit subquery: reading `.c` off a `Select` builds one
+        # implicitly, which sqlalchemy deprecates
+        sub = inner.order_by(inner_order, self.id_col).subquery()
+        sortable = sub.c["sortable_value"]
+        outer = select(
+            self.table.join(sub, self.id_col == sub.c[self.source.id_column])
+        )
+        # the join rows still need the base scope - a matching entity may
+        # have out-of-scope statements
+        if self._base_clauses:
+            outer = outer.where(*self._base_clauses)
+        return outer.order_by(
+            sortable if self.q.sort.ascending else desc(sortable), self.id_col
+        )
 
     @cached_property
     def statements(self) -> Select:
@@ -604,101 +566,80 @@ class Sql:
             .where(self.clause)
         )
 
-    def _get_lookup_column(self, field: Field) -> Column:
-        if field in self.META_COLUMNS:
-            return self.META_COLUMNS[field]
-        if isinstance(field, PropertyType):
-            return self.table.c.prop_type
-        if field in Properties:
-            return self.table.c.prop
-        if field in PropertyTypes or field == Fields.year:
-            return self.table.c.prop_type
-        raise NotImplementedError("Unknown field: `%s`" % field)
+    @singledispatchmethod
+    def lookup(self, ref: Ref) -> Lookup:
+        """Where a field reference reads from in this source.
+
+        One registration per ref family, so nothing has to recover a field's
+        family from its name. A meta / context ref reads its own column and
+        needs no row predicate (every statement of an entity carries it); a
+        property or group ref reads the shared `value` column and selects its
+        rows via `prop` / `prop_type`.
+        """
+        raise QueryError(f"Cannot compile field reference: `{ref!r}`")
+
+    @lookup.register
+    def _(self, ref: IdRef) -> Lookup:
+        # `M("id")` addresses the *entity*: in a statement table that is the
+        # resolved id column, not the `value` of a `prop = "id"` row (which
+        # holds the unresolved referent id)
+        return Lookup(self.id_col)
+
+    @lookup.register
+    def _(self, ref: EntityIdRef) -> Lookup:
+        return Lookup(self.table.c.entity_id)
+
+    @lookup.register
+    def _(self, ref: DatasetRef) -> Lookup:
+        return Lookup(self.table.c.dataset)
+
+    @lookup.register
+    def _(self, ref: SchemaRef) -> Lookup:
+        return Lookup(self.table.c.schema)
+
+    @lookup.register
+    def _(self, ref: PropRef) -> Lookup:
+        return Lookup(self.table.c.value, self.table.c.prop == ref.key)
+
+    @lookup.register
+    def _(self, ref: GroupRef) -> Lookup:
+        return Lookup(self.table.c.value, self.table.c.prop_type == str(ref.prop_type))
+
+    @lookup.register
+    def _(self, ref: YearRef) -> Lookup:
+        # a derived dimension: the year is part of the value expression, so it
+        # groups and filters like any other lookup
+        return Lookup(
+            func.substring(self.table.c.value, 1, 4),
+            self.table.c.prop_type == str(ref.prop_type),
+        )
+
+    @lookup.register
+    def _(self, ref: ContextRef) -> Lookup:
+        if ref.key not in self.table.c:
+            raise QueryError(f"Unknown context column: `{ref.key}`")
+        return Lookup(self.table.c[ref.key])
 
     def get_group_counts(
         self,
-        group: Field,
+        group: Ref,
         limit: int | None = None,
         extra_where: BooleanClauseList | None = None,
     ) -> Select:
         count = func.count(self.id_col.distinct()).label("count")
-        column = self._get_lookup_column(group)
-        group = str(group)
-        if group in self.META_COLUMNS:
-            # group over the rows of matching entities (entity-level, like the
-            # value groupers below) so flat and tree queries facet identically
-            grouper = column
-            where = and_(true(), *self._base_clauses, self._all_entities)
-        else:
-            grouper = self.table.c.value
-            where = and_(
-                true(),
-                *self._base_clauses,
-                column == group,
-                self._all_entities,
-            )
+        # group over the rows of matching entities (entity-level) so flat and
+        # tree queries facet identically
+        lookup = self.lookup(group)
+        where = and_(true(), *self._base_clauses, *lookup.clauses, self._all_entities)
         if extra_where is not None:
             where = and_(where, extra_where)
         return (
-            select(grouper, count)
+            select(lookup.value, count)
             .where(where)
-            .group_by(grouper)
+            .group_by(lookup.value)
             .order_by(desc(count))
             .limit(limit)
         )
-
-    @cached_property
-    def datasets(self) -> Select:
-        return self.get_group_counts("dataset")
-
-    @cached_property
-    def schemata(self) -> Select:
-        return self.get_group_counts("schema")
-
-    @cached_property
-    def countries(self) -> Select:
-        return self.get_group_counts(registry.country)
-
-    @cached_property
-    def countries_flat(self) -> Select:
-        return select(self.table.c.value.distinct()).where(
-            and_(
-                true(),
-                *self._base_clauses,
-                self.table.c.prop_type == str(registry.country),
-                self._all_entities,
-            )
-        )
-
-    @cached_property
-    def things(self) -> Select:
-        return self.get_group_counts(
-            "schema", extra_where=self.table.c.schema.in_([str(x) for x in Things])
-        )
-
-    @cached_property
-    def things_countries(self) -> Select:
-        return self.get_group_counts(
-            registry.country,
-            extra_where=self.table.c.schema.in_([str(x) for x in Things]),
-        )
-
-    @cached_property
-    def intervals(self) -> Select:
-        return self.get_group_counts(
-            "schema", extra_where=self.table.c.schema.in_([str(x) for x in Intervals])
-        )
-
-    @cached_property
-    def intervals_countries(self) -> Select:
-        return self.get_group_counts(
-            registry.country,
-            extra_where=self.table.c.schema.in_([str(x) for x in Intervals]),
-        )
-
-    @cached_property
-    def dates(self) -> Select:
-        return self.get_group_counts(registry.date)
 
     @cached_property
     def date_range(self) -> Select:
@@ -711,83 +652,82 @@ class Sql:
             self._all_entities,
         )
 
+    def _aggregator(self, agg: Agg) -> Any:
+        """The aggregate expression for one spec, over its ref's value."""
+        value = self.lookup(agg.ref).value
+        if agg.func == "count":
+            # `count` stays over the raw values - it counts distinct readings,
+            # which needs no arithmetic
+            return func.count(distinct(value))
+        if agg.ref.is_numeric:
+            # min / max included: a lexicographic min over numbers is wrong,
+            # and returning a string for min / max but a number for sum / avg
+            # of the same property makes every consumer parse defensively
+            value = numeric_value(value)
+        return getattr(func, agg.func)(value)
+
     @cached_property
     def aggregations(self) -> Select:
         qs = []
-        for agg in sorted(self.q.aggregations, key=lambda a: (a.func, a.prop)):
-            sql_agg = getattr(func, agg.func)
-            sql_agg_value = self.table.c.value
-            if agg.func == Aggregations.count:
-                sql_agg_value = distinct(sql_agg_value)
-            elif agg.func in (Aggregations.sum, Aggregations.avg):
-                sql_agg_value = func.cast(sql_agg_value, NUMERIC)
-            aggregator = sql_agg(sql_agg_value)
+        for agg in sorted(self.q.aggregations, key=lambda a: (a.func, a.key)):
             qs.append(
                 select(
-                    text(f"'{agg.prop}'"),
+                    text(f"'{agg.key}'"),
                     text(f"'{agg.func}'"),
-                    aggregator,
+                    self._aggregator(agg),
                 ).where(
                     *self._base_clauses,
-                    self.table.c.prop == str(agg.prop),
+                    *self.lookup(agg.ref).clauses,
                     self._all_entities,
                 )
             )
         return union_all(*qs)
 
-    def _get_grouping_where(self, grouper: Field, value: str) -> BooleanClauseList:
-        column = self._get_lookup_column(grouper)
-        clauses = [*self._base_clauses, self._all_entities]
-        if grouper in Properties:
-            clauses.extend([column == str(grouper), self.table.c.value == value])
-            return clauses
-        if grouper == Fields.year:
-            clauses.extend(
-                [
-                    column == str(registry.date),
-                    func.substring(self.table.c.value, 1, 4) == str(value),
-                ]
-            )
-            return clauses
-        clauses.append(column == value)
-        return clauses
+    def grouped_aggregations(self, grouper: Ref, limit: int | None = None) -> Select:
+        """Every aggregation spec grouped by `grouper`, as one select per spec
+        unioned to `(field, func, group_value, value)` rows.
 
-    def get_group_aggregations(self, grouper: Field, group: str) -> Select:
+        The specs' rows join against the distinct `(entity, group value)` pairs
+        of the matching entities - distinct, so a multi-valued group property
+        does not multiply the aggregated rows within its buckets. One round
+        trip per grouper, instead of one per group value.
+
+        Args:
+            grouper: The field reference to group by.
+            limit: Only the `limit` most frequent group values (by entity
+                count, matching `get_group_counts`).
+        """
+        g = self.lookup(grouper)
+        pairs = (
+            select(self.id_col.label("cid"), g.value.label("gval"))
+            .where(and_(true(), *self._base_clauses, *g.clauses, self._all_entities))
+            .distinct()
+        )
+        if limit is not None:
+            top = self.get_group_counts(grouper, limit=limit).subquery()
+            pairs = pairs.where(g.value.in_(select(top.c[0])))
+        sub = pairs.subquery()
         qs = []
-        for agg in sorted(self.q.aggregations, key=lambda a: (a.func, a.prop)):
-            if grouper in agg.groups:
-                if agg.prop in self.META_COLUMNS:
-                    sql_agg_value = self._get_lookup_column(agg.prop)
-                else:
-                    sql_agg_value = self.table.c.value
-                sql_agg = getattr(func, agg.func)
-                if agg.func == Aggregations.count:
-                    sql_agg_value = distinct(sql_agg_value)
-                elif agg.func in (Aggregations.sum, Aggregations.avg):
-                    sql_agg_value = func.cast(sql_agg_value, NUMERIC)
-                aggregator = sql_agg(sql_agg_value)
-
-                inner = select(self.id_col.distinct()).where(
-                    *self._get_grouping_where(grouper, group)
+        for agg in sorted(self.q.aggregations, key=lambda a: (a.func, a.key)):
+            if grouper not in agg.groups:
+                continue
+            lookup = self.lookup(agg.ref)
+            qs.append(
+                select(
+                    text(f"'{agg.key}'"),
+                    text(f"'{agg.func}'"),
+                    sub.c.gval,
+                    self._aggregator(agg),
                 )
-
-                qs.append(
-                    select(
-                        text(f"'{agg.prop}'"),
-                        text(f"'{agg.func}'"),
-                        aggregator,
-                    ).where(
-                        *self._base_clauses,
-                        self.table.c.prop == str(agg.prop),
-                        self.id_col.in_(inner),
-                    )
-                )
+                .select_from(self.table.join(sub, self.id_col == sub.c.cid))
+                .where(and_(true(), *self._base_clauses, *lookup.clauses))
+                .group_by(sub.c.gval)
+            )
         return union_all(*qs)
 
     @cached_property
-    def group_props(self) -> set[Field]:
-        props: set[Field] = set()
+    def group_props(self) -> set[Ref]:
+        refs: set[Ref] = set()
         for agg in self.q.aggregations:
-            if agg.groups:
-                props.update(agg.groups)
-        return props
+            refs.update(agg.groups)
+        return refs

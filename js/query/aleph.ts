@@ -2,6 +2,7 @@ import { Agg } from "./aggregations.js";
 import { QueryError } from "./exceptions.js";
 import { type Family, type Leaf } from "./leaves.js";
 import { AND, combine, Expr, FAMILIES } from "./nodes.js";
+import { refFromWire, type Ref } from "./refs.js";
 import { byString } from "./util.js";
 
 // Aleph meta filter keys -> ftmq meta field (some upstream keys are aliased)
@@ -17,7 +18,6 @@ const ALEPH_META: Record<string, string> = {
   schema: "schema",
   schemata: "schemata",
 };
-const ALEPH_CONTEXT = new Set(["origin"]);
 // comparators expressible as a `filter:<op>:<field>` prefix
 const PREFIX_OPS = [
   "gte",
@@ -35,21 +35,16 @@ export type Params = Record<string, string[]>;
 const sortedStrings = (value: unknown): string[] =>
   (value as string[]).map((v) => String(v)).sort(byString);
 
-function alephField(leaf: Leaf): string {
-  if (leaf.family === "P") return `properties.${leaf.field}`;
-  return leaf.field;
-}
-
 /**
- * Map an Aleph filter field to a `(family, ftmq-key)` pair. Groups are emitted
- * bare and properties as `properties.<name>`, so any unresolved bare field is a
- * property-type group. Field validity is not checked here (server-side).
+ * Map a filter field to a `(family, ftmq-key)` pair. Field names are the same on
+ * both halves of the grammar, so this is `refFromWire` plus the upstream key
+ * aliases and `schemata`, which is an is-a predicate rather than a field a
+ * projection could read. Field validity is not checked here (server-side).
  */
 export function resolveField(rest: string): [Family, string] {
   if (rest in ALEPH_META) return ["M", ALEPH_META[rest]];
-  if (ALEPH_CONTEXT.has(rest)) return ["C", rest];
-  if (rest.startsWith("properties.")) return ["P", rest.slice("properties.".length)];
-  return ["G", rest];
+  const ref = refFromWire(rest);
+  return [ref.family as Family, ref.key];
 }
 
 function collectTerms(expr: Expr): [Leaf, boolean][] {
@@ -70,12 +65,12 @@ function collectTerms(expr: Expr): [Leaf, boolean][] {
   return terms;
 }
 
-function leafToParam(leaf: Leaf, inverted: boolean): [string, string, string[]] {
-  if (leaf.family === "C" && !ALEPH_CONTEXT.has(leaf.field)) {
-    throw new QueryError(`Context field \`${leaf.field}\` is not an Aleph filter`);
-  }
+function leafToParam(
+  leaf: Leaf,
+  inverted: boolean,
+): [string, string, string[]] {
   const op = leaf.comparator;
-  const field = alephField(leaf);
+  const field = leaf.wire;
   const value = leaf.value;
   if (inverted) {
     if (op === "eq") return ["exclude:", field, [String(value)]];
@@ -84,14 +79,17 @@ function leafToParam(leaf: Leaf, inverted: boolean): [string, string, string[]] 
   }
   if (op === "eq") return ["filter:", field, [String(value)]];
   if (op === "in") return ["filter:", field, sortedStrings(value)];
-  if (PREFIX_OPS.includes(op)) return ["filter:", `${op}:${field}`, [String(value)]];
+  if (PREFIX_OPS.includes(op))
+    return ["filter:", `${op}:${field}`, [String(value)]];
   if (op === "not") return ["exclude:", field, [String(value)]];
   if (op === "not_in") return ["exclude:", field, sortedStrings(value)];
   if (op === "null") {
     if (value) return ["empty:", field, [""]];
     throw new QueryError("null=False is not expressible as Aleph params");
   }
-  throw new QueryError(`Comparator \`${op}\` is not expressible as Aleph params`);
+  throw new QueryError(
+    `Comparator \`${op}\` is not expressible as Aleph params`,
+  );
 }
 
 /** Project a filter tree to Aleph `filter:` / `exclude:` / `empty:` params. */
@@ -162,27 +160,40 @@ export function aggregationsToParams(aggs: Agg[]): Params {
   const params: Params = {};
   const facets = new Set<string>();
   const sorted = [...aggs].sort(
-    (a, b) => byString(a.func, b.func) || byString(a.prop, b.prop),
+    (a, b) => byString(a.func, b.func) || byString(a.field, b.field),
   );
   for (const agg of sorted) {
     const key = `metric:${agg.func}`;
     params[key] ??= [];
-    if (!params[key].includes(agg.prop)) params[key].push(agg.prop);
-    for (const group of agg.groups) facets.add(group);
+    if (!params[key].includes(agg.field)) params[key].push(agg.field);
+    for (const group of agg.groups) facets.add(group.wire);
   }
   if (facets.size) params.facet = [...facets].sort(byString);
   return params;
 }
 
-/** Rebuild aggregation specs from `metric:` / `facet` params. */
+/**
+ * Rebuild aggregation specs from `metric:` / `facet` params.
+ *
+ * A `facet` with no `metric:` alongside it groups an entity count - the
+ * idiomatic Aleph facet. Dropping it instead would discard the param in
+ * silence and answer with empty facets.
+ */
 export function paramsToAggregations(items: Params): Agg[] {
-  const groups = [...new Set(items.facet ?? [])].sort(byString);
+  const groups: Ref[] = [...new Set(items.facet ?? [])]
+    .sort(byString)
+    .map(refFromWire);
   const aggs: Agg[] = [];
   for (const [key, values] of Object.entries(items)) {
     if (key.startsWith("metric:")) {
       const func = key.slice("metric:".length);
-      for (const prop of values) aggs.push(new Agg(func as any, prop, groups));
+      for (const field of values) {
+        aggs.push(new Agg(func as any, refFromWire(field), groups));
+      }
     }
+  }
+  if (groups.length && !aggs.length) {
+    aggs.push(new Agg("count", refFromWire("id"), groups));
   }
   return aggs;
 }
@@ -190,7 +201,10 @@ export function paramsToAggregations(items: Params): Agg[] {
 // match Python `urllib.parse.quote(value, safe="/")`
 function quote(value: string): string {
   return encodeURIComponent(value)
-    .replace(/[!'()*]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase())
+    .replace(
+      /[!'()*]/g,
+      (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase(),
+    )
     .replace(/%2F/gi, "/");
 }
 
