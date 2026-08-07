@@ -10,6 +10,7 @@
   },
   "scripts": {
     "build": "rm -rf dist && tsc",
+    "prepare": "npm run build",
     "typecheck": "tsc --noEmit",
     "pretest": "npm run build",
     "test": "node --test dist/tests/*.test.js",
