@@ -154,10 +154,12 @@ One module per command group: `main.py` (the root app, its callback, the top-lev
 
 Entry point is `ftmq`. Default command is `q` for filtering:
 ```bash
-cat entities.ftm.json | ftmq -s Company -p country=de -o output.json
+cat entities.ftm.json | ftmq -q 'filter:schema=Company&filter:properties.country=de' -o output.json
 ```
 
-Filter flags mirror the query families as repeatable `field[__op]=value` arguments: `-m/--meta`, `-p/--prop`, `-g/--group`, `-c/--context`; `-d` (dataset) and `-s` (schema) are shortcuts, with `--schema-include-descendants` / `--schema-include-matchable` switching `-s` to the is-a `schemata` field. Whole query strings: `-q` (Aleph filter params) and `--rql`. Aggregations: `--sum` / `--min` / `--max` / `--avg` / `--count` plus `--groups`, written to `--aggregation-uri`; their fields take the wire spelling (`--sum properties.amountEur --groups group.countries`), resolved through `ref_from_wire`.
+A query is passed as a whole query string, in one of the `Query` string surfaces: `-q/--query` (Aleph filter params, `Query.from_string`) or `--rql` (`Query.from_rql`); both are repeatable and AND together. There are no per-family filter flags - fields take the wire spelling (`properties.<name>`, `group.<name>`, `context.<name>`, bare meta / `year`), so one spelling covers filters and aggregations. `-d/--dataset` is the only filter shortcut left (repeatable, alternatives via `__in`). Each string is a *whole* query, not just its filter tree: `cli_q` carries its aggregations, sort and slice as well (later strings win); rql has no sort / slice operator, so those are `-q` only (`sort=name:desc&limit=10`).
+
+`cli_q` writes one of three things to `-o`, never a mix: the matching entities, their coverage statistics (`--stats`, a bool flag that wins over an aggregating query), or the result of an aggregating query. For a store source both readings are computed by the backend (`view.stats(q)` / `view.aggregations(q)`, which the SQL backends compile into the query) instead of streaming every entity into the process; a file-like source is reduced in memory (`Collector` / `Query.get_aggregator`). Known divergence between those two paths: a `limit` slices what the in-memory aggregation sees, while a backend aggregation covers the whole matching set (`Sql._all_entities` ignores the slice, matching the api, where `limit` is a page size and facets/metrics describe the result).
 
 Subcommands: `dataset`, `catalog`, `store`, `fragments`, `search`, `statements`, `aggregate`, `apply-dataset`. The default-command plumbing (`DefaultCmdTyperGroup`) lives in `ftmq/cli_util.py` (not in the `ftmq.cli` package) so the search sub-app can subclass it without an import cycle.
 

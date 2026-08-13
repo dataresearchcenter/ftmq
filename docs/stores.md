@@ -42,7 +42,7 @@ proxies = store.query(q)
 ### Command line
 
 ```bash
-ftmq -i sqlite:///followthemoney.store --dataset=my_dataset --schema=Person
+ftmq -i sqlite:///followthemoney.store -d my_dataset -q 'filter:schema=Person'
 ```
 
 [cli reference](./reference/cli.md)

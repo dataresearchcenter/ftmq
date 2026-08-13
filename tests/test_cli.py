@@ -38,42 +38,113 @@ def test_cli(fixtures_path: Path):
     lines = _get_lines(result.output)
     assert len(lines) == 0
 
-    result = runner.invoke(cli, ["-i", in_uri, "-s", "PublicBody"])
+    # filtering is `-q` (Aleph filter params) or `--rql`; `-d` stays a shortcut
+    result = runner.invoke(cli, ["-i", in_uri, "-q", "filter:schema=PublicBody"])
     assert result.exit_code == 0
     lines = _get_lines(result.output)
     assert len(lines) == 151
 
     result = runner.invoke(
-        cli, ["-i", in_uri, "-s", "PublicBody", "-p", "jurisdiction=eu"]
+        cli,
+        [
+            "-i",
+            in_uri,
+            "-q",
+            "filter:schema=PublicBody&filter:properties.jurisdiction=eu",
+        ],
     )
     assert result.exit_code == 0
     lines = _get_lines(result.output)
     assert len(lines) == 151
 
     result = runner.invoke(
-        cli, ["-i", in_uri, "-s", "PublicBody", "-p", "jurisdiction=fr"]
+        cli,
+        [
+            "-i",
+            in_uri,
+            "-q",
+            "filter:schema=PublicBody&filter:properties.jurisdiction=fr",
+        ],
     )
     assert result.exit_code == 0
     lines = _get_lines(result.output)
     assert len(lines) == 0
 
+    # repeated `-q` strings AND together
+    result = runner.invoke(
+        cli,
+        [
+            "-i",
+            in_uri,
+            "-q",
+            "filter:schema=PublicBody",
+            "-q",
+            "filter:properties.jurisdiction=fr",
+        ],
+    )
+    assert result.exit_code == 0
+    assert len(_get_lines(result.output)) == 0
+
+    # the is-a (`schemata`) field, and a comparator lookup
     in_uri = str(fixtures_path / "donations.ijson")
-    result = runner.invoke(cli, ["-i", in_uri, "-s", "Payment", "-p", "date__gte=2010"])
+    result = runner.invoke(cli, ["-i", in_uri, "-q", "filter:schemata=LegalEntity"])
+    assert result.exit_code == 0
+    assert len(_get_lines(result.output)) == 95
+
+    result = runner.invoke(
+        cli,
+        ["-i", in_uri, "-q", "filter:schema=Payment&filter:gte:properties.date=2010"],
+    )
     assert result.exit_code == 0
     lines = _get_lines(result.output)
     assert len(lines) == 49
 
-    in_uri = str(fixtures_path / "donations.ijson")
-    result = runner.invoke(cli, ["-i", in_uri, "-s", "Person", "--sort", "name"])
-    lines = _get_lines(result.output)
-    data = orjson.loads(lines[0])
-    assert data["caption"] == "Dr.-Ing. E. h. Martin Herrenknecht"
+    # ... and the same filter as a nested rql tree
     result = runner.invoke(
-        cli, ["-i", in_uri, "-s", "Person", "--sort", "name", "--sort-descending"]
+        cli,
+        [
+            "-i",
+            in_uri,
+            "--rql",
+            "and(eq(schema,Payment),ge(properties.date,2010))",
+        ],
     )
+    assert result.exit_code == 0
+    assert len(_get_lines(result.output)) == 49
+
+    # cross-field OR: only rql can express it
+    result = runner.invoke(
+        cli, ["-i", in_uri, "--rql", "or(eq(schema,Person),eq(schema,Address))"]
+    )
+    assert result.exit_code == 0
+    assert len(_get_lines(result.output)) == 22 + 89
+
+    # a query string is a whole query: sort and slice ride along with it
+    result = runner.invoke(cli, ["-i", in_uri, "-q", "filter:schema=Person&sort=name"])
+    assert result.exit_code == 0
     lines = _get_lines(result.output)
-    data = orjson.loads(lines[0])
-    assert data["caption"] == "Johanna Quandt"
+    assert orjson.loads(lines[0])["caption"] == "Dr.-Ing. E. h. Martin Herrenknecht"
+
+    result = runner.invoke(
+        cli, ["-i", in_uri, "-q", "filter:schema=Person&sort=name:desc"]
+    )
+    assert result.exit_code == 0
+    lines = _get_lines(result.output)
+    assert orjson.loads(lines[0])["caption"] == "Johanna Quandt"
+
+    result = runner.invoke(
+        cli, ["-i", in_uri, "-q", "filter:schema=Person&sort=name&limit=3"]
+    )
+    assert result.exit_code == 0
+    assert len(_get_lines(result.output)) == 3
+
+    result = runner.invoke(
+        cli, ["-i", in_uri, "-q", "filter:schema=Person&sort=name&limit=3&offset=1"]
+    )
+    assert result.exit_code == 0
+    lines = _get_lines(result.output)
+    assert len(lines) == 3
+    assert orjson.loads(lines[0])["caption"] != "Dr.-Ing. E. h. Martin Herrenknecht"
 
 
 def test_cli_store_roundtrip(fixtures_path: Path, tmp_path: Path):
@@ -157,8 +228,9 @@ def test_cli_apply(fixtures_path: Path):
 def test_cli_stats(fixtures_path: Path):
     configure_logging()
 
+    # `--stats` replaces the entity stream with the coverage of the result
     in_uri = str(fixtures_path / "donations.ijson")
-    result = runner.invoke(cli, ["-i", in_uri, "-o", "/dev/null", "--stats-uri", "-"])
+    result = runner.invoke(cli, ["-i", in_uri, "--stats"])
     assert result.exit_code == 0
     test_result = orjson.loads(result.output)
     test_result["countries"] = sorted(test_result["countries"])
@@ -217,47 +289,63 @@ def test_cli_stats(fixtures_path: Path):
         "entity_count": 474,
     }
 
+    # the statistics cover the filtered result, not the whole input
+    result = runner.invoke(cli, ["-i", in_uri, "-q", "filter:schema=Person", "--stats"])
+    assert result.exit_code == 0
+    assert orjson.loads(result.output)["entity_count"] == 22
 
-def test_cli_aggregation(fixtures_path: Path):
+    # ... and go wherever `-o` points
+    result = runner.invoke(cli, ["-i", in_uri, "--stats", "-o", "-"])
+    assert result.exit_code == 0
+    assert orjson.loads(result.output)["entity_count"] == 474
+
+
+def test_cli_stats_store(fixtures_path: Path, tmp_path: Path):
+    # a store computes its statistics itself (the sql backends compile them
+    # into the query instead of streaming every entity into this process) and
+    # agrees with the in-memory collector
+    in_uri = str(fixtures_path / "donations.ijson")
+    store_uri = f"sqlite:///{tmp_path}/stats.db"
+    assert runner.invoke(cli, ["-i", in_uri, "-o", store_uri]).exit_code == 0
+
+    def _stats(*args: str) -> dict:
+        result = runner.invoke(cli, [*args, "--stats"])
+        assert result.exit_code == 0
+        data = orjson.loads(result.output)
+        data["countries"] = sorted(data["countries"])
+        for part in ("things", "intervals"):
+            data[part]["countries"] = sorted(
+                data[part]["countries"], key=lambda x: x["code"]
+            )
+            data[part]["schemata"] = sorted(
+                data[part]["schemata"], key=lambda x: x["name"]
+            )
+        return data
+
+    assert _stats("-i", store_uri) == _stats("-i", in_uri)
+    assert _stats("-i", store_uri, "-q", "filter:schema=Person") == _stats(
+        "-i", in_uri, "-q", "filter:schema=Person"
+    )
+
+
+def test_cli_aggregation(fixtures_path: Path, tmp_path: Path):
     configure_logging()
 
+    # aggregations ride on the query string: `metric:<func>=<field>` + `facet`
+    # in the Aleph dialect, `sum(...)` / `aggregate(...)` in rql. Fields take
+    # the wire spelling (`properties.<name>`, `group.<name>`, bare meta / year).
+    # An aggregating query outputs its result *instead of* the entities.
     in_uri = str(fixtures_path / "donations.ijson")
-    result = runner.invoke(
-        cli,
-        [
-            "-i",
-            in_uri,
-            "-o",
-            "/dev/null",
-            "--aggregation-uri",
-            "-",
-            "--sum",
-            # aggregation fields take the wire spelling, as in `-q` / `--rql`
-            "properties.amountEur",
-        ],
-    )
+    result = runner.invoke(cli, ["-i", in_uri, "-q", "metric:sum=properties.amountEur"])
     assert result.exit_code == 0
-    result = orjson.loads(result.output)
-    assert result == {"sum": {"properties.amountEur": 40589689.15}}
+    assert orjson.loads(result.output) == {"sum": {"properties.amountEur": 40589689.15}}
 
-    result = runner.invoke(
-        cli,
-        [
-            "-i",
-            in_uri,
-            "-o",
-            "/dev/null",
-            "--aggregation-uri",
-            "-",
-            "--max",
-            "properties.name",
-            "--groups",
-            "properties.country",
-        ],
-    )
+    # the same as rql
+    result = runner.invoke(cli, ["-i", in_uri, "--rql", "sum(properties.amountEur)"])
     assert result.exit_code == 0
-    result = orjson.loads(result.output)
-    assert result == {
+    assert orjson.loads(result.output) == {"sum": {"properties.amountEur": 40589689.15}}
+
+    expected = {
         "max": {"properties.name": "YOC AG"},
         "groups": {
             "properties.country": {
@@ -272,6 +360,74 @@ def test_cli_aggregation(fixtures_path: Path):
             }
         },
     }
+    result = runner.invoke(
+        cli,
+        ["-i", in_uri, "-q", "metric:max=properties.name&facet=properties.country"],
+    )
+    assert result.exit_code == 0
+    assert orjson.loads(result.output) == expected
+
+    result = runner.invoke(
+        cli,
+        ["-i", in_uri, "--rql", "aggregate(properties.country,max(properties.name))"],
+    )
+    assert result.exit_code == 0
+    assert orjson.loads(result.output) == expected
+
+    # filter and aggregation in one string
+    result = runner.invoke(
+        cli, ["-i", in_uri, "-q", "filter:schema=Payment&metric:count=id"]
+    )
+    assert result.exit_code == 0
+    assert orjson.loads(result.output) == {"count": {"id": 290}}
+
+    # a store computes the aggregation itself (the sql backends compile it
+    # into the query), and `-o` takes the result
+    store_uri = f"sqlite:///{tmp_path}/agg.db"
+    out = tmp_path / "agg.json"
+    result = runner.invoke(cli, ["-i", in_uri, "-o", store_uri])
+    assert result.exit_code == 0
+    result = runner.invoke(
+        cli,
+        [
+            "-i",
+            store_uri,
+            "-q",
+            "filter:schema=Payment&metric:sum=properties.amountEur",
+            "-o",
+            str(out),
+        ],
+    )
+    assert result.exit_code == 0
+    assert orjson.loads(out.read_text()) == {
+        "sum": {"properties.amountEur": 40589689.15}
+    }
+    result = runner.invoke(
+        cli,
+        [
+            "-i",
+            store_uri,
+            "-q",
+            "metric:max=properties.name&facet=properties.country",
+        ],
+    )
+    assert result.exit_code == 0
+    assert orjson.loads(result.output) == expected
+
+    # known divergence: a `limit` slices what the in-memory aggregator sees,
+    # while a backend aggregation describes the whole matching set (the api
+    # semantics - `limit` is a page size there, and facets/metrics cover the
+    # result, not the page)
+    agg_limit = "filter:schema=Payment&metric:count=id&limit=10"
+    result = runner.invoke(cli, ["-i", in_uri, "-q", agg_limit])
+    assert orjson.loads(result.output) == {"count": {"id": 10}}
+    result = runner.invoke(cli, ["-i", store_uri, "-q", agg_limit])
+    assert orjson.loads(result.output) == {"count": {"id": 290}}
+
+    # ... while a query without an aggregation still writes entities
+    result = runner.invoke(cli, ["-i", in_uri, "-q", "filter:schema=Payment"])
+    assert result.exit_code == 0
+    assert len(_get_lines(result.output)) == 290
 
 
 def test_cli_generate(fixtures_path: Path):
