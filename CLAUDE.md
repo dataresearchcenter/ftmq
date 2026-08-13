@@ -107,6 +107,7 @@ All stores inherit from `ftmq/store/base.py:Store` which extends nomenklatura's 
 - **level**: LevelDB backend (requires `plyvel`)
 - **redis**: Redis/Kvrocks backend (requires `redis`)
 - **sql**: SQLAlchemy-based (SQLite, PostgreSQL) with SQL query optimization
+- **duckdb**: the sql store against a duckdb database file (requires `duckdb-engine`); only the bulk upsert is duckdb-specific, everything else is `store/sql.py`
 - **aleph**: Aleph API backend (requires `alephclient`)
 - **lake**: Delta Lake parquet-based store using DuckDB for queries (requires `[lake]` extras)
 - **fragments**: Entity fragment store for incremental processing
@@ -117,6 +118,7 @@ get_store("memory://")
 get_store("leveldb:///path")
 get_store("redis://localhost")
 get_store("sqlite:///data.db")
+get_store("duckdb://data.duckdb")
 get_store("lake+s3://bucket/path")
 ```
 

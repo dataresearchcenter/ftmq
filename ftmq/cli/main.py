@@ -124,13 +124,6 @@ def cli_q(
             help="If specified, print statistic coverage information to this uri",
         ),
     ] = None,
-    store_dataset: Annotated[
-        Optional[str],
-        typer.Option(
-            "--store-dataset",
-            help="If specified, default dataset for source and target stores",
-        ),
-    ] = None,
     sum: Annotated[
         Optional[list[str]],
         typer.Option("--sum", help="Field(s) for sum aggregation"),
@@ -194,8 +187,6 @@ def cli_q(
         if sort:
             q = q.order_by(sort, ascending=sort_ascending)
 
-        if dataset and len(dataset) == 1:
-            store_dataset = store_dataset or dataset[0]
         # aggregation fields are spelled as in a query string / rql (a property
         # is `properties.<name>`, a group / meta field is bare), so one
         # spelling covers `--sum`, `-q` and `--rql`
@@ -213,11 +204,14 @@ def cli_q(
         if aggregation_uri and aggs:
             by = [ref_from_wire(g) for g in groups or ()]
             q = q.aggregate(A(**aggs, by=by))
-        proxies = smart_read_proxies(input_uri, dataset=store_dataset, query=q)
+        # no store scope: a store source reads its full implicit scope (every
+        # dataset it holds), `-d` filters within it. Stamping a dataset onto
+        # entities that carry none is `ftmq apply-dataset`.
+        proxies = smart_read_proxies(input_uri, query=q)
         stats = Collector()
         if stats_uri:
             proxies = stats.apply(proxies)
-        smart_write_proxies(output_uri, proxies, dataset=store_dataset)
+        smart_write_proxies(output_uri, proxies)
         if stats_uri:
             smart_write_model(stats_uri, stats.export())
         if q.aggregator and aggregation_uri:

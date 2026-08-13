@@ -76,6 +76,52 @@ def test_cli(fixtures_path: Path):
     assert data["caption"] == "Johanna Quandt"
 
 
+def test_cli_store_roundtrip(fixtures_path: Path, tmp_path: Path):
+    # a store uri needs no dataset scope on either side: the writer keeps each
+    # entity's own dataset, the reader spans every dataset in the store (this
+    # is what the removed `--store-dataset` flag used to be needed for, and it
+    # silently returned nothing when omitted)
+    in_uri = str(fixtures_path / "eu_authorities.ftm.json")
+    store_uri = f"sqlite:///{tmp_path}/cli.db"
+
+    result = runner.invoke(cli, ["-i", in_uri, "-o", store_uri])
+    assert result.exit_code == 0
+
+    result = runner.invoke(cli, ["-i", store_uri])
+    assert result.exit_code == 0
+    assert len(_get_lines(result.output)) == 151
+
+    result = runner.invoke(cli, ["-i", store_uri, "-d", "eu_authorities"])
+    assert result.exit_code == 0
+    assert len(_get_lines(result.output)) == 151
+
+    result = runner.invoke(cli, ["-i", store_uri, "-d", "other_dataset"])
+    assert result.exit_code == 0
+    assert len(_get_lines(result.output)) == 0
+
+    # entities without a dataset land in `default`; `apply-dataset` stamps one
+    ds_uri = f"sqlite:///{tmp_path}/cli_ds.db"
+    plain = tmp_path / "plain.json"
+    plain.write_text('{"id":"x1","schema":"Company","properties":{"name":["Acme"]}}\n')
+    result = runner.invoke(
+        cli,
+        [
+            "apply-dataset",
+            "-d",
+            "my_dataset",
+            "--replace-dataset",
+            "-i",
+            str(plain),
+            "-o",
+            ds_uri,
+        ],
+    )
+    assert result.exit_code == 0
+    result = runner.invoke(cli, ["-i", ds_uri, "-d", "my_dataset"])
+    assert result.exit_code == 0
+    assert len(_get_lines(result.output)) == 1
+
+
 def test_cli_apply(fixtures_path: Path):
     configure_logging()
 

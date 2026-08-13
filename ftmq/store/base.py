@@ -49,8 +49,10 @@ def _patch_nomenklatura_sqlite_engines() -> None:
     The resolver and every ``LakeStore`` (via ``SQLStore.__init__`` →
     ``get_engine(uri)``) share one process-cached engine per URL. ``LakeStore``
     fakes ``sqlite:///:memory:`` and exposes no seam to configure that engine,
-    so the factory is wrapped once at import. Only ``:memory:`` URLs are
-    intercepted; file and postgres engines keep nomenklatura's behaviour.
+    so the factory is wrapped once at import. Only sqlite ``:memory:`` URLs are
+    intercepted; file, postgres and duckdb engines keep nomenklatura's
+    behaviour (``check_same_thread`` is a sqlite connect arg - passing it to
+    another driver raises).
     """
     global _PATCHED
     if _PATCHED:
@@ -60,7 +62,7 @@ def _patch_nomenklatura_sqlite_engines() -> None:
 
     @wraps(_orig)
     def _make_engine(url: str) -> Engine:
-        if url.endswith(":memory:"):
+        if url.startswith("sqlite") and url.endswith(":memory:"):
             if url not in _engines:
                 _engines[url] = _memory_engine(url)
             return _engines[url]

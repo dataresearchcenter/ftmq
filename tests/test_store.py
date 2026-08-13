@@ -1,9 +1,13 @@
+from pathlib import Path
+
 from followthemoney import EntityProxy, StatementEntity
 
 from ftmq.query import A, C, G, M, P, Query, Year
 from ftmq.store import MemoryStore, Store, get_store
 from ftmq.store.aleph import AlephStore, parse_uri
 from ftmq.store.base import get_resolver
+from ftmq.store.duckdb import DuckDBStore
+from ftmq.store.duckdb import parse_uri as duckdb_parse_uri
 from ftmq.store.fragments import get_fragments
 from ftmq.store.lake import LakeStore
 from ftmq.store.level import LevelDBStore
@@ -463,6 +467,37 @@ def test_store_sql_sqlite(tmp_path, proxies):
     assert _run_store_test(SQLStore, proxies, test_pop=False, uri=uri)  # FIXME
 
 
+def test_store_duckdb(tmp_path, proxies):
+    uri = f"duckdb://{tmp_path}/test.duckdb"
+    assert _run_store_test_implicit(DuckDBStore, proxies, uri=uri)
+
+    from nomenklatura.db import get_metadata
+
+    get_metadata.cache_clear()
+    assert _run_store_test(DuckDBStore, proxies, test_pop=False, uri=uri)  # FIXME
+
+    # the store uri spells the path right after the scheme; sqlalchemy's own
+    # url grammar (host / root slashes) must not change which file is opened
+    assert duckdb_parse_uri("duckdb:///tmp/test.duckdb") == "duckdb:////tmp/test.duckdb"
+    assert (
+        duckdb_parse_uri("duckdb:////tmp/test.duckdb") == "duckdb:////tmp/test.duckdb"
+    )
+    assert duckdb_parse_uri("duckdb://test.duckdb").endswith(
+        f"{Path.cwd()}/test.duckdb"
+    )
+    assert duckdb_parse_uri("duckdb://") == "duckdb:///:memory:"
+    assert duckdb_parse_uri("duckdb://:memory:") == "duckdb:///:memory:"
+
+    # regression: the in-memory engine patch (for the sqlite resolver / lake
+    # store) used to intercept *any* `:memory:` url and hand duckdb sqlite's
+    # `check_same_thread` connect arg, which its driver rejects
+    get_metadata.cache_clear()
+    store = DuckDBStore(linker=get_resolver(), uri="duckdb://")
+    with store.writer() as bulk:
+        bulk.add_entity(proxies[0])
+    assert [e.id for e in store.iterate()] == [proxies[0].id]
+
+
 def test_store_lake(tmp_path, proxies):
     assert _run_store_test_implicit(LakeStore, proxies, uri=tmp_path)
     assert _run_store_test(LakeStore, proxies, uri=tmp_path)
@@ -557,6 +592,8 @@ def test_store_init(tmp_path):
     assert isinstance(store, LevelDBStore)
     store = get_store("sqlite:///:memory:")
     assert isinstance(store, SQLStore)
+    store = get_store(f"duckdb://{tmp_path}/test.duckdb")
+    assert isinstance(store, DuckDBStore)
     store = get_store(dataset="test_dataset")
     assert store.dataset.name == "test_dataset"
     store = get_store("http+aleph://test_dataset@aleph.example.org")
@@ -679,6 +716,9 @@ def test_store_numeric_aggregation_agrees_with_memory(tmp_path):
         "sqlite": SQLStore(
             dataset=scope, linker=get_resolver(), uri=f"sqlite:///{tmp_path}/num.db"
         ),
+        "duckdb": DuckDBStore(
+            dataset=scope, linker=get_resolver(), uri=f"duckdb://{tmp_path}/num.duckdb"
+        ),
         "lake": LakeStore(dataset=scope, linker=get_resolver(), uri=tmp_path / "lake"),
     }
     for name, store in stores.items():
@@ -725,6 +765,12 @@ def test_store_numeric_aggregation_skips_non_numeric(tmp_path):
             uri=f"sqlite:///{tmp_path}/nan.db",
             cast_types=False,
         ),
+        "duckdb": DuckDBStore(
+            dataset=scope,
+            linker=get_resolver(),
+            uri=f"duckdb://{tmp_path}/nan.duckdb",
+            cast_types=False,
+        ),
         "lake": LakeStore(
             dataset=scope,
             linker=get_resolver(),
@@ -753,6 +799,7 @@ def test_store_default_dataset_name_resolves(tmp_path):
     for cls, kwargs in (
         (MemoryStore, {}),
         (SQLStore, {"uri": f"sqlite:///{tmp_path}/default.db"}),
+        (DuckDBStore, {"uri": f"duckdb://{tmp_path}/default.duckdb"}),
         (LakeStore, {"uri": tmp_path / "default_lake"}),
     ):
         store = cls(linker=get_resolver(), **kwargs)

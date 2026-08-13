@@ -36,6 +36,9 @@ def get_store(
 
         # a sqlite store
         get_store("sqlite:///data/followthemoney.db")
+
+        # a duckdb store
+        get_store("duckdb:///data/followthemoney.duckdb")
         ```
 
     Args:
@@ -70,6 +73,13 @@ def get_store(
             return RedisStore(dataset, linker=linker, cast_types=cast_types)
         except ImportError:
             raise ImportError("Can not load RedisStore. Install `redis`")
+    if parsed.scheme == "duckdb":
+        try:
+            from ftmq.store.duckdb import DuckDBStore
+
+            return DuckDBStore(dataset, uri=uri, linker=linker, cast_types=cast_types)
+        except ImportError:
+            raise ImportError("Can not load DuckDBStore. Install `duckdb-engine`")
     if "sql" in parsed.scheme:
         try:
             from ftmq.store.sql import SQLStore

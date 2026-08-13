@@ -70,7 +70,11 @@ def smart_read_proxies(
 
     store = smart_get_store(uri, **store_kwargs)
     if store is not None:
-        view = store.view()
+        # the *default* view: `view()` without a scope falls back to the
+        # store's explicit `dataset`, which for a store opened without one is
+        # the "default" writer scope - so a store uri without `dataset=` would
+        # read back nothing (see `Store.scope`)
+        view = store.default_view()
         yield from view.query(query)
         return
 
