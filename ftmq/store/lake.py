@@ -203,9 +203,14 @@ class LakeStatement(Statement):
         return stmt
 
 
+SECRETS_DIR = Path("/run/secrets")
+
+
 class StorageSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env", extra="ignore", secrets_dir="/run/secrets"
+        env_file=".env",
+        extra="ignore",
+        secrets_dir=str(SECRETS_DIR) if SECRETS_DIR.is_dir() else None,
     )
 
     key: str | None = Field(default=None, alias="aws_access_key_id")
