@@ -29,9 +29,48 @@ AND = "AND"
 OR = "OR"
 
 
+def _normalize(
+    children: "tuple[Expr | Leaf, ...]", connector: str
+) -> "list[Expr | Leaf]":
+    """Bring a node's children into canonical form: splice non-negated
+    sub-groups of the same connector into this one, and drop children that
+    already appear (both `Expr` and `Leaf` hash over their canonical
+    serialization, so that is a structural identity).
+
+    Both are boolean identities (associativity, and `a & a == a`), so a node
+    built as `Query(P(name="x"), P(name="x"))` or by re-applying a filter in a
+    chained `.where()` holds the condition once. Doing it here rather than in
+    each serializer is what makes every surface - dict, rql, params, sql, and
+    the in-memory evaluator - see the same deduplicated tree.
+    """
+    result: list[Expr | Leaf] = []
+    seen: set[Expr | Leaf] = set()
+    for child in children:
+        items: list[Expr | Leaf]
+        if (
+            isinstance(child, Expr)
+            and not child.negated
+            and child.connector == connector
+        ):
+            # normalized already, so one level of splicing is enough
+            items = child.children
+        else:
+            items = [child]
+        for item in items:
+            if item not in seen:
+                seen.add(item)
+                result.append(item)
+    return result
+
+
 class Expr:
     """A boolean node: a connector (`AND`/`OR`), an optional negation, and a
-    list of children (nested `Expr` nodes and/or `Leaf` conditions)."""
+    list of children (nested `Expr` nodes and/or `Leaf` conditions).
+
+    Children are canonicalized on construction (see
+    [`_normalize`][ftmq.query.nodes._normalize]), so a node never holds a
+    duplicate child or a nested group it could absorb.
+    """
 
     def __init__(
         self,
@@ -41,14 +80,14 @@ class Expr:
     ) -> None:
         self.connector = connector
         self.negated = negated
-        self.children: list[Expr | Leaf] = list(children)
+        self.children: list[Expr | Leaf] = _normalize(children, connector)
 
     def __bool__(self) -> bool:
         return bool(self.children) or self.negated
 
     def _copy(self) -> "Expr":
         clone = Expr(connector=self.connector, negated=self.negated)
-        clone.children = list(self.children)
+        clone.children = list(self.children)  # already normalized
         return clone
 
     def _combine(self, other: "Expr", connector: str) -> "Expr":
@@ -109,10 +148,10 @@ class Expr:
     def to_dict(self) -> dict[str, Any]:
         """Serialize the tree to a nested, canonically-ordered dict.
 
-        Nested nodes that share the connector and are not negated are flattened
-        (associativity) and children are sorted, so structurally-equivalent
-        trees (e.g. built by different `where()` orderings) serialize
-        identically and hash equal.
+        The children are already flattened and deduplicated (see
+        [`_normalize`][ftmq.query.nodes._normalize]); sorting them here makes
+        structurally-equivalent trees (e.g. built by different `where()`
+        orderings) serialize identically and hash equal.
 
         Returns:
             A `{"and" | "or": [...], "not": bool}` mapping, round-trippable via
@@ -122,11 +161,7 @@ class Expr:
         children: list[Any] = []
         for child in self.children:
             if isinstance(child, Expr):
-                child_dict = child.to_dict()
-                if not child.negated and child.connector == self.connector:
-                    children.extend(child_dict[key])
-                else:
-                    children.append(child_dict)
+                children.append(child.to_dict())
             else:
                 children.append({"leaf": child.field_dict()})
         children.sort(key=hash_data)
@@ -209,9 +244,9 @@ class _FamilyExpr(Expr):
         return super().__new__(cls)
 
     def __init__(self, **lookups: Any) -> None:
-        super().__init__(connector=AND)
-        for key, value in lookups.items():
-            self.children.append(self._make(key, value))
+        # built through `super().__init__`, not appended to, so the children go
+        # through the same canonicalization as any other node
+        super().__init__(*(self._make(k, v) for k, v in lookups.items()), connector=AND)
 
 
 class M(_FamilyExpr):

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Any, Iterator, TypedDict
 
-from banal import as_bool, ensure_list, is_listish
+from banal import as_bool, ensure_list, hash_data, is_listish
 from followthemoney import model
 from followthemoney.property import Property
 from followthemoney.proxy import EntityProxy
@@ -107,7 +107,10 @@ class Leaf:
         self.value: Any = self.get_casted_value(value)
 
     def __hash__(self) -> int:
-        return hash((self.key, self.comparator, str(self.value)))
+        # over the canonical serialization, like `Expr.__hash__`: the family is
+        # part of a leaf's identity (`topics` is both a property and a
+        # property-type group), and an `in` value is order-normalized there
+        return hash(hash_data(self.field_dict()))
 
     def __eq__(self, other: Any) -> bool:
         return hash(self) == hash(other)

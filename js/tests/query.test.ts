@@ -126,7 +126,10 @@ test("toRequestParams falls back to rql for a nested tree", () => {
     G({ countries: "de" }).or(G({ countries: "at" })),
   );
   const params = q.toRequestParams();
-  assert.equal(params.get("rql"), "or(eq(group.countries,de),eq(group.countries,at))");
+  assert.equal(
+    params.get("rql"),
+    "or(eq(group.countries,de),eq(group.countries,at))",
+  );
 });
 
 test("toRequestParams uses flat aleph params for a flat tree", () => {
@@ -149,6 +152,60 @@ test("aggregate node builds specs and round-trips via dict", () => {
     );
   assert.deepEqual(norm(Query.fromDict(q.toDict()).toDict()), norm(q.toDict()));
   assert.equal(q.aggregations.length, 2);
+});
+
+// mirrors `test_dedupe` in tests/test_query.py
+test("a repeated condition is held once", () => {
+  const single = new Query().where(P({ name: "x" })).toDict();
+  const q = new Query().where(P({ name: "x" }), P({ name: "x" }));
+  assert.deepEqual(q.toDict(), single);
+  assert.equal(q.toRql(), "eq(properties.name,x)");
+  assert.deepEqual(q.toParams(), { "filter:properties.name": ["x"] });
+  assert.deepEqual(
+    new Query()
+      .where(P({ name: "x" }))
+      .where(P({ name: "x" }))
+      .toDict(),
+    single,
+  );
+
+  // a duplicate across nesting levels: the sub-group is spliced in first
+  const a = P({ name: "x" });
+  const b = M({ schema: "Person" });
+  const and = new Query().where(a.and(b)).toDict();
+  assert.deepEqual(new Query().where(a.and(b).and(a)).toDict(), and);
+  assert.deepEqual(new Query().where(a).where(a, b).toDict(), and);
+  assert.deepEqual(
+    new Query().where(a.or(b).or(a)).toDict(),
+    new Query().where(a.or(b)).toDict(),
+  );
+
+  // a leaf keys on its canonical form, so alternatives spelled in another
+  // order are the same condition
+  const leaves = (query: Query) => [...(query.q as any).iterLeaves()].length;
+  assert.equal(
+    leaves(
+      new Query().where(
+        P({ name__in: ["a", "b"] }),
+        P({ name__in: ["b", "a"] }),
+      ),
+    ),
+    1,
+  );
+
+  // distinct conditions stay: distinct values, families and a negation
+  assert.equal(
+    leaves(new Query().where(P({ name: "x" }), P({ name: "y" }))),
+    2,
+  );
+  assert.equal(
+    leaves(new Query().where(P({ topics: "x" }), G({ topics: "x" }))),
+    2,
+  );
+  assert.equal(
+    leaves(new Query().where(P({ name: "x" }), not(P({ name: "x" })))),
+    2,
+  );
 });
 
 test("invalid comparator throws QueryError", () => {

@@ -90,6 +90,8 @@ q = q.where(G(countries="de") | G(countries="at"))
 
 Structurally equivalent queries (built in a different order) serialize and hash identically.
 
+Nodes are canonicalized as they combine: a sub-group of the same connector merges into its parent, and a condition that appears twice (passed twice, or re-applied in a chained `.where()`) is held once. `Query(P(name="x"), P(name="x"))` is `Query(P(name="x"))` on every surface - serialization, hash and the compiled SQL alike.
+
 ### Value comparators
 
 Any lookup can carry a comparator with the `__<comparator>` suffix (default is equals):

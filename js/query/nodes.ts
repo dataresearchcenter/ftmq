@@ -8,7 +8,48 @@ export type Connector = "AND" | "OR";
 
 export type Child = Expr | Leaf;
 
-/** A boolean node: a connector, an optional negation, and a list of children. */
+// the structural identity of a child node: its canonical serialization, the
+// same form the tree is ordered by
+const childKey = (child: Child): string =>
+  child instanceof Expr
+    ? canon(child.toDict())
+    : canon({ leaf: child.fieldDict() });
+
+/**
+ * Bring a node's children into canonical form: splice non-negated sub-groups of
+ * the same connector into this one, and drop children that already appear.
+ *
+ * Both are boolean identities (associativity, and `a & a == a`), so a node
+ * built as `new Query(P({name: "x"}), P({name: "x"}))` or by re-applying a
+ * filter in a chained `.where()` holds the condition once. Doing it here rather
+ * than in each serializer is what makes every surface see the same
+ * deduplicated tree.
+ */
+function normalize(children: Child[], connector: Connector): Child[] {
+  const result: Child[] = [];
+  const seen = new Set<string>();
+  for (const child of children) {
+    // a sub-group is normalized already, so one level of splicing is enough
+    const items =
+      child instanceof Expr && !child.negated && child.connector === connector
+        ? child.children
+        : [child];
+    for (const item of items) {
+      const key = childKey(item);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      result.push(item);
+    }
+  }
+  return result;
+}
+
+/**
+ * A boolean node: a connector, an optional negation, and a list of children.
+ *
+ * Children are canonicalized on construction (see `normalize`), so a node never
+ * holds a duplicate child or a nested group it could absorb.
+ */
 export class Expr {
   connector: Connector;
   negated: boolean;
@@ -21,7 +62,7 @@ export class Expr {
   ) {
     this.connector = connector;
     this.negated = negated;
-    this.children = children;
+    this.children = normalize(children, connector);
   }
 
   /** Whether this node carries no condition (empty and not negated). */
@@ -30,6 +71,7 @@ export class Expr {
   }
 
   private copy(): Expr {
+    // already normalized, so the constructor is a no-op over these children
     return new Expr([...this.children], this.connector, this.negated);
   }
 
@@ -64,16 +106,10 @@ export class Expr {
     const key = this.connector.toLowerCase();
     const children: any[] = [];
     for (const child of this.children) {
-      if (child instanceof Expr) {
-        const childDict = child.toDict();
-        if (!child.negated && child.connector === this.connector) {
-          children.push(...childDict[key]);
-        } else {
-          children.push(childDict);
-        }
-      } else {
-        children.push({ leaf: child.fieldDict() });
-      }
+      // the children are flattened and deduplicated already (see `normalize`);
+      // sorting them is what makes equivalent trees serialize identically
+      if (child instanceof Expr) children.push(child.toDict());
+      else children.push({ leaf: child.fieldDict() });
     }
     children.sort((a, b) => byString(canon(a), canon(b)));
     const data: Record<string, any> = { [key]: children };

@@ -61,6 +61,38 @@ def test_query_construction():
     assert (~M(schema="Person")).negated is True
 
 
+def test_dedupe():
+    # a repeated condition is held once, on every surface
+    q = Query(P(name="x"), P(name="x"))
+    assert len(q._leaves) == 1
+    assert q.to_dict() == Query(P(name="x")).to_dict()
+    assert q.to_rql() == "eq(properties.name,x)"
+    assert q.to_params() == {"filter:properties.name": ["x"]}
+    # ... including in the compiled sql (a duplicate used to add a second,
+    # identical `canonical_id IN (...)` subquery and lose the flat compilation)
+    assert str(q.sql.statements) == str(Query(P(name="x")).sql.statements)
+
+    # chained `.where()` and `|` dedupe the same way
+    assert Query().where(P(name="x")).where(P(name="x")).to_dict() == q.to_dict()
+    assert len(Query(P(name="x") | P(name="x"))._leaves) == 1
+
+    # a duplicate across nesting levels: the sub-group is spliced in first
+    a, b = P(name="x"), M(schema="Person")
+    assert Query((a & b) & a).to_dict() == Query(a & b).to_dict()
+    assert Query().where(a).where(a, b).to_dict() == Query(a & b).to_dict()
+    assert Query((a | b) | a).to_dict() == Query(a | b).to_dict()
+
+    # a leaf hashes over its canonical form, so alternatives spelled in another
+    # order are the same condition
+    assert len(Query(P(name__in=["a", "b"]), P(name__in=["b", "a"]))._leaves) == 1
+
+    # what is not the same condition stays: distinct values, distinct families
+    # (`topics` is both a property and a property-type group) and a negation
+    assert len(Query(P(name="x"), P(name="y"))._leaves) == 2
+    assert len(Query(P(topics="x"), G(topics="x"))._leaves) == 2
+    assert len(Query(P(name="x"), ~P(name="x"))._leaves) == 2
+
+
 def test_apply_meta():
     assert Query().where(M(schema="Person")).apply(PERSON)
     assert not Query().where(M(schema="Person")).apply(COMPANY)
