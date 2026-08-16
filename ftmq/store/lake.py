@@ -284,7 +284,7 @@ def pack_statement(stmt: Statement, source: str | None = None) -> SDict:
     data = cast(SDict, stmt.to_dict())
     data["prop_type"] = stmt.prop_type
     if data["first_seen"]:
-        data["first_seen"] = datetime.fromisoformat(data["last_seen"])
+        data["first_seen"] = datetime.fromisoformat(data["first_seen"])
     if data["last_seen"]:
         data["last_seen"] = datetime.fromisoformat(data["last_seen"])
     data["bucket"] = get_schema_bucket(data["schema"])
