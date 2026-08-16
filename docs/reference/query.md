@@ -54,9 +54,11 @@ The [`A`][ftmq.A] projection node, the immutable `Agg` spec and the in-memory `A
 
 ## SQL
 
-The SQL translation. A store passes its [`SqlSource`][ftmq.query.sql.SqlSource] to [`Query.compile`][ftmq.Query.compile] (or builds `Sql(query, source)` directly).
+The SQL translation. A store passes its [`SqlSource`][ftmq.query.sql.SqlSource] to [`Query.compile`][ftmq.Query.compile] (or builds `Sql(query, source)` directly). A partitioned table describes its pruning there as `prune={column: function}`, one rule per partition column.
 
 ::: ftmq.query.sql.SqlSource
+
+::: ftmq.query.sql.prune_by_schema
 
 ::: ftmq.query.sql.Sql
 

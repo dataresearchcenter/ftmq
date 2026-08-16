@@ -52,7 +52,9 @@ from sqlalchemy import Boolean, DateTime, column, select, table
 from sqlalchemy.sql import Select
 from sqlalchemy.sql.elements import ColumnElement
 
-from ftmq.query.sql import SqlSource
+from ftmq.query.leaves import SchemaLeaf, SchemataLeaf
+from ftmq.query.main import Query
+from ftmq.query.sql import PruneFn, SqlSource
 from ftmq.store.base import DEFAULT_ORIGIN, Store
 from ftmq.store.sql import SQLQueryView, SQLStore
 from ftmq.util import apply_dataset, ensure_entity, get_scope_dataset, iso_datetime
@@ -140,6 +142,19 @@ TABLE = table(
 ARROW_SCHEMA = pa.schema(
     [(col.name, SA_TO_ARROW.get(type(col.type), pa.string())) for col in TABLE.columns]
 )
+
+
+def prune_by_schema(q: Query) -> set[str] | None:
+    """Prune query schemata to bucket partition column"""
+
+    for f in q._leaves:
+        if isinstance(f, (SchemaLeaf, SchemataLeaf)):
+            if f.comparator not in ("eq", "in"):
+                return None
+    # `schemata_names` expands an is-a filter to its non-abstract
+    # descendants, so a `schemata` filter prunes to every partition they
+    # live in; empty (no schema filter at all) means no pruning
+    return {get_schema_bucket(s) for s in q.schemata_names}
 
 
 class LakeStatement(Statement):
@@ -278,6 +293,11 @@ def get_schema_bucket(schema_name: str) -> str:
     return BUCKET_THING
 
 
+# the `bucket` partition is a function of the statement's schema, so a schema
+# filter prunes it (built once - the rule is a closure over `get_schema_bucket`)
+PRUNE: dict[str, PruneFn] = {"bucket": prune_by_schema}
+
+
 def pack_statement(stmt: Statement, source: str | None = None) -> SDict:
     """Pack statement to wire format for db but keep microseconds"""
     data = cast(SDict, stmt.to_dict())
@@ -340,8 +360,7 @@ class LakeStore(SQLStore):
         pruning and the view filter folded into every compiled query."""
         return SqlSource(
             self.table,
-            prune_schema=get_schema_bucket,
-            prune_column="bucket",
+            prune=PRUNE,
             base_filter=self._view_filter,
         )
 

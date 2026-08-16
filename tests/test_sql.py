@@ -1,9 +1,10 @@
-import pytest
-from sqlalchemy import literal_column
+from followthemoney import model
+from sqlalchemy import column, literal_column, table
 from sqlalchemy.sql.selectable import Select
 
 from ftmq.query import A, C, G, M, P, Query, Year
-from ftmq.query.sql import numeric_value
+from ftmq.query.sql import Sql, SqlSource, numeric_value
+from ftmq.store.lake import prune_by_schema
 
 
 def _literal(stmt) -> str:
@@ -463,3 +464,70 @@ def test_sql_null():
             (SELECT DISTINCT test_table.canonical_id FROM test_table WHERE test_table.prop = 'name')
         """,
     )
+
+
+# a partitioned statement table: `bucket` is derived from the schema (as in the
+# lake store), `shard` from the dataset
+PARTITIONED = table(
+    "lake_table",
+    column("canonical_id"),
+    column("dataset"),
+    column("schema"),
+    column("prop"),
+    column("prop_type"),
+    column("value"),
+    column("bucket"),
+    column("shard"),
+)
+
+
+def _bucket(schema_name: str) -> str:
+    return "interval" if model[schema_name].is_a("Interval") else "thing"
+
+
+PARTITIONED_SOURCE = SqlSource(
+    PARTITIONED,
+    prune={
+        "bucket": prune_by_schema(_bucket),
+        "shard": lambda q: {f"s-{d}" for d in q.dataset_names},
+        # a rule for a column this table doesn't have is ignored
+        "nope": lambda q: {"x"},
+    },
+)
+
+
+def test_sql_prune():
+    def where(q: Query) -> str:
+        return _literal(Sql(q, PARTITIONED_SOURCE).canonical_ids)
+
+    # a positive schema filter prunes its partitions ...
+    assert "lake_table.bucket IN ('thing')" in where(Query().where(M(schema="Person")))
+    # ... an is-a filter over all its (non-abstract) descendants ...
+    assert "lake_table.bucket IN ('interval')" in where(
+        Query().where(M(schemata="Interval"))
+    )
+    # ... and several schemata over every partition they live in (sorted, so
+    # the compiled sql is deterministic)
+    assert "lake_table.bucket IN ('interval', 'thing')" in where(
+        Query().where(M(schema__in=["Payment", "Person"]))
+    )
+
+    # no schema filter, nothing to prune
+    assert "bucket" not in where(Query().where(P(name="jane")))
+
+    # pruning is unsound for anything but a positive flat conjunct
+    assert "bucket" not in where(Query().where(M(schema__not="Person")))
+    assert "bucket" not in where(Query().where(~M(schema="Person")))
+    assert "bucket" not in where(
+        Query().where(M(schema="Person") | M(schema="Company"))
+    )
+
+    # every rule of the source compiles its own predicate, and one for a column
+    # the table doesn't have is skipped
+    compiled = where(Query().where(M(schema="Person"), M(dataset="test")))
+    assert "lake_table.bucket IN ('thing')" in compiled
+    assert "lake_table.shard IN ('s-test')" in compiled
+    assert "nope" not in compiled
+
+    # the default source has no prune rules
+    assert "bucket" not in _literal(Query().where(M(schema="Person")).sql.canonical_ids)

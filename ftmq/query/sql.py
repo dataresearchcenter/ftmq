@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from functools import cached_property, singledispatchmethod
 from typing import TYPE_CHECKING, Any, Callable, Iterable, TypeAlias
@@ -55,8 +57,8 @@ if TYPE_CHECKING:
     from ftmq.query.main import Query
 
 
-# a schema-value -> partition-value function (e.g. schema name -> `bucket`)
-PruneFn: TypeAlias = Callable[[str], str]
+# a query -> partition-values function for one prune column (e.g. `bucket`).
+PruneFn: TypeAlias = Callable[["Query"], Iterable[str] | None]
 
 
 @dataclass
@@ -138,8 +140,8 @@ def numeric_value(column: Any) -> Any:
 
 class SqlSource:
     """Describes the SQL statement source a [`Query`][ftmq.Query] compiles
-    against: the SQLAlchemy table (or view), the entity-identity column, and an
-    optional partition-pruning rule.
+    against: the SQLAlchemy table (or view), the entity-identity column, and
+    optional partition-pruning rules.
 
     Stores own one and pass it to [`Sql`][ftmq.query.sql.Sql] /
     [`Query.compile`][ftmq.Query.compile]. A downstream store with extra
@@ -149,11 +151,17 @@ class SqlSource:
     Args:
         table: The SQLAlchemy `Table` / `TableClause` to query.
         id_column: The entity-identity column name (default `canonical_id`).
-        prune_schema: Optional function folding a schema/schemata filter into a
-            `prune_column IN (...)` partition predicate on every compiled query
-            (e.g. the lake store's schema -> `bucket` mapping).
-        prune_column: The partition column the pruned values target
-            (e.g. `bucket`).
+        prune: Optional partition-pruning rules as `{column: function}`: each
+            function derives that column's possible values from the query and
+            folds them into every compiled query as a `column IN (...)` row
+            predicate (e.g. the lake store's `{"bucket": ...}` rule mapping a
+            schema filter to its buckets - see
+            [`prune_by_schema`][ftmq.query.sql.prune_by_schema]). Returning
+            `None` or nothing means "cannot prune this query". A rule for a
+            column the table doesn't have is ignored. Rules only run for a flat
+            positive conjunction: under an `OR`, a `~` or a repeated field a
+            filter no longer restricts matching entities to its partitions, so
+            any such query skips pruning entirely.
         base_filter: Optional SQLAlchemy predicate folded into every compiled
             select *and* sub-select (e.g. a lake store's view filter). Unlike a
             predicate added post-hoc to the top-level select, this also scopes
@@ -162,16 +170,14 @@ class SqlSource:
 
     def __init__(
         self,
-        table: "Any",
+        table: Any,
         id_column: str = "canonical_id",
-        prune_schema: "PruneFn | None" = None,
-        prune_column: str | None = None,
-        base_filter: "Any | None" = None,
+        prune: dict[str, PruneFn] | None = None,
+        base_filter: Any | None = None,
     ) -> None:
         self.table = table
         self.id_column = id_column
-        self.prune_schema = prune_schema
-        self.prune_column = prune_column
+        self.prune = prune or {}
         self.base_filter = base_filter
 
 
@@ -188,9 +194,9 @@ class Sql:
 
     def __init__(
         self,
-        q: "Query",
-        source: "SqlSource | None" = None,
-        scope: "Iterable[str] | None" = None,
+        q: Query,
+        source: SqlSource | None = None,
+        scope: Iterable[str] | None = None,
     ) -> None:
         self.q = q
         self.metadata = MetaData()
@@ -417,29 +423,27 @@ class Sql:
         return len(keys) == len(set(keys))
 
     @cached_property
-    def _prune_values(self) -> set[str] | None:
-        """Partition values for a schema/schemata filter (e.g. the lake
-        `bucket` column), folded into every compiled query - so `count` prunes
-        partitions too, not just statements.
+    def _prune_clauses(self) -> list[Any]:
+        """One `column IN (...)` row predicate per prune rule of the source
+        (e.g. the lake `bucket` column), folded into every compiled query - so
+        `count` prunes partitions too, not just statements.
 
-        Pruning is only sound for positive schema conjuncts: under `~` / `|` or
-        a `not` comparator the filter no longer restricts matching entities to
-        those partitions, so any such shape disables pruning entirely.
+        Pruning is only sound for a plain positive conjunction: under `~` / `|`
+        or a repeated field a filter no longer restricts matching entities to
+        the partitions it derives, so any such shape disables pruning entirely.
+        Whether a rule's *own* fields are used positively is up to the rule
+        (see [`prune_by_schema`][ftmq.query.sql.prune_by_schema]).
         """
-        prune_fn = self.source.prune_schema
-        if (
-            prune_fn is None
-            or not self.source.prune_column
-            or self.source.prune_column not in self.table.c
-            or not self._is_flat_and
-            or not self.q.schemata_names
-        ):
-            return None
-        for f in self.q._leaves:
-            if isinstance(f, (SchemaLeaf, SchemataLeaf)):
-                if f.comparator not in ("eq", "in"):
-                    return None
-        return {prune_fn(s) for s in self.q.schemata_names}
+        if not self.source.prune or not self._is_flat_and:
+            return []
+        clauses: list[Any] = []
+        for column, prune_fn in self.source.prune.items():
+            if column not in self.table.c:
+                continue
+            values = prune_fn(self.q)
+            if values:
+                clauses.append(self.table.c[column].in_(sorted(set(values))))
+        return clauses
 
     @cached_property
     def _clauses(self) -> tuple[list[Any], list[Any]]:
@@ -457,8 +461,7 @@ class Sql:
         else:
             # a boolean tree compiles entirely to entity-level predicates
             rows, entities = [], [self._expr_clause(self.q.q)]
-        if self._prune_values:
-            rows.append(self.table.c[self.source.prune_column].in_(self._prune_values))
+        rows.extend(self._prune_clauses)
         # the view scope selects *entities* (those with at least one statement
         # in a scoped dataset), matching the in-memory store views: filters and
         # assembly still see the full canonical entity. A row-level `dataset`
