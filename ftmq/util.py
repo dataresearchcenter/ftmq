@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from functools import cache
 from typing import Any, Type
 
@@ -504,3 +505,10 @@ def select_symbols(e: EntityProxy) -> set[str]:
 def select_annotations(e: EntityProxy) -> set[str]:
     """Select stored annotations in `indexText`"""
     return {s for s in select_data(e, SELECT_ANNOTATED)}
+
+
+def iso_datetime(v: str | None = None) -> datetime | None:
+    """Like rigour.time.iso_datetime but with microseconds"""
+    if not v:
+        return
+    return datetime.fromisoformat(v).replace(tzinfo=timezone.utc)

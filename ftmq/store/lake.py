@@ -19,7 +19,6 @@ Layout:
 """
 
 from contextlib import contextmanager
-from datetime import datetime
 from functools import cache, cached_property
 from pathlib import Path
 from typing import Any, Callable, Generator, Iterator, cast
@@ -56,7 +55,7 @@ from sqlalchemy.sql.elements import ColumnElement
 from ftmq.query.sql import SqlSource
 from ftmq.store.base import DEFAULT_ORIGIN, Store
 from ftmq.store.sql import SQLQueryView, SQLStore
-from ftmq.util import apply_dataset, ensure_entity, get_scope_dataset
+from ftmq.util import apply_dataset, ensure_entity, get_scope_dataset, iso_datetime
 
 log = get_logger(__name__)
 
@@ -283,10 +282,8 @@ def pack_statement(stmt: Statement, source: str | None = None) -> SDict:
     """Pack statement to wire format for db but keep microseconds"""
     data = cast(SDict, stmt.to_dict())
     data["prop_type"] = stmt.prop_type
-    if data["first_seen"]:
-        data["first_seen"] = datetime.fromisoformat(data["first_seen"])
-    if data["last_seen"]:
-        data["last_seen"] = datetime.fromisoformat(data["last_seen"])
+    data["first_seen"] = iso_datetime(data["first_seen"])
+    data["last_seen"] = iso_datetime(data["last_seen"])
     data["bucket"] = get_schema_bucket(data["schema"])
     data["source"] = source
     data["origin"] = data["origin"] or DEFAULT_ORIGIN
