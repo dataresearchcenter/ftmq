@@ -19,6 +19,7 @@ Layout:
 """
 
 from contextlib import contextmanager
+from datetime import datetime
 from functools import cache, cached_property
 from pathlib import Path
 from typing import Any, Callable, Generator, Iterator, cast
@@ -279,7 +280,13 @@ def get_schema_bucket(schema_name: str) -> str:
 
 
 def pack_statement(stmt: Statement, source: str | None = None) -> SDict:
-    data = stmt.to_db_row()
+    """Pack statement to wire format for db but keep microseconds"""
+    data = cast(SDict, stmt.to_dict())
+    data["prop_type"] = stmt.prop_type
+    if data["first_seen"]:
+        data["first_seen"] = datetime.fromisoformat(data["last_seen"])
+    if data["last_seen"]:
+        data["last_seen"] = datetime.fromisoformat(data["last_seen"])
     data["bucket"] = get_schema_bucket(data["schema"])
     data["source"] = source
     data["origin"] = data["origin"] or DEFAULT_ORIGIN
