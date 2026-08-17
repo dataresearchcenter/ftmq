@@ -242,9 +242,9 @@ def test_util_datetime_iso():
     )
     # strings pass through unchanged
     assert util.datetime_iso("2024-01-15") == "2024-01-15"
-    # empty input defaults to the current UTC timestamp unless disabled
-    assert util.datetime_iso(None, default_now=False) is None
-    now = util.iso_datetime(util.datetime_iso(None))
+    # empty input stays None unless the current timestamp is asked for
+    assert util.datetime_iso(None) is None
+    now = util.iso_datetime(util.datetime_iso(None, default_now=True))
     assert now is not None
     assert now.tzinfo == timezone.utc
     # round-trip with iso_datetime

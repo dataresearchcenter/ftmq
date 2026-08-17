@@ -539,19 +539,22 @@ def iso_datetime(v: str | None) -> datetime | None:
     return dt.astimezone(timezone.utc)
 
 
-def datetime_iso(v: datetime | str | None, default_now: bool = True) -> str | None:
+def datetime_iso(v: datetime | str | None, default_now: bool = False) -> str | None:
     """
     Ensure a UTC ISO datetime string from an arbitrary value.
 
     A naive `datetime` is assumed to be UTC, an aware one is converted to
-    UTC; a string is passed through unchanged.
+    UTC; a string is passed through unchanged. Empty input stays `None` –
+    nullable fields (tombstone markers, optional seen-timestamps) must not
+    get fabricated values – unless `default_now=True` explicitly asks for
+    the current timestamp.
 
     Examples:
         >>> datetime_iso(datetime(2024, 1, 15, 10, 30))
         "2024-01-15T10:30:00+00:00"
         >>> datetime_iso("2024-01-15")
         "2024-01-15"
-        >>> datetime_iso(None, default_now=False)
+        >>> datetime_iso(None)
         None
 
     Args:
