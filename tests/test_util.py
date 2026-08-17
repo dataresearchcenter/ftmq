@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from followthemoney import EntityProxy, model
@@ -212,6 +212,46 @@ def test_util_symbols():
     # no symbols for e.g. mention entity (invalid indexText prop)
     entity = util.make_entity({"id": "m1", "schema": "Mention"})
     assert util.select_symbols(entity) == set()
+
+
+def test_util_iso_datetime():
+    assert util.iso_datetime(None) is None
+    assert util.iso_datetime("") is None
+    assert util.iso_datetime("2024-01-15T10:30:00") == datetime(
+        2024, 1, 15, 10, 30, tzinfo=timezone.utc
+    )
+    # unlike rigour.time.iso_datetime, microseconds survive
+    assert util.iso_datetime("2024-01-15T10:30:00.123456") == datetime(
+        2024, 1, 15, 10, 30, 0, 123456, tzinfo=timezone.utc
+    )
+    # an explicit offset is discarded, not converted (the wire format is UTC)
+    assert util.iso_datetime("2024-01-15T12:00:00+02:00") == datetime(
+        2024, 1, 15, 12, 0, tzinfo=timezone.utc
+    )
+
+
+def test_util_datetime_iso():
+    # naive datetimes are assumed UTC, aware ones converted
+    assert (
+        util.datetime_iso(datetime(2024, 1, 15, 10, 30)) == "2024-01-15T10:30:00+00:00"
+    )
+    cest = timezone(timedelta(hours=2))
+    assert (
+        util.datetime_iso(datetime(2024, 1, 15, 12, 0, tzinfo=cest))
+        == "2024-01-15T10:00:00+00:00"
+    )
+    # strings pass through unchanged
+    assert util.datetime_iso("2024-01-15") == "2024-01-15"
+    # empty input defaults to the current UTC timestamp unless disabled
+    assert util.datetime_iso(None, default_now=False) is None
+    now = util.iso_datetime(util.datetime_iso(None))
+    assert now is not None
+    assert now.tzinfo == timezone.utc
+    # round-trip with iso_datetime
+    assert (
+        util.datetime_iso(util.iso_datetime("2024-01-15T10:30:00.123456"))
+        == "2024-01-15T10:30:00.123456+00:00"
+    )
 
 
 def test_util_make_entity():

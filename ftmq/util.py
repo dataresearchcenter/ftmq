@@ -16,6 +16,7 @@ from normality import latinize_text, slugify, squash_spaces
 from rigour.names import NameTypeTag, Symbol, analyze_names
 from rigour.territories import lookup_territory
 from rigour.text.scripts import can_latinize
+from rigour.time import utc_now
 
 from ftmq.types import Entity
 
@@ -507,8 +508,66 @@ def select_annotations(e: EntityProxy) -> set[str]:
     return {s for s in select_data(e, SELECT_ANNOTATED)}
 
 
-def iso_datetime(v: str | None = None) -> datetime | None:
-    """Like rigour.time.iso_datetime but with microseconds"""
+def iso_datetime(v: str | None) -> datetime | None:
+    """
+    Parse an ISO datetime string into an aware UTC `datetime`.
+
+    Like `rigour.time.iso_datetime` but keeps microseconds. The value is
+    parsed with `datetime.fromisoformat` and stamped as UTC; an explicit
+    offset on the input is discarded, not converted (the FollowTheMoney
+    wire format carries no offset).
+
+    Examples:
+        >>> iso_datetime("2024-01-15T10:30:00")
+        datetime(2024, 1, 15, 10, 30, tzinfo=timezone.utc)
+        >>> iso_datetime("2024-01-15T10:30:00.123456")
+        datetime(2024, 1, 15, 10, 30, 0, 123456, tzinfo=timezone.utc)
+        >>> iso_datetime(None)
+        None
+
+    Args:
+        v: An ISO datetime string or `None`
+
+    Returns:
+        An aware datetime in UTC, or `None` for empty input
+    """
     if not v:
         return
     return datetime.fromisoformat(v).replace(tzinfo=timezone.utc)
+
+
+def datetime_iso(v: datetime | str | None, default_now: bool = True) -> str | None:
+    """
+    Ensure a UTC ISO datetime string from an arbitrary value.
+
+    A naive `datetime` is assumed to be UTC, an aware one is converted to
+    UTC; a string is passed through unchanged.
+
+    Examples:
+        >>> datetime_iso(datetime(2024, 1, 15, 10, 30))
+        "2024-01-15T10:30:00+00:00"
+        >>> datetime_iso("2024-01-15")
+        "2024-01-15"
+        >>> datetime_iso(None, default_now=False)
+        None
+
+    Args:
+        v: A `datetime`, an ISO string, or `None`
+        default_now: Return the current UTC timestamp for empty input
+            (instead of `None`)
+
+    Returns:
+        The ISO datetime string, or `None`
+    """
+    if not v:
+        if default_now:
+            return utc_now().isoformat()
+        return
+
+    if isinstance(v, datetime):
+        if v.tzinfo is None:
+            v = v.replace(tzinfo=timezone.utc)
+        else:
+            v = v.astimezone(timezone.utc)
+        return v.isoformat()
+    return v
