@@ -224,9 +224,9 @@ def test_util_iso_datetime():
     assert util.iso_datetime("2024-01-15T10:30:00.123456") == datetime(
         2024, 1, 15, 10, 30, 0, 123456, tzinfo=timezone.utc
     )
-    # an explicit offset is discarded, not converted (the wire format is UTC)
+    # an explicit offset is converted to UTC (unlike rigour, which drops it)
     assert util.iso_datetime("2024-01-15T12:00:00+02:00") == datetime(
-        2024, 1, 15, 12, 0, tzinfo=timezone.utc
+        2024, 1, 15, 10, 0, tzinfo=timezone.utc
     )
 
 

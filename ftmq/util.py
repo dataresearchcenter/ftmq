@@ -513,9 +513,8 @@ def iso_datetime(v: str | None) -> datetime | None:
     Parse an ISO datetime string into an aware UTC `datetime`.
 
     Like `rigour.time.iso_datetime` but keeps microseconds. The value is
-    parsed with `datetime.fromisoformat` and stamped as UTC; an explicit
-    offset on the input is discarded, not converted (the FollowTheMoney
-    wire format carries no offset).
+    parsed with `datetime.fromisoformat`; a naive value is assumed to be
+    UTC, an explicit offset is converted to UTC.
 
     Examples:
         >>> iso_datetime("2024-01-15T10:30:00")
@@ -533,7 +532,11 @@ def iso_datetime(v: str | None) -> datetime | None:
     """
     if not v:
         return
-    return datetime.fromisoformat(v).replace(tzinfo=timezone.utc)
+    dt = datetime.fromisoformat(v)
+    if dt.tzinfo is None:
+        # astimezone on a naive datetime would assume local time, not utc
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 def datetime_iso(v: datetime | str | None, default_now: bool = True) -> str | None:
