@@ -4,11 +4,11 @@ import time
 from datetime import datetime
 
 from normality import stringify
-from sqlalchemy.dialects.postgresql import insert as upsert
+from sqlalchemy.dialects.postgresql import insert as postgresql_upsert
+from sqlalchemy.dialects.sqlite import insert as sqlite_upsert
 from sqlalchemy.exc import (
     DatabaseError,
     DisconnectionError,
-    IntegrityError,
     OperationalError,
     ResourceClosedError,
     TimeoutError,
@@ -18,6 +18,9 @@ from sqlalchemy.sql.expression import insert, update
 # We have to cast null fragment values to some text to make the
 # UniqueConstraint work
 DEFAULT_FRAGMENT = "default"
+# dialects with a native upsert, keyed by `dialect.name`. sqlite has
+# `ON CONFLICT DO UPDATE` since 3.24, with the same interface as postgres
+UPSERTS = {"postgresql": postgresql_upsert, "sqlite": sqlite_upsert}
 EXCEPTIONS = (
     DatabaseError,
     DisconnectionError,
@@ -46,6 +49,7 @@ class BulkLoader(object):
         self.store = dataset.store
         self.size = size
         self.buffer = {}
+        self.upsert = UPSERTS.get(self.store.engine.dialect.name)
 
     def put(self, entity, fragment=None, origin=None):
         origin = origin or self.dataset.origin
@@ -63,27 +67,25 @@ class BulkLoader(object):
             log.warning("Entity has no ID!")
 
     def _store_values(self, conn, values):
+        """Insert-or-update one row at a time, for dialects without upsert.
+
+        A conflict on (id, origin, fragment) must not abort the whole batch:
+        a single already known row would otherwise swallow the new rows next
+        to it in the same buffer.
+        """
         table = self.dataset.table
-        try:
-            conn.execute(insert(table).values(values))
-        except IntegrityError:
-            changing = (
-                "entity",
-                "timestamp",
-            )
-            for value in values:
-                stmt = update(table)
-                changed = {c: value.get(c, {}) for c in changing}
-                stmt = stmt.values(changed)
-                stmt = stmt.where(table.c.id == value["id"])
-                stmt = stmt.where(table.c.origin == value["origin"])
-                stmt = stmt.where(table.c.fragment == value["fragment"])
-                stmt = stmt.where(table.c.timestamp < value["timestamp"])
-                conn.execute(stmt)
+        for value in values:
+            stmt = update(table)
+            stmt = stmt.values(entity=value["entity"], timestamp=value["timestamp"])
+            stmt = stmt.where(table.c.id == value["id"])
+            stmt = stmt.where(table.c.origin == value["origin"])
+            stmt = stmt.where(table.c.fragment == value["fragment"])
+            if not conn.execute(stmt).rowcount:
+                conn.execute(insert(table).values(value))
 
     def _upsert_values(self, conn, values):
-        """Use postgres' upsert mechanism (ON CONFLICT TO UPDATE)."""
-        istmt = upsert(self.dataset.table).values(values)
+        """Use the dialect's upsert mechanism (ON CONFLICT DO UPDATE)."""
+        istmt = self.upsert(self.dataset.table).values(values)
         stmt = istmt.on_conflict_do_update(
             index_elements=["id", "origin", "fragment"],
             set_=dict(
@@ -113,7 +115,7 @@ class BulkLoader(object):
             conn = self.store.engine.connect()
             tx = conn.begin()
             try:
-                if self.store.is_postgres:
+                if self.upsert is not None:
                     self._upsert_values(conn, values)
                 else:
                     self._store_values(conn, values)
