@@ -508,7 +508,7 @@ def select_annotations(e: EntityProxy) -> set[str]:
     return {s for s in select_data(e, SELECT_ANNOTATED)}
 
 
-def iso_datetime(v: str | None) -> datetime | None:
+def iso_datetime(v: str | datetime | None) -> datetime | None:
     """
     Parse an ISO datetime string into an aware UTC `datetime`.
 
@@ -532,11 +532,12 @@ def iso_datetime(v: str | None) -> datetime | None:
     """
     if not v:
         return
-    dt = datetime.fromisoformat(v)
-    if dt.tzinfo is None:
+    if isinstance(v, str):
+        v = datetime.fromisoformat(v)
+    if v.tzinfo is None:
         # astimezone on a naive datetime would assume local time, not utc
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+        return v.replace(tzinfo=timezone.utc)
+    return v.astimezone(timezone.utc)
 
 
 def datetime_iso(v: datetime | str | None, default_now: bool = False) -> str | None:

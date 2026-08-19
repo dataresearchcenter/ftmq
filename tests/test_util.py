@@ -5,6 +5,7 @@ from followthemoney import EntityProxy, model
 from followthemoney.dataset import Dataset
 from followthemoney.entity import ValueEntity
 from followthemoney.statement.entity import StatementEntity
+from rigour.time import utc_now
 
 from ftmq import util
 from ftmq.query.exceptions import QueryError
@@ -228,6 +229,12 @@ def test_util_iso_datetime():
     assert util.iso_datetime("2024-01-15T12:00:00+02:00") == datetime(
         2024, 1, 15, 10, 0, tzinfo=timezone.utc
     )
+    # a datetime is passed through
+    now = utc_now()
+    assert util.iso_datetime(now) == now
+    now_naive = now.replace(tzinfo=None)
+    assert now_naive.tzinfo is None
+    assert util.iso_datetime(now_naive).tzinfo == timezone.utc
 
 
 def test_util_datetime_iso():
