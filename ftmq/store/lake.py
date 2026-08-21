@@ -187,7 +187,7 @@ class LakeStatement(Statement):
         :class:`LakeWriter` batch-key idiom and sorts a non-fragment row
         before fragment rows of the same id.
         """
-        return f"{self.id}\t{self.fragment}"
+        return f"{self.id}\t{self.origin or DEFAULT_ORIGIN}\t{self.fragment}"
 
     @classmethod
     def from_statement(
