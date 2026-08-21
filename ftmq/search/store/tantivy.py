@@ -15,7 +15,7 @@ from pydantic import ConfigDict
 
 from ftmq.query import Query
 from ftmq.search.model import AutocompleteResult, EntityDocument, EntitySearchResult
-from ftmq.search.store.base import BaseStore
+from ftmq.search.store.base import BaseStore, get_filters
 
 NUM_CPU = multiprocessing.cpu_count()
 
@@ -78,6 +78,8 @@ class TantivyStore(BaseStore):
     ) -> Iterable[EntitySearchResult]:
         searcher = self.index.searcher()
         t_query = self.parse_query(q, query)
+        if t_query is None:
+            return
         res = searcher.search(t_query)
         for score, doc_address in res.hits:
             doc = searcher.doc(doc_address)
@@ -101,13 +103,15 @@ class TantivyStore(BaseStore):
                         id=cast(str, doc.get_first("id")), name=name
                     )
 
-    def parse_query(self, q: str, query: Query | None = None) -> tantivy.Query:
+    def parse_query(self, q: str, query: Query | None = None) -> tantivy.Query | None:
+        """Compile the search term and the query's filters into a tantivy
+        query, or `None` if the filters can't match anything (an empty `in`)."""
         stmt = q
-        if query is not None:
-            if query.dataset_names:
-                stmt += f' AND {or_("datasets", query.dataset_names)}'
-            if query.schemata_names:
-                stmt += f' AND {or_("schema", query.schemata_names)}'
-            if query.countries:
-                stmt += f' AND {or_("countries", query.countries)}'
+        for term in get_filters(query):
+            if not term.values:
+                if not term.negated:  # an empty `in` matches nothing
+                    return None
+                continue  # ... and excludes nothing when negated
+            clause = or_(term.field, sorted(term.values))
+            stmt += f" AND -{clause}" if term.negated else f" AND {clause}"
         return self.index.parse_query(stmt)

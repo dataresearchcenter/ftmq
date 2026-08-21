@@ -209,6 +209,18 @@ def test_api_search(api_client):
     res = api_client.get("/entities?q=metall&filter:group.countries=gb")
     assert len(res.json()["results"]) == 0
 
+    # `exclude:` excludes - it does not select what it names
+    res = api_client.get("/entities?q=metall&exclude:dataset=donations")
+    assert len(res.json()["results"]) == 0
+    res = api_client.get("/entities?q=metall&exclude:dataset=eu_authorities")
+    assert len(res.json()["results"]) == 3
+
+    # a filter the search index cannot express -> 400, not silently wrong hits
+    res = api_client.get(
+        "/entities?q=metall&rql=or(eq(dataset,donations),eq(group.countries,de))"
+    )
+    assert res.status_code == 400
+
     # too short -> 400
     res = api_client.get("/entities?q=xx")
     assert res.status_code == 400

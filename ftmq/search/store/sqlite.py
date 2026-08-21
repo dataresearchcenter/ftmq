@@ -8,14 +8,28 @@ from typing import Any, Iterable
 from anystore.logging import get_logger
 from normality import normalize
 from pydantic import ConfigDict
-from sqlalchemy import Column, MetaData, Table, Text, Unicode, insert, or_, select, text
+from sqlalchemy import (
+    Column,
+    MetaData,
+    Table,
+    Text,
+    Unicode,
+    false,
+    insert,
+    not_,
+    or_,
+    select,
+    text,
+    true,
+)
 from sqlalchemy.engine import Engine, create_engine
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.sql.elements import ColumnElement
 
 from ftmq.query import Query
 from ftmq.search.model import AutocompleteResult, EntityDocument, EntitySearchResult
 from ftmq.search.settings import Settings
-from ftmq.search.store.base import BaseStore
+from ftmq.search.store.base import SCHEMA, BaseStore, FilterTerm, get_filters
 
 settings = Settings()
 
@@ -149,6 +163,22 @@ class SQliteStore(BaseStore):
         if len(self.buffer) == 10_000:
             self.flush()
 
+    def _term_clause(self, term: FilterTerm) -> ColumnElement[bool]:
+        """The predicate for one filter term: `schema` is a plain column, the
+        other indexed fields are `#`-joined arrays matched by substring. A term
+        without values matches nothing (as an empty `IN` does), or everything
+        when negated."""
+        if not term.values:
+            return true() if term.negated else false()
+        values = sorted(term.values)
+        clause: ColumnElement[bool]
+        if term.field == SCHEMA:
+            clause = self.table.c[term.field].in_(values)
+        else:
+            column = self.table.c[term.field]
+            clause = or_(*(column.like(f"%#{v}#%") for v in values))
+        return not_(clause) if term.negated else clause
+
     def search(
         self, q: str, query: Query | None = None
     ) -> Iterable[EntitySearchResult]:
@@ -160,27 +190,8 @@ class SQliteStore(BaseStore):
             .order_by(text("rank"))
             .limit(100)
         )
-        if query is not None:
-            if query.dataset_names:
-                stmt = stmt.where(
-                    or_(
-                        *(
-                            self.table.c.datasets.like(f"%#{d}#%")
-                            for d in query.dataset_names
-                        )
-                    )
-                )
-            if query.schemata_names:
-                stmt = stmt.where(self.table.c.schema.in_(query.schemata_names))
-            if query.countries:
-                stmt = stmt.where(
-                    or_(
-                        *(
-                            self.table.c.countries.like(f"%#{c}#%")
-                            for c in query.countries
-                        )
-                    )
-                )
+        for term in get_filters(query):
+            stmt = stmt.where(self._term_clause(term))
         with self.engine.connect() as conn:
             for res in conn.execute(stmt):
                 data = dict(res._mapping)
