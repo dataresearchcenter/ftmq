@@ -22,12 +22,15 @@ def _compare_str(s1, s2) -> bool:
 def test_sql():
     q = Query().where(M(dataset__in=["other", "test"]), M(schema="Event"))
     q = q.where(P(date__gte=2023))
-    # the property filter lifts to a `canonical_id` subquery so it ANDs with
-    # the other fields instead of competing for the same statement row
-    whereclause = """WHERE test_table.dataset IN (__[POSTCOMPILE_dataset_1])
-    AND test_table.schema = :schema_1
-    AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
-        FROM test_table WHERE test_table.prop = :prop_1 AND test_table.value >= :value_1)"""
+    # every field lifts to a `canonical_id` subquery: filters select *entities*,
+    # so they AND with each other instead of competing for the same statement
+    # row, and a matching entity is assembled from all of its statements
+    ids = "SELECT DISTINCT test_table.canonical_id FROM test_table"
+    whereclause = f"""WHERE test_table.canonical_id IN
+        ({ids} WHERE test_table.dataset IN (__[POSTCOMPILE_dataset_1]))
+    AND test_table.canonical_id IN ({ids} WHERE test_table.schema = :schema_1)
+    AND test_table.canonical_id IN
+        ({ids} WHERE test_table.prop = :prop_1 AND test_table.value >= :value_1)"""
     fields = """test_table.id, test_table.entity_id, test_table.canonical_id, test_table.prop,
     test_table.prop_type, test_table.schema, test_table.value, test_table.original_value,
     test_table.dataset, test_table.origin, test_table.lang, test_table.external,
@@ -42,12 +45,13 @@ def test_sql():
         """,
     )
 
+    # the clause is already entity-level, so the statement select applies it
+    # directly - no second pass through a `canonical_id IN (...)` wrapper
     assert isinstance(q.sql.statements, Select)
     assert _compare_str(
         q.sql.statements,
         f"""
-        SELECT {fields} FROM test_table
-        WHERE test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id FROM test_table {whereclause})
+        SELECT {fields} FROM test_table {whereclause}
         ORDER BY test_table.canonical_id
         """,
     )
@@ -61,20 +65,24 @@ def test_sql():
         """,
     )
 
+    # the clauses are entity-level already, so aggregates over "every row of a
+    # matching entity" apply them directly rather than re-selecting the ids
+    entity_clause = whereclause.removeprefix("WHERE")
     assert isinstance(q.sql.date_range, Select)
     assert _compare_str(
         q.sql.date_range,
         f"""
         SELECT min(test_table.value) AS min_1, max(test_table.value) AS max_1
         FROM test_table
-        WHERE test_table.prop_type = :prop_type_1 AND test_table.canonical_id IN
-        (SELECT DISTINCT test_table.canonical_id FROM test_table {whereclause})
+        WHERE test_table.prop_type = :prop_type_1 AND {entity_clause}
         """,
     )
 
     # order by creates a join
     q = Query().where(M(dataset__in=["other", "test"]), M(schema="Event"))
     q = q.where(P(date__gte=2023)).order_by("name", ascending=False)
+    # same three memberships, but the sort binds `prop` as :prop_1 first
+    whereclause2 = whereclause.replace(":prop_1", ":prop_2")
     assert isinstance(q.sql.statements, Select)
     assert _compare_str(
         q.sql.statements,
@@ -83,9 +91,7 @@ def test_sql():
         FROM test_table JOIN (SELECT test_table.canonical_id AS canonical_id, max(test_table.value) AS sortable_value
             FROM test_table
             WHERE test_table.prop = :prop_1 AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
-                FROM test_table WHERE test_table.dataset IN (__[POSTCOMPILE_dataset_1])
-                AND test_table.schema = :schema_1 AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
-                    FROM test_table WHERE test_table.prop = :prop_2 AND test_table.value >= :value_1))
+                FROM test_table {whereclause2})
             GROUP BY test_table.canonical_id
             ORDER BY sortable_value DESC, test_table.canonical_id)
         AS anon_1 ON test_table.canonical_id = anon_1.canonical_id
@@ -120,9 +126,7 @@ def test_sql():
         FROM test_table JOIN (SELECT test_table.canonical_id AS canonical_id, min(test_table.value) AS sortable_value
             FROM test_table
             WHERE test_table.prop = :prop_1 AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
-                FROM test_table WHERE test_table.dataset IN (__[POSTCOMPILE_dataset_1])
-                AND test_table.schema = :schema_1 AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
-                    FROM test_table WHERE test_table.prop = :prop_2 AND test_table.value >= :value_1))
+                FROM test_table {whereclause2})
             GROUP BY test_table.canonical_id
             ORDER BY sortable_value, test_table.canonical_id
             LIMIT :param_1 OFFSET :param_2)
@@ -196,9 +200,9 @@ def test_sql():
         SELECT 'properties.amountEur', 'max', anon_1.gval, max({NUMERIC}) AS max_1
         FROM test_table JOIN (SELECT DISTINCT test_table.canonical_id AS cid, substring(test_table.value, 1, 4) AS gval
         FROM test_table
-        WHERE test_table.prop_type = 'date' AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
-        FROM test_table
-        WHERE test_table.dataset = 'test' AND test_table.schema = 'Project')) AS anon_1 ON test_table.canonical_id = anon_1.cid
+        WHERE test_table.prop_type = 'date'
+        AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id FROM test_table WHERE test_table.dataset = 'test')
+        AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id FROM test_table WHERE test_table.schema = 'Project')) AS anon_1 ON test_table.canonical_id = anon_1.cid
         WHERE test_table.prop = 'amountEur' GROUP BY anon_1.gval
         """,
     )
@@ -217,13 +221,11 @@ def test_sql():
         str(q.sql.statements.compile(compile_kwargs={"literal_binds": True})),
         f"""
         SELECT {fields} FROM test_table
-        WHERE test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
-        FROM test_table
-        WHERE test_table.schema = 'Event'
-        AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
-            FROM test_table WHERE test_table.prop = 'date' AND test_table.value = '2023')
-        AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
-            FROM test_table WHERE test_table.prop_type = 'entity' AND test_table.value = 'my_id'))
+        WHERE test_table.canonical_id IN ({ids} WHERE test_table.schema = 'Event')
+        AND test_table.canonical_id IN
+            ({ids} WHERE test_table.prop = 'date' AND test_table.value = '2023')
+        AND test_table.canonical_id IN
+            ({ids} WHERE test_table.prop_type = 'entity' AND test_table.value = 'my_id')
         ORDER BY test_table.canonical_id
         """,
     )
@@ -241,9 +243,21 @@ def test_sql():
     assert _compare_str(
         q.sql.statements,
         f"""
-        SELECT {fields} FROM test_table WHERE
-        test_table.dataset = :dataset_1 AND test_table.schema = :schema_1 ORDER
-        BY test_table.canonical_id
+        SELECT {fields} FROM test_table
+        WHERE test_table.canonical_id IN ({ids} WHERE test_table.dataset = :dataset_1)
+        AND test_table.canonical_id IN ({ids} WHERE test_table.schema = :schema_1)
+        ORDER BY test_table.canonical_id
+        """,
+    )
+    # the row-level escape hatch keeps the same predicates un-lifted, for
+    # callers that want the matching statements rather than the matching
+    # entities' statements
+    assert _compare_str(
+        q.sql.row_statements,
+        f"""
+        SELECT {fields} FROM test_table
+        WHERE test_table.dataset = :dataset_1 AND test_table.schema = :schema_1
+        ORDER BY test_table.canonical_id
         """,
     )
 
@@ -252,8 +266,19 @@ def test_sql():
 
 
 def test_sql_ids():
+    # `entity_id` is not the source's id column: on a resolved store one
+    # entity's rows can carry several of them, so it lifts to a membership -
+    # otherwise the entity would come back assembled from just those rows
     q = Query().where(M(entity_id="eu-authorities-chafea"))
-    assert "WHERE test_table.entity_id = :entity_id_1" in str(q.sql.statements)
+    assert (
+        "WHERE test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id"
+        in " ".join(str(q.sql.statements).split())
+    )
+    assert "WHERE test_table.entity_id = :entity_id_1" in " ".join(
+        str(q.sql.statements).split()
+    )
+    # `canonical_id` *is* the id column: the predicate already holds for every
+    # row of a matching entity, so it needs no subquery
     q = Query().where(M(canonical_id="eu-authorities-chafea"))
     assert "WHERE test_table.canonical_id = :canonical_id_1" in str(q.sql.statements)
 
@@ -262,7 +287,8 @@ def test_sql_ids():
     q = Query().where(M(entity_id="a", canonical_id="b"))
     assert (
         "WHERE test_table.canonical_id = :canonical_id_1"
-        " AND test_table.entity_id = :entity_id_1"
+        " AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id"
+        " FROM test_table WHERE test_table.entity_id = :entity_id_1)"
         in " ".join(str(q.sql.canonical_ids).split())
     )
 
@@ -438,10 +464,16 @@ def test_sql_null():
         """,
     )
 
-    # a context column is a real column, so presence is a NULL check on it
+    # a context column is a real column, so presence is a NULL check on it -
+    # lifted, like every other leaf, to the entities having such a row
     assert _compare_str(
         where(Query().where(C(origin__null=False))),
-        "SELECT DISTINCT test_table.canonical_id FROM test_table WHERE test_table.origin IS NOT NULL",
+        """
+        SELECT DISTINCT test_table.canonical_id FROM test_table
+        WHERE test_table.canonical_id IN
+            (SELECT DISTINCT test_table.canonical_id FROM test_table
+             WHERE test_table.origin IS NOT NULL)
+        """,
     )
     assert _compare_str(
         where(Query().where(C(origin__null=True))),
@@ -457,7 +489,9 @@ def test_sql_null():
         where(Query().where(M(schema="Person"), P(name__null=False))),
         """
         SELECT DISTINCT test_table.canonical_id FROM test_table
-        WHERE test_table.schema = 'Person' AND test_table.canonical_id IN
+        WHERE test_table.canonical_id IN
+            (SELECT DISTINCT test_table.canonical_id FROM test_table WHERE test_table.schema = 'Person')
+        AND test_table.canonical_id IN
             (SELECT DISTINCT test_table.canonical_id FROM test_table WHERE test_table.prop = 'name')
         """,
     )

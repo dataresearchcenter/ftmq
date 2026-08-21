@@ -237,6 +237,8 @@ class Sql:
         self.table = source.table
         self.id_col = self.table.c[source.id_column]
         self.scope: set[str] | None = set(scope) if scope else None
+        self._row_level = False
+        """Set on the :attr:`_rows` twin – see :meth:`_membership`."""
 
     @cached_property
     def _base_clauses(self) -> list[Any]:
@@ -299,11 +301,19 @@ class Sql:
         `null=True` asks whether an entity has *no* such row at all, which no
         single statement row can answer - it becomes a `canonical_id` anti-join.
         """
+        if self._row_level:
+            return not_(present)
         return self.id_col.not_in(self._entity_ids(present))
 
     def _membership(self, pred: Any) -> Any:
         """Lift a row predicate to an entity-level membership clause: the
-        entity has at least one row matching it."""
+        entity has at least one row matching it.
+
+        The two lifting points of the compiler – :attr:`row_statements`
+        switches both off to expose the un-lifted predicate.
+        """
+        if self._row_level:
+            return pred
         return self.id_col.in_(self._entity_ids(pred))
 
     def _family_clause(self, leaf: Leaf, selector: Callable[[Any], Any]) -> Any:
@@ -329,13 +339,15 @@ class Sql:
         return self.table.c.prop_type == str(f.prop_type)
 
     def _schema_clause(self, f: Leaf) -> Any:
-        """A clause for exact-schema / is-a (`schemata`) filters.
+        """An entity-level clause for exact-schema / is-a (`schemata`) filters.
 
-        Positive comparators stay row predicates (an is-a filter expands to the
-        schema plus its non-abstract descendants). `not` / `not_in` compile as
-        entity-level anti-joins: in-memory they test the entity's single
-        resolved schema, and a row predicate would wrongly match any merged
-        entity that has one statement row outside the excluded set.
+        Positive comparators become a membership (an is-a filter expands to the
+        schema plus its non-abstract descendants); `not` / `not_in` an
+        anti-join. In-memory both test the entity's single resolved schema, so
+        a row predicate would be wrong twice over: it would match any merged
+        entity holding one row outside an excluded set, and - for a positive
+        filter - assemble the matching entity from only its rows of that
+        schema.
         """
         negated = f.comparator in ("not", "not_in")
         if isinstance(f, SchemataLeaf):
@@ -348,10 +360,10 @@ class Sql:
             values = f.value if isinstance(f.value, (set, frozenset)) else {f.value}
             positive = self.table.c.schema.in_(sorted(values))
         else:
-            return self.get_expression(self.table.c.schema, f)
+            return self._membership(self.get_expression(self.table.c.schema, f))
         if negated:
             return self._absent(positive)
-        return positive
+        return self._membership(positive)
 
     def _context_column(self, f: ContextLeaf) -> Any:
         if f.key not in self.table.c:
@@ -365,30 +377,26 @@ class Sql:
             return self.id_col
         return self.table.c[f.key]
 
-    def _context_clauses(self) -> tuple[list[Any], list[Any]]:
-        """`(row, entity)` clauses for context / storage columns
+    def _context_clauses(self) -> list[Any]:
+        """Entity-level clauses for context / storage columns
         (`C(origin=...)`, `C(fragment=...)`, ...).
 
-        A single column stays a row predicate; several distinct columns each
-        lift to an entity-level membership - in-memory a context value is the
-        entity's aggregate over its statements, so `C(origin=..) & C(lang=..)`
-        may be satisfied by two different rows.
+        In-memory a context value is the entity's aggregate over its
+        statements, so every column lifts to a membership: `C(origin=..) &
+        C(lang=..)` may be satisfied by two different rows, and a matching
+        entity is assembled from *all* its statements, not just the rows
+        carrying the filtered value.
         """
-        rows: list[Any] = []
-        entities: list[Any] = []
-        context = sorted(self.q.context, key=lambda f: f.key)
-        entity_level = len(context) > 1
-        for f in context:
+        clauses: list[Any] = []
+        for f in sorted(self.q.context, key=lambda f: f.key):
             # "unset" means no row carries the column
             if self._is_null(f) and f.value:
-                entities.append(self._absent(self._context_column(f).is_not(None)))
-            elif entity_level:
-                entities.append(
+                clauses.append(self._absent(self._context_column(f).is_not(None)))
+            else:
+                clauses.append(
                     self._membership(self.get_expression(self._context_column(f), f))
                 )
-            else:
-                rows.append(self.get_expression(self._context_column(f), f))
-        return rows, entities
+        return clauses
 
     def _leaf_clause(self, leaf: Leaf) -> Any:
         """An entity-level predicate for a single leaf.
@@ -403,16 +411,18 @@ class Sql:
         if isinstance(leaf, GroupLeaf):
             return self._family_clause(leaf, self._group_selector)
         if isinstance(leaf, (SchemaLeaf, SchemataLeaf)):
-            clause = self._schema_clause(leaf)
-            if leaf.comparator in ("not", "not_in"):
-                return clause  # already an entity-level anti-join
-            return self._membership(clause)
+            # already entity-level, membership or anti-join
+            return self._schema_clause(leaf)
         if isinstance(leaf, ContextLeaf):
             if self._is_null(leaf) and leaf.value:
                 return self._absent(self._context_column(leaf).is_not(None))
             row = self.get_expression(self._context_column(leaf), leaf)
         elif isinstance(leaf, IdLeaf):
-            row = self.get_expression(self._id_column(leaf), leaf)
+            column = self._id_column(leaf)
+            row = self.get_expression(column, leaf)
+            if column is self.id_col:
+                # already true for every row of a matching entity
+                return row
         elif isinstance(leaf, DatasetLeaf):
             row = self.get_expression(self.table.c.dataset, leaf)
         else:
@@ -477,90 +487,92 @@ class Sql:
         return clauses
 
     @cached_property
-    def _clauses(self) -> tuple[list[Any], list[Any]]:
-        """The compiled query as `(row_clauses, entity_clauses)`.
+    def _clauses(self) -> list[Any]:
+        """The compiled query, as entity-level predicates.
 
-        A *row* clause constrains individual statement rows (`dataset = 'x'`);
-        an *entity* clause is a `canonical_id` membership or anti-join, which is
-        already true for every row of a matching entity. Keeping them apart lets
-        the statement / facet selects skip the `canonical_id IN (...)`
-        indirection when nothing is row-constrained - it would be a second pass
-        over the same rows for the same answer.
+        Every leaf compiles to an id membership or anti-join, so each clause is
+        already true for *every* row of a matching entity. That is what makes
+        `Query` an entity language: a filter selects entities, and the selected
+        entity is then assembled from all of its statements. A row predicate
+        would instead assemble it from only the rows that matched - a partial
+        entity, which is never what a caller filtering by `origin`, `dataset`
+        or `schema` means.
+
+        Callers who genuinely want the matching *statements* rather than the
+        matching entities compile their own select against `self.table`.
         """
         if self._is_flat_and:
-            rows, entities = self._flat_clauses()
+            clauses = self._flat_clauses()
         else:
             # a boolean tree compiles entirely to entity-level predicates
-            rows, entities = [], [self._expr_clause(self.q.q)]
-        rows.extend(self._prune_clauses)
+            clauses = [self._expr_clause(self.q.q)]
         # the view scope selects *entities* (those with at least one statement
         # in a scoped dataset), matching the in-memory store views: filters and
         # assembly still see the full canonical entity. A row-level `dataset`
         # predicate would instead silently drop the out-of-scope fragments of
         # matching entities.
         if self.scope:
-            entities.append(
+            clauses.append(
                 self._membership(self.table.c.dataset.in_(sorted(self.scope)))
             )
-        return rows, entities
+        return clauses
 
     @cached_property
     def clause(self) -> BooleanClauseList:
-        rows, entities = self._clauses
         # `and_(true(), x)` collapses to `x`; an empty conjunction is `true`
-        return and_(true(), *self._base_clauses, *rows, *entities)
+        return and_(true(), *self._base_clauses, *self._prune_clauses, *self._clauses)
 
     @cached_property
     def _all_entities(self) -> Any:
         """A predicate matching every row of the entities this query selects,
         ignoring any slice.
 
-        When nothing is row-constrained the clause already says exactly that,
-        so it is used as-is; otherwise the id set has to be materialized first.
+        Every compiled clause is entity-level, so the conjunction already says
+        exactly that - no `canonical_id IN (...)` indirection needed. The prune
+        clauses ride along: they restrict partitions, not entities.
         """
-        rows, entities = self._clauses
-        if rows:
-            return self.id_col.in_(self.all_canonical_ids)
-        return and_(true(), *entities)
+        return and_(true(), *self._prune_clauses, *self._clauses)
 
-    def _flat_clauses(self) -> tuple[list[Any], list[Any]]:
-        """Compile a flat conjunction from the query's leaf collectors into
-        `(row, entity)` clauses: one per field, AND-ed together (`_is_flat_and`
+    def _flat_clauses(self) -> list[Any]:
+        """Compile a flat conjunction from the query's leaf collectors: one
+        entity-level clause per field, AND-ed together (`_is_flat_and`
         guarantees at most one leaf per field)."""
-        rows: list[Any] = []
-        entities: list[Any] = []
+        clauses: list[Any] = []
         by_key: Callable[[Leaf], str] = lambda f: f.key  # noqa: E731
         # the different id fields (`id` / `entity_id` / `canonical_id`) are
-        # separate fields and AND together like any other
+        # separate fields and AND together like any other. A predicate on the
+        # source's own id column already holds for every row of a matching
+        # entity, so it needs no membership wrapper; the others do - on a
+        # resolved store an entity's rows can carry several `entity_id`s.
         for f in sorted(self.q.ids, key=by_key):
-            rows.append(self.get_expression(self._id_column(f), f))
+            column = self._id_column(f)
+            expression = self.get_expression(column, f)
+            if column is self.id_col:
+                clauses.append(expression)
+            else:
+                clauses.append(self._membership(expression))
         for f in self.q.datasets:  # at most one in a flat tree
-            rows.append(self.get_expression(self.table.c.dataset, f))
-        # exact-schema and is-a (`schemata`) filters; negations compile as
-        # entity-level anti-joins
+            clauses.append(
+                self._membership(self.get_expression(self.table.c.dataset, f))
+            )
+        # exact-schema and is-a (`schemata`) filters
         schema_leaves = list(self.q.schemata) + [
             s for s in self.q._leaves if isinstance(s, SchemataLeaf)
         ]
         for f in schema_leaves:
-            clause = self._schema_clause(f)
-            if f.comparator in ("not", "not_in"):
-                entities.append(clause)
-            else:
-                rows.append(clause)
-        context_rows, context_entities = self._context_clauses()
-        rows.extend(context_rows)
-        entities.extend(context_entities)
+            clauses.append(self._schema_clause(f))
+        clauses.extend(self._context_clauses())
         # properties and prop-type groups: one entity-level clause per field, so
         # they AND across fields ("has a name AND a german country"). A single
         # row predicate would instead force one statement row to satisfy every
         # field at once, which no row can - a row holds exactly one prop.
         for f in sorted(self.q.properties, key=by_key):
-            entities.append(self._family_clause(f, self._prop_selector))
+            clauses.append(self._family_clause(f, self._prop_selector))
         # the reverse lookup `G(entities=...)` is not special here, it is just
         # the `entity` prop-type group
         for f in sorted(self.q.groups, key=by_key):
-            entities.append(self._family_clause(f, self._group_selector))
-        return rows, entities
+            clauses.append(self._family_clause(f, self._group_selector))
+        return clauses
 
     @property
     def _limit(self) -> int | None:
@@ -569,6 +581,44 @@ class Sql:
         if self.q.limit is None and self.q.offset:
             return 2**63 - 1
         return self.q.limit
+
+    @cached_property
+    def _rows(self) -> "Sql":
+        """A twin compiler that leaves every predicate at row level.
+
+        Same query, same source, same scope - only :meth:`_membership` /
+        :meth:`_absent` stop lifting, so each leaf stays the predicate that
+        would otherwise sit *inside* the `IN (SELECT DISTINCT ...)` wrapper.
+        """
+        twin = Sql(self.q, self.source, self.scope)
+        twin._row_level = True
+        return twin
+
+    @cached_property
+    def row_clause(self) -> BooleanClauseList:
+        """The query's predicates as *row* filters, un-lifted.
+
+        The inner half of :attr:`clause`: what each leaf tests about a single
+        statement row, before the entity membership wrapper. Absence leaves
+        (`null=True`) negate rather than anti-join, since no single row can
+        answer "this entity has no name".
+        """
+        return self._rows.clause
+
+    @cached_property
+    def row_statements(self) -> Select:
+        """The matching statement *rows*, not the statements of matching
+        entities.
+
+        The escape hatch out of the entity semantics every other select has:
+        `C(origin="x")` here means the x-origin rows, where
+        :attr:`statements` means all statements of entities having one. Use it
+        to read a subset of an entity's statements - a per-origin export, a
+        provenance slice - and compose your own select on top; ordering,
+        sorting and slicing are the caller's to add, because a limit over rows
+        does not mean a limit over entities.
+        """
+        return select(self.table).where(self.row_clause).order_by(self.id_col)
 
     @cached_property
     def canonical_ids(self) -> Select:
@@ -584,19 +634,15 @@ class Sql:
 
     @cached_property
     def _unsorted_statements(self) -> Select:
-        rows, entities = self._clauses
         # a slice (even offset-only or limit 0) must go through the
-        # `canonical_ids` sub-select, where limit/offset are applied. So must
-        # any mix of row and entity clauses, or only the row-matching rows of
-        # the matching entities come back instead of the whole entity.
-        if self.q.slice is not None or (rows and entities):
+        # `canonical_ids` sub-select, where limit/offset are applied.
+        if self.q.slice is not None:
             where = and_(
                 true(), *self._base_clauses, self.id_col.in_(self.canonical_ids)
             )
         else:
-            # the clause is either purely entity-level (already true for every
-            # row of a matching entity) or a deliberate row filter - either way
-            # it needs no second pass
+            # the clause is purely entity-level - already true for every row of
+            # a matching entity - so it needs no second pass
             where = self.clause
         return select(self.table).where(where).order_by(self.id_col)
 
