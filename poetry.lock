@@ -1115,20 +1115,21 @@ dev = ["black", "build", "mypy", "pytest", "pyupgrade", "sphinx", "sphinx-rtd-th
 
 [[package]]
 name = "deltalake"
-version = "1.6.2"
+version = "1.6.3"
 description = "Native Delta Lake Python binding based on delta-rs with Pandas integration"
 optional = true
 python-versions = ">=3.10"
 groups = ["main"]
 markers = "extra == \"lake\""
 files = [
-    {file = "deltalake-1.6.2-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:e317a46212f4b7fda6a20feb45a336aa0b95241366d14edb3fd4f481a087efa4"},
-    {file = "deltalake-1.6.2-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:6dd5efcf165c5418a02afe6de4b9d88c268c6c4eae2a4c38d40eab72bc69c8ee"},
-    {file = "deltalake-1.6.2-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:00ca11b3081345a922173efc5e6582edf2019554f184d9a1e961e4f888974dae"},
-    {file = "deltalake-1.6.2-cp310-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:46caeee8ea14b89975305d6d36abef99246f7ff7b1fc1194b9395d92f6db3533"},
-    {file = "deltalake-1.6.2-cp310-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:bec019bbe82b06d0947758342849978dc3167d374edf99c8ae8af0ae4bf3ac6b"},
-    {file = "deltalake-1.6.2-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:e5bf6d4ba40023e45e7b3eb2f948bcd648af7cc38463f8b60af0bf5f6278231c"},
-    {file = "deltalake-1.6.2-cp310-abi3-win_amd64.whl", hash = "sha256:235c06c1a0041afb1a52d98672d67a2fe6a38813bbea889335ff1eea6dbea5b5"},
+    {file = "deltalake-1.6.3-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:c25928df2a30a19dec3f86ffd931fd59b7f175b5781ba998b34001eb4d49e1f7"},
+    {file = "deltalake-1.6.3-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:8cec745b5dff6581c0b26c5136e3f9eea7ac715a684fe4459b5c37c66407ae02"},
+    {file = "deltalake-1.6.3-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:1a5163ed5550f5b83ba6f9a95b5e3dff09934a3165fb80ee0ab8e5919782ac6c"},
+    {file = "deltalake-1.6.3-cp310-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:d5aa5f89367deca941ed5e8496b6f6521b42ff0380609ff7a02f771ae9ae7abe"},
+    {file = "deltalake-1.6.3-cp310-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:8f2de230b5cd979b3b984db3b9a24bf14722d4b46a4d062b41fe3fd2e5bfbd68"},
+    {file = "deltalake-1.6.3-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:b51d0109b0a86b336c7254a01495536d69c72593663d8de0bc320aa4523c0502"},
+    {file = "deltalake-1.6.3-cp310-abi3-win_amd64.whl", hash = "sha256:7920a60510376f3c90feb62d182063b0202f117411e73ff9f23ffe969b800dce"},
+    {file = "deltalake-1.6.3.tar.gz", hash = "sha256:b7176c9d2a48b3ad339902e6216cdde813857b9628ef53e972889c71d2836fc4"},
 ]
 
 [package.dependencies]
@@ -2421,6 +2422,8 @@ files = [
     {file = "lxml-6.1.2-cp38-cp38-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:af6585a466cee2c5a524f7fffc591844bd604a29fdd9cade964f548512b5ef7e"},
     {file = "lxml-6.1.2-cp38-cp38-manylinux_2_28_i686.whl", hash = "sha256:841630176c15fa5d3c5cd6f755435d3c5540a82e1dd2a7de1799401f92ee6d24"},
     {file = "lxml-6.1.2-cp38-cp38-musllinux_1_2_x86_64.whl", hash = "sha256:215bb3cc4be015ccac3c7d4f25eb7b941f857fe5b02c0e3504cca61f7fb12455"},
+    {file = "lxml-6.1.2-cp38-cp38-win32.whl", hash = "sha256:7c687fd8e558c7d169f6f1987b696f37824d3a097f291bffd0ab4a2ea2307dfb"},
+    {file = "lxml-6.1.2-cp38-cp38-win_amd64.whl", hash = "sha256:69df1856cb6c065e5bfd23adcc7408bfa6dcf32b0018373a99b0769bd86e2256"},
     {file = "lxml-6.1.2-cp39-cp39-macosx_10_9_universal2.whl", hash = "sha256:2dcc69e307e0916c7a0b552212010938d02a664d29b6bda75ab2bc5fa487c861"},
     {file = "lxml-6.1.2-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:243ecef7cb7415766dd742336cd5b8361a84c6f297e2773c865b783724cbbe74"},
     {file = "lxml-6.1.2-cp39-cp39-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:08f0c9ed7cded07c5e798b17c9c25bbba5d0650c8ff0a7f65f84c634966f0f10"},
@@ -6049,7 +6052,7 @@ tomli = ">=2.4.0"
 [extras]
 aleph = ["alephclient", "furl"]
 api = ["fastapi", "furl", "granian"]
-duckdb = ["duckdb-engine", "sqlalchemy"]
+duckdb = ["duckdb", "duckdb-engine", "sqlalchemy"]
 lake = ["deltalake", "duckdb", "pandas", "pyarrow"]
 level = ["plyvel"]
 postgres = ["psycopg", "sqlalchemy"]
@@ -6060,4 +6063,4 @@ sql = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.15"
-content-hash = "24e25c47408fee2aec76a61f1bccea5d2a1d1f42dee0b547881a24d93bb78467"
+content-hash = "35dd8b0318c0981994ce4ffd3a56c7867a6b8064aecec17ec7b76537196c7e71"
