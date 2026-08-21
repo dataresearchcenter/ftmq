@@ -569,7 +569,7 @@ def datetime_iso(v: datetime | str | None, default_now: bool = False) -> str | N
     if not v:
         if default_now:
             return utc_now().isoformat()
-        return
+        return None
 
     if isinstance(v, datetime):
         if v.tzinfo is None:
