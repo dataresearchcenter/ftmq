@@ -227,10 +227,12 @@ class _FamilyExpr(Expr):
     # a field name yields a `Ref`, not an instance of this class - which is
     # the point, and something mypy has no way to spell for `__new__`
     @overload
-    def __new__(cls, field: str, /) -> Ref: ...  # type: ignore[misc]  # noqa: E704
+    def __new__(cls, field: str, /) -> Ref:  # type: ignore[misc]
+        pass
 
     @overload
-    def __new__(cls, **lookups: Any) -> "_FamilyExpr": ...  # noqa: E704
+    def __new__(cls, **lookups: Any) -> "_FamilyExpr":
+        pass
 
     def __new__(cls, *args: Any, **lookups: Any) -> Any:
         if args:
