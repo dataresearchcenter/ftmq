@@ -26,6 +26,7 @@ columns in `ftmq.query.sql`, keeping sqlalchemy out of the query IR.
 
 from __future__ import annotations
 
+from functools import total_ordering
 from typing import Any, ClassVar, Iterator
 
 from banal import ensure_list
@@ -50,6 +51,7 @@ NUMERIC_PROPS: frozenset[str] = frozenset(
 )
 
 
+@total_ordering
 class Ref:
     """A reference to one field of one family.
 
