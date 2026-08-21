@@ -183,6 +183,14 @@ class GroupRef(Ref):
         self.key = group
         self.prop_type: PropertyType = registry.groups[group]
 
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, GroupRef):
+            return NotImplemented
+        return self.key == other.key and self.prop_type == other.prop_type
+
+    def __hash__(self) -> int:
+        return hash((self.family, self.key, self.prop_type))
+
     def values(self, entity: EntityProxy) -> Iterator[str]:
         yield from entity.get_type_values(self.prop_type)
 
