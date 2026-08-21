@@ -266,6 +266,11 @@ class SchemataLeaf(Leaf):
         if str(self.comparator) not in ("eq", "in", "not", "not_in"):
             raise QueryError(f"Invalid comparator for `schemata`: `{self.comparator}`")
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, SchemataLeaf):
+            return False
+        return super().__eq__(other) and self.schemata == other.schemata
+
     def apply(self, entity: EntityProxy) -> bool:
         hit = bool(self.schemata & entity.schema.schemata)
         if str(self.comparator) in ("not", "not_in"):
