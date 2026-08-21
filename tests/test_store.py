@@ -579,7 +579,9 @@ def test_store_lake_fragment(tmp_path):
     statements = lake.writer().pop("person-1")
     keys = {s.dedupe_key for s in statements}
     assert len(statements) == 3
-    assert {k.split("\t")[1] for k in keys} == {"", "row-1", "row-2"}
+    # dedupe_key is `id\torigin\tfragment`
+    assert {k.split("\t")[1] for k in keys} == {"ingest"}
+    assert {k.split("\t")[2] for k in keys} == {"", "row-1", "row-2"}
 
 
 def test_store_lake_origins(tmp_path):
