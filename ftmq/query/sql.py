@@ -61,6 +61,37 @@ if TYPE_CHECKING:
 PruneFn: TypeAlias = Callable[["Query"], Iterable[str] | None]
 
 
+def prune_by_schema(get_partition: Callable[[str], str]) -> PruneFn:
+    """Build a [`prune`][ftmq.query.sql.SqlSource] rule for a partition column
+    that is a function of the statement schema (the lake store's `bucket`).
+
+    The returned rule maps the query's schema filters to the partitions their
+    schemata live in. `schemata_names` expands an is-a filter to its
+    non-abstract descendants, so a `schemata` filter prunes to every partition
+    they live in; no schema filter at all means no pruning.
+
+    Pruning is only sound for a positive filter: a `not` / `not_in` schema
+    comparator doesn't restrict matching entities to the partitions of its own
+    schemata, so such a query prunes nothing (the caller already skips anything
+    but a flat positive conjunction).
+
+    Args:
+        get_partition: Maps a schema name to its partition value.
+
+    Returns:
+        The prune rule.
+    """
+
+    def prune(q: "Query") -> set[str] | None:
+        for leaf in q._leaves:
+            if isinstance(leaf, (SchemaLeaf, SchemataLeaf)):
+                if leaf.comparator not in ("eq", "in"):
+                    return None
+        return {get_partition(s) for s in q.schemata_names}
+
+    return prune
+
+
 @dataclass
 class Lookup:
     """Where a [`Ref`][ftmq.query.refs.Ref] reads from in a statement table:

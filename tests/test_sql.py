@@ -3,8 +3,7 @@ from sqlalchemy import column, literal_column, table
 from sqlalchemy.sql.selectable import Select
 
 from ftmq.query import A, C, G, M, P, Query, Year
-from ftmq.query.sql import Sql, SqlSource, numeric_value
-from ftmq.store.lake import prune_by_schema
+from ftmq.query.sql import Sql, SqlSource, numeric_value, prune_by_schema
 
 
 def _literal(stmt) -> str:
