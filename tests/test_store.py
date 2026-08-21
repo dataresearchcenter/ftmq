@@ -582,6 +582,77 @@ def test_store_lake_fragment(tmp_path):
     assert {k.split("\t")[1] for k in keys} == {"", "row-1", "row-2"}
 
 
+def test_store_lake_origins(tmp_path):
+    """The same content under two origins is two rows, not one.
+
+    `origin` is a partition column and the statement id does not hash it, so
+    the writer batch must key on it – otherwise one flush keeps only the last
+    origin's row and the rest of the provenance is gone.
+    """
+    from followthemoney.statement import Statement
+
+    lake = LakeStore(uri=tmp_path / "origin_lake", dataset="test")
+    stmt = Statement(
+        entity_id="person-1",
+        prop="name",
+        schema="Person",
+        value="John Doe",
+        dataset="test",
+        last_seen="2024-01-01T00:00:00",
+    )
+    with lake.writer() as bulk:
+        bulk.add_statement(stmt.clone(origin="crawl"))
+        bulk.add_statement(stmt.clone(origin="enrich"))
+
+    import duckdb
+
+    df = duckdb.arrow(lake.deltatable.to_pyarrow_dataset()).df()
+    rows = df[df["value"] == "John Doe"]
+    assert sorted(rows["origin"]) == ["crawl", "enrich"]
+    assert len(set(rows["id"])) == 1  # same content, same statement id
+
+
+def test_store_lake_statements_to_table():
+    """The columnar packer produces exactly what `pack_statement` describes."""
+    from ftmq.store.lake import (
+        ARROW_SCHEMA,
+        LakeStatement,
+        pack_statement,
+        statements_to_table,
+    )
+
+    stmt = LakeStatement(
+        entity_id="person-1",
+        prop="name",
+        schema="Person",
+        value="John Doe",
+        dataset="test",
+        lang="eng",
+        origin="crawl",
+        first_seen="2024-01-01T00:00:00",
+        last_seen="2024-01-02T00:00:00+02:00",
+        fragment="row-1",
+    )
+    stmt.canonical_id = "canon-1"
+    table = statements_to_table([stmt])
+    assert table.schema.equals(ARROW_SCHEMA)
+
+    (packed,) = table.to_pylist()
+    expected = pack_statement(stmt)
+    for field in ARROW_SCHEMA.names:
+        if field == "source":  # writers set that column themselves
+            assert packed[field] is None
+        else:
+            assert packed[field] == expected[field], field
+
+    # timestamps land as aware UTC, parsed from whatever the producer wrote
+    assert packed["first_seen"].tzinfo is not None
+    assert packed["last_seen"].hour == 22  # +02:00 converted to UTC
+
+    # empty input still carries the schema
+    assert statements_to_table([]).schema.equals(ARROW_SCHEMA)
+
+
 def test_store_init(tmp_path):
     store = get_store()
     assert isinstance(store, SQLStore)

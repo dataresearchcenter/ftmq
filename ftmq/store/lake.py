@@ -19,9 +19,10 @@ Layout:
 """
 
 from contextlib import contextmanager
+from datetime import datetime
 from functools import cache, cached_property
 from pathlib import Path
-from typing import Any, Callable, Generator, Iterator, cast
+from typing import Any, Callable, Generator, Iterable, Iterator, cast
 from urllib.parse import urlparse
 
 import duckdb
@@ -115,7 +116,7 @@ def writer_for_bucket(bucket: str) -> WriterProperties:
 
 SA_TO_ARROW: dict[type, pa.DataType] = {
     Boolean: pa.bool_(),
-    DateTime: pa.timestamp("us"),
+    DateTime: pa.timestamp("us", tz="UTC"),
 }
 
 TABLE = table(
@@ -309,6 +310,81 @@ def pack_statement(stmt: Statement, source: str | None = None) -> SDict:
     data["origin"] = data["origin"] or DEFAULT_ORIGIN
     data["fragment"] = stmt.fragment if isinstance(stmt, LakeStatement) else ""
     return data
+
+
+def statements_to_table(statements: Iterable[Statement]) -> pa.Table:
+    """Pack statements into an :data:`ARROW_SCHEMA` table, columnwise.
+
+    One pass over ``statements``, appending each field into its own list, then a
+    single :func:`pyarrow.table` call. Prefer this over mapping
+    :func:`pack_statement` when writing many statements at once.
+
+    ``source`` is left null: it is per-write provenance rather than statement
+    content, so writers set that column themselves.
+
+    Args:
+        statements: The statements to pack.
+
+    Returns:
+        A table with exactly :data:`ARROW_SCHEMA`.
+    """
+    ids: list[str | None] = []
+    entity_ids: list[str | None] = []
+    canonical_ids: list[str | None] = []
+    datasets: list[str] = []
+    buckets: list[str] = []
+    origins: list[str] = []
+    schemata: list[str] = []
+    props: list[str] = []
+    prop_types: list[str | None] = []
+    values: list[str] = []
+    original_values: list[str | None] = []
+    langs: list[str | None] = []
+    externals: list[bool] = []
+    first_seens: list[datetime | None] = []
+    last_seens: list[datetime | None] = []
+    fragments: list[str] = []
+
+    for stmt in statements:
+        ids.append(stmt.id)
+        entity_ids.append(stmt.entity_id)
+        canonical_ids.append(stmt.canonical_id)
+        datasets.append(stmt.dataset)
+        buckets.append(get_schema_bucket(stmt.schema))
+        origins.append(stmt.origin or DEFAULT_ORIGIN)
+        schemata.append(stmt.schema)
+        props.append(stmt.prop)
+        prop_types.append(stmt.prop_type)
+        values.append(stmt.value)
+        original_values.append(stmt.original_value)
+        langs.append(stmt.lang)
+        externals.append(stmt.external)
+        first_seens.append(iso_datetime(stmt.first_seen))
+        last_seens.append(iso_datetime(stmt.last_seen))
+        fragments.append(stmt.fragment if isinstance(stmt, LakeStatement) else "")
+
+    return pa.table(
+        {
+            "id": ids,
+            "entity_id": entity_ids,
+            "canonical_id": canonical_ids,
+            "dataset": datasets,
+            "bucket": buckets,
+            "origin": origins,
+            "source": [None] * len(ids),
+            "schema": schemata,
+            "prop": props,
+            "prop_type": prop_types,
+            "value": values,
+            "original_value": original_values,
+            "lang": langs,
+            "external": externals,
+            "first_seen": first_seens,
+            "last_seen": last_seens,
+            "fragment": fragments,
+        },
+        schema=ARROW_SCHEMA,
+    )
 
 
 ViewSqlBuilder = Callable[[DeltaTable], str]
@@ -515,7 +591,7 @@ class LakeWriter(nk.Writer):
         canonical_id = self.store.linker.get_canonical(stmt.entity_id)
         stmt.canonical_id = canonical_id
         dedupe = stmt.dedupe_key if isinstance(stmt, LakeStatement) else stmt.id
-        key = f"{canonical_id}\t{dedupe}"
+        key = f"{canonical_id}\t{dedupe}\t{stmt.origin}"
         self.batch[key] = (stmt, source or self.source)
 
     def add_entity(
@@ -537,11 +613,16 @@ class LakeWriter(nk.Writer):
             self.flush()
 
     def _build_table(self) -> pa.Table:
-        rows: list[SDict] = []
-        for key in sorted(self.batch):
-            stmt, source = self.batch[key]
-            rows.append(pack_statement(stmt, source))
-        return pa.Table.from_pylist(rows, schema=ARROW_SCHEMA)
+        keys = sorted(self.batch)
+        table = statements_to_table(self.batch[key][0] for key in keys)
+        # `source` is per statement, not per statement content – set the whole
+        # column at once instead of threading it through the packer
+        sources = [self.batch[key][1] for key in keys]
+        return table.set_column(
+            ARROW_SCHEMA.get_field_index("source"),
+            "source",
+            pa.array(sources, pa.string()),
+        )
 
     def flush(self) -> None:
         if not self.batch:
