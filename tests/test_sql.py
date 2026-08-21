@@ -34,8 +34,6 @@ def test_sql():
     test_table.dataset, test_table.origin, test_table.lang, test_table.external,
     test_table.first_seen, test_table.last_seen"""
     # meta facets group over the rows of the matching entities
-    idsclause = f"""WHERE test_table.canonical_id IN
-        (SELECT DISTINCT test_table.canonical_id FROM test_table {whereclause})"""
     assert isinstance(q.sql.canonical_ids, Select)
     assert _compare_str(
         q.sql.canonical_ids,
