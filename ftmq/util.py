@@ -531,7 +531,7 @@ def iso_datetime(v: str | datetime | None) -> datetime | None:
         An aware datetime in UTC, or `None` for empty input
     """
     if not v:
-        return
+        return None
     if isinstance(v, str):
         v = datetime.fromisoformat(v)
     if v.tzinfo is None:
