@@ -266,6 +266,11 @@ class SchemataLeaf(Leaf):
         if str(self.comparator) not in ("eq", "in", "not", "not_in"):
             raise QueryError(f"Invalid comparator for `schemata`: `{self.comparator}`")
 
+    # defining `__eq__` would set `__hash__` to None; the base hash (over
+    # `field_dict`) stays correct, as `schemata` is derived from value +
+    # comparator
+    __hash__ = Leaf.__hash__
+
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, SchemataLeaf):
             return False
