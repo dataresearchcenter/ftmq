@@ -20,14 +20,14 @@ The param model is flat (AND across keys, OR within a key, `exclude:` and
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Any
+from typing import Any, Iterable
 from urllib.parse import quote, unquote
 
 from ftmq.query.aggregations import Agg, make_agg
 from ftmq.query.exceptions import QueryError
 from ftmq.query.leaves import Leaf
 from ftmq.query.nodes import OR, C, Expr, G, M, P, combine
-from ftmq.query.refs import IdRef, ref_from_wire
+from ftmq.query.refs import IdRef, Ref, ref_from_wire
 
 # Aleph meta filter keys -> ftmq meta field (some upstream keys are aliased)
 ALEPH_META = {
@@ -256,6 +256,35 @@ def params_to_aggregations(items: dict[str, list[str]]) -> set[Agg]:
     if groups and not aggs:
         aggs.add(make_agg("count", IdRef(), groups))
     return aggs
+
+
+def selection_to_params(refs: "Iterable[Ref]") -> dict[str, list[str]]:
+    """Project a [`select`][ftmq.Query.select] projection to `select=` params.
+
+    Fields are spelled exactly as the filter keys are (`properties.<name>`,
+    `group.<name>`), so one spelling addresses a field wherever it appears.
+
+    Args:
+        refs: The query's selected refs.
+
+    Returns:
+        The `{"select": [fields]}` param mapping (empty without a selection).
+    """
+    fields = sorted(ref.wire for ref in refs)
+    return {"select": fields} if fields else {}
+
+
+def params_to_selection(items: dict[str, list[str]]) -> tuple[Ref, ...]:
+    """Rebuild a projection from `select=` params - the inverse of
+    [`selection_to_params`][ftmq.query.aleph.selection_to_params].
+
+    Args:
+        items: A normalized param mapping.
+
+    Returns:
+        The selected refs (empty without a `select` param).
+    """
+    return tuple(ref_from_wire(f) for f in sorted(set(items.get("select", []))))
 
 
 def params_to_string(params: dict[str, list[str]]) -> str:

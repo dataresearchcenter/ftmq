@@ -20,7 +20,9 @@ from ftmq.query.aleph import (
     normalize_multidict,
     params_to_aggregations,
     params_to_expr,
+    params_to_selection,
     params_to_string,
+    selection_to_params,
     string_to_params,
 )
 from ftmq.query.exceptions import QueryError
@@ -35,7 +37,7 @@ from ftmq.query.leaves import (
     SchemataLeaf,
 )
 from ftmq.query.nodes import Expr, combine
-from ftmq.query.refs import NUMERIC_PROPS
+from ftmq.query.refs import NUMERIC_PROPS, GroupRef, PropRef, Ref, ref_from_wire
 from ftmq.query.rql import parse_rql
 from ftmq.query.rql import to_rql as serialize_rql
 from ftmq.query.sql import Sql, SqlSource
@@ -129,12 +131,14 @@ class Query:
         aggregator: Aggregator | None = None,
         sort: Sort | None = None,
         slice: slice | None = None,
+        selection: Iterable[Ref] | None = None,
     ):
         self.q: Expr | None = q if q is not None else combine(*nodes)
         self.aggregations: set[Agg] = set(aggregations or [])
         self.aggregator = aggregator
         self.sort = sort
         self.slice = slice
+        self.selection: tuple[Ref, ...] = tuple(sorted(set(selection or ())))
 
     def __getitem__(self, value: Any) -> Self:
         """
@@ -190,6 +194,7 @@ class Query:
             aggregator=self.aggregator,
             sort=self.sort,
             slice=self.slice,
+            selection=self.selection,
         )
         data.update(kwargs)
         return self.__class__(**data)
@@ -353,6 +358,8 @@ class Query:
             data["offset"] = self.offset
         if self.aggregations:
             data["aggregations"] = aggregations_to_dict(self.aggregations)
+        if self.selection:
+            data["select"] = [ref.wire for ref in self.selection]
         return data
 
     @classmethod
@@ -366,7 +373,14 @@ class Query:
         aggregations = None
         if data.get("aggregations"):
             aggregations = aggregations_from_dict(data["aggregations"])
-        return cls(q=q, sort=sort, slice=slice_, aggregations=aggregations)
+        selection = [ref_from_wire(f) for f in data.get("select") or []]
+        return cls(
+            q=q,
+            sort=sort,
+            slice=slice_,
+            aggregations=aggregations,
+            selection=selection,
+        )
 
     def to_params(self) -> dict[str, list[str]]:
         """
@@ -380,6 +394,7 @@ class Query:
         params = {k: list(v) for k, v in expr_to_params(self.q).items()}
         if self.aggregations:
             params.update(aggregations_to_params(self.aggregations))
+        params.update(selection_to_params(self.selection))
         if self.sort:
             direction = "asc" if self.sort.ascending else "desc"
             params["sort"] = [f"{self.sort.value}:{direction}"]
@@ -408,7 +423,13 @@ class Query:
             _limit = items.get("limit")
             limit = int(_limit[0]) if _limit else None
             slice_ = _make_slice(limit, offset)
-        return cls(q=q, sort=sort, slice=slice_, aggregations=aggregations)
+        return cls(
+            q=q,
+            sort=sort,
+            slice=slice_,
+            aggregations=aggregations,
+            selection=params_to_selection(items),
+        )
 
     def to_string(self) -> str:
         """
@@ -432,8 +453,8 @@ class Query:
         """
         if not value:
             return cls()
-        expr, aggregations = parse_rql(value)
-        return cls(q=expr, aggregations=aggregations)
+        expr, aggregations, selection = parse_rql(value)
+        return cls(q=expr, aggregations=aggregations, selection=selection)
 
     def to_rql(self) -> str:
         """Serialize the filter tree and aggregations to an
@@ -445,7 +466,7 @@ class Query:
         `QueryError` for a comparator with no RQL equivalent (`null`,
         `startswith`, `endswith`, ...).
         """
-        return serialize_rql(self.q, self.aggregations)
+        return serialize_rql(self.q, self.aggregations, self.selection)
 
     # --- building ----------------------------------------------------------
 
@@ -512,6 +533,66 @@ class Query:
             aggs.update(node.aggs)
         return self._chain(aggregations=aggs)
 
+    def select(self, *refs: Ref) -> Self:
+        """Restrict the properties the matching entities are read with.
+
+        A projection, not a filter: it never changes *which* entities match,
+        only which of their statements are read. On a statement store it
+        compiles to a `prop` / `prop_type` predicate on the statement fetch, so
+        a query for a document's `title` does not drag its `bodyText` across
+        the wire; in memory the assembled entity is pruned to the same fields.
+
+        The entity always comes back, even with none of the selected
+        properties set (its `id` statement is always read), so a projection
+        cannot silently drop a match. Its `caption` and its edges are
+        incomplete by construction - a projected entity is a view of an entity,
+        not the entity.
+
+        Example:
+            ```python
+            from ftmq import Query, M, P
+
+            q = Query().where(M(schemata="Document")).select(P("title"), P("fileName"))
+            ```
+
+        Args:
+            *refs: The `P` / `G` refs to keep, e.g. `P("title")`,
+                `G("countries")`.
+
+        Returns:
+            The updated `Query` instance.
+
+        Raises:
+            QueryError: For a ref of any other family - a meta or context ref
+                names a per-row column, not which rows to read.
+        """
+        for ref in refs:
+            if not isinstance(ref, (PropRef, GroupRef)):
+                raise QueryError(
+                    f"Cannot select `{ref.wire}`: only a property "
+                    "(`P`) or property-type group (`G`) can be projected"
+                )
+        return self._chain(selection=set(self.selection) | set(refs))
+
+    def _project(self, entity: EntityProxy) -> EntityProxy:
+        """Prune an entity to the selected properties (the in-memory half of
+        [`select`][ftmq.Query.select]).
+
+        Returns the entity untouched when nothing drops; otherwise a clone, so
+        the caller's entity is never mutated.
+        """
+        drop = [
+            prop
+            for prop in entity.iterprops()
+            if not any(ref.selects(prop) for ref in self.selection)
+        ]
+        if not drop:
+            return entity
+        clone = entity.clone()
+        for prop in drop:
+            clone.pop(prop)
+        return clone
+
     def get_aggregator(self) -> Aggregator:
         """Build an in-memory `Aggregator` from the query's aggregation specs.
 
@@ -560,4 +641,7 @@ class Query:
         if self.aggregations:
             self.aggregator = self.get_aggregator()
             entities = self.aggregator.apply(cast(Any, entities))
+        if self.selection:
+            # last: filtering, sorting and aggregating all read the full entity
+            entities = (self._project(e) for e in entities)
         yield from entities

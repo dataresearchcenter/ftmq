@@ -70,6 +70,17 @@ CASES: dict[str, Query] = {
     "agg_families": Query().aggregate(
         A(count=P("topics"), by=[G("topics"), C("origin"), M("dataset")])
     ),
+    # `select` is a projection alongside the filter tree, spelled with the same
+    # field codec (`properties.<name>` / `group.<name>`)
+    "select_props": Query()
+    .where(M(schemata="Document"))
+    .select(P("title"), P("fileName")),
+    "select_group": Query().where(P(name="Jane")).select(G("countries")),
+    "select_with_agg_and_slice": Query()
+    .where(M(schema="Payment"))
+    .aggregate(A(sum=P("amountEur"), by=P("beneficiary")))
+    .order_by("-date")[0:25]
+    .select(P("amountEur"), G("dates")),
 }
 
 

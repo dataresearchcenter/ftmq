@@ -34,8 +34,9 @@ def build_query(request: Request, authenticated: bool | None = False) -> Query:
     `empty:`, `sort`, `limit` / `offset`, `metric:<func>` / `facet`) parsed via
     [`Query.from_params`][ftmq.Query.from_params]. An optional `rql=` param
     carries a full nested [RQL][ftmq.Query.from_rql] filter tree (and, if
-    present, its aggregations); it overrides the flat filter grammar while
-    `sort` / `limit` / `offset` keep coming from the plain params.
+    present, its aggregations and its `select` projection); it overrides the
+    flat filter grammar while `sort` / `limit` / `offset` keep coming from the
+    plain params.
 
     Non-query params (`q`, `api_key`, retrieve flags) are ignored by the
     parser. The limit is capped to `settings.default_limit` unless the request
@@ -51,7 +52,11 @@ def build_query(request: Request, authenticated: bool | None = False) -> Query:
     rql = params.get("rql")
     if rql:
         rql_q = Query.from_rql(rql[0])
-        q = q._chain(q=rql_q.q, aggregations=rql_q.aggregations or q.aggregations)
+        q = q._chain(
+            q=rql_q.q,
+            aggregations=rql_q.aggregations or q.aggregations,
+            selection=rql_q.selection or q.selection,
+        )
     limit = q.limit if q.limit is not None else settings.default_limit
     if not authenticated:
         limit = min(limit, settings.default_limit)

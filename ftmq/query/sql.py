@@ -38,6 +38,8 @@ from ftmq.query.leaves import (
     PropertyLeaf,
     SchemaLeaf,
     SchemataLeaf,
+    group_conjunction,
+    row_scoped_groups,
 )
 from ftmq.query.nodes import OR, Expr
 from ftmq.query.refs import (
@@ -377,26 +379,47 @@ class Sql:
             return self.id_col
         return self.table.c[f.key]
 
-    def _context_clauses(self) -> list[Any]:
-        """Entity-level clauses for context / storage columns
-        (`C(origin=...)`, `C(fragment=...)`, ...).
+    def _row_scoped_column(self, leaf: Leaf) -> Any:
+        if isinstance(leaf, ContextLeaf):
+            return self._context_column(leaf)
+        return self.table.c.dataset
 
-        In-memory a context value is the entity's aggregate over its
-        statements, so every column lifts to a membership: `C(origin=..) &
-        C(lang=..)` may be satisfied by two different rows, and a matching
-        entity is assembled from *all* its statements, not just the rows
-        carrying the filtered value.
+    def _row_membership(self, leaves: Iterable[Leaf]) -> Any:
+        """One entity-level clause for co-referring row-scoped conditions: the
+        entity has a *single* statement row satisfying all of them.
+
+        These columns describe one statement's provenance / storage, so
+        `C(origin="crawl") & C(first_seen__gte=d)` means "has a crawl statement
+        seen since d", not "has a crawl statement and, unrelatedly, a statement
+        seen since d" - one membership per leaf answers the second question.
+
+        The matching entity is still assembled from *all* of its statements -
+        this narrows which entities match, never which rows come back (see
+        [`row_statements`][ftmq.query.sql.Sql.row_statements] for that).
         """
-        clauses: list[Any] = []
-        for f in sorted(self.q.context, key=lambda f: f.key):
-            # "unset" means no row carries the column
-            if self._is_null(f) and f.value:
-                clauses.append(self._absent(self._context_column(f).is_not(None)))
-            else:
-                clauses.append(
-                    self._membership(self.get_expression(self._context_column(f), f))
-                )
-        return clauses
+        rows = [
+            self.get_expression(self._row_scoped_column(f), f)
+            for f in sorted(leaves, key=lambda f: (f.key, f.comparator))
+        ]
+        return self._membership(and_(true(), *rows))
+
+    def _bound_clause(self, leaves: list[Leaf], selector: Callable[[Any], Any]) -> Any:
+        """One entity-level clause for several bounds on the same property or
+        group: a single row of that family whose `value` satisfies all of them.
+
+        `P(date__gte=a) & P(date__lt=b)` is one date inside the window; a
+        membership per bound would match an entity holding one date below the
+        window and another above it.
+        """
+        return self._membership(
+            and_(
+                selector(leaves[0]),
+                *(
+                    self.get_expression(self.table.c.value, f)
+                    for f in sorted(leaves, key=lambda f: f.comparator)
+                ),
+            )
+        )
 
     def _leaf_clause(self, leaf: Leaf) -> Any:
         """An entity-level predicate for a single leaf.
@@ -432,17 +455,72 @@ class Sql:
     def _expr_clause(self, expr: Expr) -> Any:
         """Compile a boolean node by combining its children's entity-level
         predicates - the general path for trees the flat collectors below
-        cannot represent (cross-field `OR`, negation)."""
-        parts = [
-            self._expr_clause(c) if isinstance(c, Expr) else self._leaf_clause(c)
-            for c in expr.children
-        ]
+        cannot represent (cross-field `OR`, negation).
+
+        In a conjunction, co-referring conditions share one sub-select
+        (`group_conjunction` decides which). Under `OR` nothing joins, and a
+        negated node negates the joined clause - the de Morgan of the same
+        reading. Children keep their order, so the emitted SQL still reads like
+        the query that was written.
+        """
+        leaves = [c for c in expr.children if isinstance(c, Leaf)]
+        if expr.connector == OR:
+            clauses = {leaf: self._leaf_clause(leaf) for leaf in leaves}
+        else:
+            clauses = self._conjunction_clauses(leaves)
+        parts: list[Any] = []
+        for child in expr.children:
+            if isinstance(child, Expr):
+                parts.append(self._expr_clause(child))
+            elif child in clauses:
+                parts.append(clauses[child])
         # an empty node matches everything - unless negated, when it matches
         # nothing (`not_(true())` compiles to `false`)
         combined = (
             or_(*parts) if parts and expr.connector == OR else and_(true(), *parts)
         )
         return not_(combined) if expr.negated else combined
+
+    def _conjunction_clauses(self, leaves: Iterable[Leaf]) -> dict[Leaf, Any]:
+        """The entity-level clauses of one AND node's leaves, joining the ones
+        that co-refer (see
+        [`group_conjunction`][ftmq.query.leaves.group_conjunction]).
+
+        The co-referring row-scoped groups
+        ([`row_scoped_groups`][ftmq.query.leaves.row_scoped_groups]) collapse
+        into a single [`_row_membership`][ftmq.query.sql.Sql._row_membership] -
+        they address different columns of the same row. Repeated bounds on one
+        property or group become one
+        [`_bound_clause`][ftmq.query.sql.Sql._bound_clause]; everything else
+        keeps its own per-leaf clause.
+
+        Returns:
+            The clauses, keyed by the leaf each is anchored at, so the caller
+            can emit them in the order the conditions were written. A leaf
+            folded into another leaf's clause is absent from the mapping.
+        """
+        groups = group_conjunction(leaves)
+        joined = {id(g) for g in row_scoped_groups(groups)}
+        row_scoped = [leaf for g in groups if id(g) in joined for leaf in g]
+        clauses: dict[Leaf, Any] = {}
+        for group in groups:
+            if id(group) in joined:
+                if row_scoped:
+                    clauses[group[0]] = self._row_membership(row_scoped)
+                    row_scoped = []
+            elif len(group) == 1:
+                clauses[group[0]] = self._leaf_clause(group[0])
+            elif isinstance(group[0], PropertyLeaf):
+                clauses[group[0]] = self._bound_clause(group, self._prop_selector)
+            elif isinstance(group[0], GroupLeaf):
+                clauses[group[0]] = self._bound_clause(group, self._group_selector)
+            else:
+                # bounds on an entity-scoped field (`schema`, an id column):
+                # every row of a matching entity carries the same value, so
+                # per-leaf and joined agree - keep the simpler compilation
+                for leaf in group:
+                    clauses[leaf] = self._leaf_clause(leaf)
+        return clauses
 
     @cached_property
     def _is_flat_and(self) -> bool:
@@ -523,6 +601,30 @@ class Sql:
         return and_(true(), *self._base_clauses, *self._prune_clauses, *self._clauses)
 
     @cached_property
+    def _selection_clause(self) -> Any | None:
+        """The row predicate of a [`select`][ftmq.Query.select] projection:
+        the statement rows to actually read back, `None` without one.
+
+        Folded into the statement selects only - never into the membership
+        sub-selects, `count` or the aggregations, which have to see the whole
+        entity. The entity's `id` statement always comes back, so an entity
+        holding none of the selected properties is still returned (empty)
+        rather than silently dropped from the result.
+        """
+        if not self.q.selection:
+            return None
+        # every selectable ref has a row predicate (`Query.select` rejects the
+        # families that read a column instead of selecting rows)
+        rows = [self.lookup(ref).where for ref in self.q.selection]
+        return or_(*[row for row in rows if row is not None], self.table.c.prop == "id")
+
+    @cached_property
+    def _projection_clauses(self) -> list[Any]:
+        """The projection as a clause list (empty without a selection)."""
+        clause = self._selection_clause
+        return [] if clause is None else [clause]
+
+    @cached_property
     def _all_entities(self) -> Any:
         """A predicate matching every row of the entities this query selects,
         ignoring any slice.
@@ -551,17 +653,24 @@ class Sql:
                 clauses.append(expression)
             else:
                 clauses.append(self._membership(expression))
-        for f in self.q.datasets:  # at most one in a flat tree
-            clauses.append(
-                self._membership(self.get_expression(self.table.c.dataset, f))
-            )
+        # `dataset` and the context columns describe one statement row, so they
+        # share a single membership (`_is_flat_and` guarantees one leaf each).
+        # An absence test is the exception - it can only be an anti-join.
+        row_scoped: list[Leaf] = []
+        for ctx in sorted(self.q.context, key=by_key):
+            if self._is_null(ctx) and ctx.value:
+                clauses.append(self._absent(self._context_column(ctx).is_not(None)))
+            else:
+                row_scoped.append(ctx)
+        row_scoped.extend(self.q.datasets)
+        if row_scoped:
+            clauses.append(self._row_membership(row_scoped))
         # exact-schema and is-a (`schemata`) filters
         schema_leaves = list(self.q.schemata) + [
             s for s in self.q._leaves if isinstance(s, SchemataLeaf)
         ]
         for f in schema_leaves:
             clauses.append(self._schema_clause(f))
-        clauses.extend(self._context_clauses())
         # properties and prop-type groups: one entity-level clause per field, so
         # they AND across fields ("has a name AND a german country"). A single
         # row predicate would instead force one statement row to satisfy every
@@ -618,7 +727,8 @@ class Sql:
         sorting and slicing are the caller's to add, because a limit over rows
         does not mean a limit over entities.
         """
-        return select(self.table).where(self.row_clause).order_by(self.id_col)
+        where = and_(true(), self.row_clause, *self._projection_clauses)
+        return select(self.table).where(where).order_by(self.id_col)
 
     @cached_property
     def canonical_ids(self) -> Select:
@@ -638,12 +748,15 @@ class Sql:
         # `canonical_ids` sub-select, where limit/offset are applied.
         if self.q.slice is not None:
             where = and_(
-                true(), *self._base_clauses, self.id_col.in_(self.canonical_ids)
+                true(),
+                *self._base_clauses,
+                *self._projection_clauses,
+                self.id_col.in_(self.canonical_ids),
             )
         else:
             # the clause is purely entity-level - already true for every row of
             # a matching entity - so it needs no second pass
-            where = self.clause
+            where = and_(true(), self.clause, *self._projection_clauses)
         return select(self.table).where(where).order_by(self.id_col)
 
     @cached_property
@@ -681,9 +794,10 @@ class Sql:
             self.table.join(sub, self.id_col == sub.c[self.source.id_column])
         )
         # the join rows still need the base scope - a matching entity may
-        # have out-of-scope statements
-        if self._base_clauses:
-            outer = outer.where(*self._base_clauses)
+        # have out-of-scope statements - and the projection
+        read = [*self._base_clauses, *self._projection_clauses]
+        if read:
+            outer = outer.where(*read)
         return outer.order_by(
             sortable if self.q.sort.ascending else desc(sortable), self.id_col
         )

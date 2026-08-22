@@ -17,11 +17,13 @@ from followthemoney.proxy import EntityProxy
 from ftmq.query.exceptions import QueryError
 from ftmq.query.leaves import (
     Leaf,
+    group_conjunction,
     leaf_from_dict,
     make_context_leaf,
     make_group_leaf,
     make_meta_leaf,
     make_property_leaf,
+    row_scoped_groups,
 )
 from ftmq.query.refs import ContextRef, GroupRef, PropRef, Ref, make_meta_ref
 
@@ -127,8 +129,67 @@ class Expr:
         elif self.connector == OR:
             result = any(c.apply(entity) for c in self.children)
         else:
-            result = all(c.apply(entity) for c in self.children)
+            result = self._apply_and(entity)
         return (not result) if self.negated else result
+
+    def _apply_and(self, entity: EntityProxy) -> bool:
+        """Evaluate a conjunction, with co-referring conditions sharing a value.
+
+        `group_conjunction` marks a field's leaves as co-referring when they
+        are all bounds, so `P(date__gte=a) & P(date__lt=b)` asks for *one* date
+        inside the window - testing each bound separately would match an entity
+        holding one date below the window and another above it. Everything else
+        keeps its own per-leaf test.
+        """
+        exprs: list[Expr] = []
+        leaves: list[Leaf] = []
+        for child in self.children:
+            (exprs if isinstance(child, Expr) else leaves).append(child)  # type: ignore[arg-type]
+        if not all(c.apply(entity) for c in exprs):
+            return False
+        groups = group_conjunction(leaves)
+        matched, joined = self._apply_row_scope(entity, groups)
+        if not matched:
+            return False
+        for group in groups:
+            if id(group) in joined:
+                continue
+            if len(group) == 1:
+                if not group[0].apply(entity):
+                    return False
+            # the leaves of a multi-leaf group are bounds on one field, so any
+            # of them reads the same values; they have to agree on one value
+            elif not any(
+                all(leaf.match(value) for leaf in group)
+                for value in group[0].values(entity)
+            ):
+                return False
+        return True
+
+    @staticmethod
+    def _apply_row_scope(
+        entity: EntityProxy, groups: list[list[Leaf]]
+    ) -> tuple[bool, set[int]]:
+        """Test the conditions addressing distinct columns of one statement row
+        against the entity's statements: one row has to satisfy all of them.
+
+        Returns whether they matched, and the ids of the groups this settled so
+        the caller skips them. It settles nothing unless the entity carries its
+        statements and there is more than one such column to correlate - an
+        entity read off a json stream has only the aggregated `context` dict,
+        where the correlation between two columns is already lost, so there
+        each condition is tested on its own as before.
+        """
+        row_groups = row_scoped_groups(groups)
+        statements = getattr(entity, "statements", None)
+        if len(row_groups) < 2 or statements is None:
+            return True, set()
+        row_leaves = [leaf for group in row_groups for leaf in group]
+        matched = any(
+            all(leaf.match_row(statement) for leaf in row_leaves)
+            for statement in statements
+        )
+        return matched, {id(group) for group in row_groups}
 
     def iter_leaves(self, cls: type | None = None) -> Iterator[Leaf]:
         """Walk the tree and yield its leaf conditions.

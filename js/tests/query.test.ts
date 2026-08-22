@@ -240,3 +240,38 @@ test("a bare facet groups an entity count", () => {
     [],
   );
 });
+
+test("select builds a projection alongside the filter tree", () => {
+  const q = new Query()
+    .where(M({ schemata: "Document" }))
+    .select(P("title"))
+    .select(P("title"), P("fileName"));
+  // deduped and ordered by wire spelling, as in Python
+  assert.deepEqual(
+    q.selection.map((r) => r.wire),
+    ["properties.fileName", "properties.title"],
+  );
+  assert.deepEqual(q.toDict().select, [
+    "properties.fileName",
+    "properties.title",
+  ]);
+  assert.deepEqual(q.toParams().select, [
+    "properties.fileName",
+    "properties.title",
+  ]);
+  assert.equal(
+    q.toRql(),
+    "and(eq(schemata,Document),select(properties.fileName,properties.title))",
+  );
+  assert.deepEqual(
+    Query.fromRql(q.toRql()).selection.map((r) => r.wire),
+    ["properties.fileName", "properties.title"],
+  );
+  // a projection rides on the api request params too
+  assert.equal(
+    q.toRequestParams().getAll("select").join(","),
+    "properties.fileName,properties.title",
+  );
+  // no projection serializes nothing
+  assert.equal("select" in new Query().where(P({ name: "x" })).toDict(), false);
+});

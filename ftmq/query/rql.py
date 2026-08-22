@@ -85,6 +85,9 @@ TO_RQL_FUNCTIONS = {v: k for k, v in RQL_FUNCTIONS.items()}
 # operator names that introduce an aggregation rather than a filter
 AGG_OPERATORS = set(RQL_FUNCTIONS) | {"aggregate"}
 
+# the RQL projection operator, carrying a `Query.select` field list
+SELECT_OPERATOR = "select"
+
 
 def _resolve_rql_field(field: str) -> tuple[str, str]:
     try:
@@ -152,33 +155,46 @@ def _node_aggs(node: dict[str, Any]) -> list[Agg]:
     return _metric_aggs(node, ())
 
 
-def parse_rql(value: str) -> tuple[Expr | None, set[Agg]]:
-    """Parse an RQL query string into a filter `Expr` and aggregation specs.
+def _node_selection(node: dict[str, Any]) -> tuple[Ref, ...]:
+    return tuple(ref_from_wire(str(arg)) for arg in node["args"])
+
+
+def parse_rql(value: str) -> tuple[Expr | None, set[Agg], tuple[Ref, ...]]:
+    """Parse an RQL query string into a filter `Expr`, aggregation specs and a
+    field projection.
 
     Filter operators (`and` / `or` / `not` + comparisons) build the tree; the
     aggregate operators (`sum` / `min` / `max` / `mean` / `count` / `aggregate`)
-    build the aggregations. At the top level they sit side by side under `and`.
+    build the aggregations, and RQL's own `select(...)` the projection. At the
+    top level they sit side by side under `and`.
 
     Raises:
         QueryError: If the RQL uses an unsupported operator or field.
     """
     data = pyrql.parse(value)
     if not data:
-        return None, set()
+        return None, set(), ()
     aggs: set[Agg] = set()
+    selection: tuple[Ref, ...] = ()
+    if data["name"] == SELECT_OPERATOR:
+        return None, aggs, _node_selection(data)
     if data["name"] in AGG_OPERATORS:
         aggs.update(_node_aggs(data))
-        return None, aggs
+        return None, aggs, selection
     if data["name"] == "and":
         filters: list[dict[str, Any]] = []
         for child in data["args"]:
-            if isinstance(child, dict) and child.get("name") in AGG_OPERATORS:
+            if not isinstance(child, dict):
+                filters.append(child)
+            elif child.get("name") == SELECT_OPERATOR:
+                selection = _node_selection(child)
+            elif child.get("name") in AGG_OPERATORS:
                 aggs.update(_node_aggs(child))
             else:
                 filters.append(child)
         expr = combine(*(rql_to_expr(f) for f in filters), connector=AND)
-        return expr, aggs
-    return rql_to_expr(data), aggs
+        return expr, aggs, selection
+    return rql_to_expr(data), aggs, selection
 
 
 def _leaf_to_rql(leaf: Leaf) -> dict[str, Any]:
@@ -234,10 +250,16 @@ def _aggs_to_rql(aggs: Iterable[Agg]) -> list[dict[str, Any]]:
     return nodes
 
 
-def to_rql(expr: Expr | None, aggs: Iterable[Agg] = ()) -> str:
-    """Serialize a filter tree and aggregation specs to an RQL query string.
+def to_rql(
+    expr: Expr | None,
+    aggs: Iterable[Agg] = (),
+    selection: Iterable[Ref] = (),
+) -> str:
+    """Serialize a filter tree, aggregation specs and a field projection to an
+    RQL query string.
 
-    Filters and aggregations sit side by side under a top-level `and`.
+    Filters, aggregations and the `select(...)` projection sit side by side
+    under a top-level `and`.
 
     Raises:
         QueryError: If a filter leaf uses a comparator with no RQL equivalent
@@ -252,6 +274,9 @@ def to_rql(expr: Expr | None, aggs: Iterable[Agg] = ()) -> str:
         else:
             nodes.append(filter_ast)
     nodes.extend(_aggs_to_rql(aggs))
+    fields = sorted(ref.wire for ref in selection)
+    if fields:
+        nodes.append({"name": SELECT_OPERATOR, "args": fields})
     if not nodes:
         return ""
     if len(nodes) == 1:

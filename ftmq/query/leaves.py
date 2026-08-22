@@ -17,7 +17,8 @@ per-family entity access plus correct `null` (present/absent) semantics.
 
 from __future__ import annotations
 
-from typing import Any, Iterator, TypedDict
+from collections import Counter, defaultdict
+from typing import Any, Iterable, Iterator, TypedDict
 
 from banal import as_bool, ensure_list, hash_data, is_listish
 from followthemoney import model
@@ -69,6 +70,106 @@ COMPARATORS: frozenset[str] = frozenset(
         "endswith",
     }
 )
+
+
+# the comparators that bound a value from one side. Two of them on the same
+# field are a range over *one* value, which is why they co-refer - see
+# `group_conjunction` below.
+ORDERED_COMPARATORS: frozenset[str] = frozenset({"gt", "gte", "lt", "lte"})
+
+
+def group_conjunction(leaves: "Iterable[Leaf]") -> "list[list[Leaf]]":
+    """Group the leaves of one AND node into the sets that co-refer.
+
+    The rule both evaluators follow: *conditions that could hold of one
+    statement row simultaneously must hold of the same row*. Within a
+    conjunction a field's leaves co-refer when there is exactly one of them, or
+    when they are all ordered comparators - a lower and an upper bound describe
+    a single value, so `P(date__gte=a) & P(date__lt=b)` is one date inside the
+    window rather than two unrelated dates.
+
+    Repeated equality / set / substring conditions keep their per-leaf reading
+    ("has each"), so `M(dataset="d1") & M(dataset="d2")` still selects entities
+    present in both datasets; they come back as separate single-leaf groups. A
+    field mixing the two kinds (`first_seen__gte=x & first_seen__not=y`) is
+    conservatively not joined either.
+
+    Expressing this once is what keeps the SQL compiler and the in-memory
+    evaluator from drifting - as with the tree canonicalization in
+    [`_normalize`][ftmq.query.nodes._normalize].
+
+    Args:
+        leaves: The leaf children of one AND node.
+
+    Returns:
+        One group per co-referring set, in the order the leaves were given (a
+        multi-leaf group holds bounds on one field; every other leaf is its own
+        group).
+    """
+    leaves = list(leaves)
+    by_field: dict[tuple[str, str], list[Leaf]] = defaultdict(list)
+    for leaf in leaves:
+        by_field[(leaf.family, leaf.key)].append(leaf)
+    groups: list[list[Leaf]] = []
+    emitted: set[tuple[str, str]] = set()
+    for leaf in leaves:
+        field = (leaf.family, leaf.key)
+        group = by_field[field]
+        if len(group) == 1:
+            groups.append(group)
+        elif all(f.comparator in ORDERED_COMPARATORS for f in group):
+            if field not in emitted:
+                emitted.add(field)
+                groups.append(group)
+        else:
+            groups.append([leaf])
+    return groups
+
+
+def is_row_scoped(leaf: "Leaf") -> bool:
+    """Whether a leaf tests a column that describes *one statement row*.
+
+    The `C` columns (`origin`, `first_seen`, `bucket`, ...) plus `dataset`: a
+    row's value for them is a fact about that statement, so AND-ed conditions
+    on distinct ones co-refer. `schema` / `schemata` / `id` / `canonical_id`
+    are excluded - a row's value there is a partial observation of an
+    entity-wide fact (an entity merged across datasets carries `LegalEntity`
+    rows *and* `Person` ones), so they stay entity-level.
+
+    An absence test (`__null=True`) is excluded as well: it asks whether *no*
+    row carries the column, which no single row can answer.
+
+    `entity_id` is deliberately not row-scoped: in memory `EntityIdRef` reads
+    `entity.id` rather than the pre-resolution column, and co-referring it
+    would widen that existing divergence.
+    """
+    if leaf.comparator == "null" and leaf.value:
+        return False
+    return isinstance(leaf, (ContextLeaf, DatasetLeaf))
+
+
+def row_scoped_groups(groups: "list[list[Leaf]]") -> "list[list[Leaf]]":
+    """The groups of [`group_conjunction`][ftmq.query.leaves.group_conjunction]
+    whose conditions co-refer *across* fields - they address different columns
+    of one statement row.
+
+    A field that `group_conjunction` had to split (repeated equality) did not
+    co-refer with itself, so it must not co-refer with anything else either:
+    `M(dataset="d1") & M(dataset="d2")` stays two conditions even next to a
+    `C(origin=..)` that would otherwise join them.
+
+    Args:
+        groups: The output of `group_conjunction` for one AND node.
+
+    Returns:
+        The subset of those groups, as the same list objects.
+    """
+    split = Counter((g[0].family, g[0].key) for g in groups)
+    return [
+        g
+        for g in groups
+        if split[(g[0].family, g[0].key)] == 1 and all(is_row_scoped(f) for f in g)
+    ]
 
 
 def parse_lookup(key: str) -> tuple[str, str]:
@@ -173,6 +274,15 @@ class Leaf:
             return bool(self.value.lower() not in value.lower())
         raise QueryError(f"Comparator not implemented: `{c}`")
 
+    def match_row(self, statement: Any) -> bool:
+        """Test this condition against a single statement row.
+
+        Only meaningful for a row-scoped leaf (see
+        [`is_row_scoped`][ftmq.query.leaves.is_row_scoped]); everything else
+        has no per-row value and never matches.
+        """
+        return False
+
     def apply(self, entity: EntityProxy) -> bool:
         """Test whether the entity matches this condition.
 
@@ -218,6 +328,13 @@ class RefLeaf(Leaf):
 
     def values(self, entity: EntityProxy) -> Iterator[str]:
         yield from self.ref.values(entity)
+
+    def match_row(self, statement: Any) -> bool:
+        value = self.ref.row_value(statement)
+        if value is None:
+            # a `null=False` leaf asks for the column to be set, which it isn't
+            return False
+        return True if self.comparator == "null" else self.match(value)
 
     @property
     def wire(self) -> str:

@@ -1230,5 +1230,250 @@
         }
       ]
     }
+  },
+  {
+    "name": "select_props",
+    "dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "schemata",
+              "op": "eq",
+              "v": "Document"
+            }
+          }
+        ]
+      },
+      "select": [
+        "properties.fileName",
+        "properties.title"
+      ]
+    },
+    "params": {
+      "filter:schemata": [
+        "Document"
+      ],
+      "select": [
+        "properties.fileName",
+        "properties.title"
+      ]
+    },
+    "string": "filter:schemata=Document&select=properties.fileName&select=properties.title",
+    "rql": "and(eq(schemata,Document),select(properties.fileName,properties.title))",
+    "params_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "schemata",
+              "op": "eq",
+              "v": "Document"
+            }
+          }
+        ]
+      },
+      "select": [
+        "properties.fileName",
+        "properties.title"
+      ]
+    },
+    "rql_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "schemata",
+              "op": "eq",
+              "v": "Document"
+            }
+          }
+        ]
+      },
+      "select": [
+        "properties.fileName",
+        "properties.title"
+      ]
+    }
+  },
+  {
+    "name": "select_group",
+    "dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "P",
+              "f": "name",
+              "op": "eq",
+              "v": "Jane"
+            }
+          }
+        ]
+      },
+      "select": [
+        "group.countries"
+      ]
+    },
+    "params": {
+      "filter:properties.name": [
+        "Jane"
+      ],
+      "select": [
+        "group.countries"
+      ]
+    },
+    "string": "filter:properties.name=Jane&select=group.countries",
+    "rql": "and(eq(properties.name,Jane),select(group.countries))",
+    "params_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "P",
+              "f": "name",
+              "op": "eq",
+              "v": "Jane"
+            }
+          }
+        ]
+      },
+      "select": [
+        "group.countries"
+      ]
+    },
+    "rql_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "P",
+              "f": "name",
+              "op": "eq",
+              "v": "Jane"
+            }
+          }
+        ]
+      },
+      "select": [
+        "group.countries"
+      ]
+    }
+  },
+  {
+    "name": "select_with_agg_and_slice",
+    "dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "schema",
+              "op": "eq",
+              "v": "Payment"
+            }
+          }
+        ]
+      },
+      "order_by": "-date",
+      "limit": 25,
+      "offset": 0,
+      "aggregations": [
+        {
+          "func": "sum",
+          "field": "properties.amountEur",
+          "by": [
+            "properties.beneficiary"
+          ]
+        }
+      ],
+      "select": [
+        "group.dates",
+        "properties.amountEur"
+      ]
+    },
+    "params": {
+      "filter:schema": [
+        "Payment"
+      ],
+      "metric:sum": [
+        "properties.amountEur"
+      ],
+      "facet": [
+        "properties.beneficiary"
+      ],
+      "select": [
+        "group.dates",
+        "properties.amountEur"
+      ],
+      "sort": [
+        "date:desc"
+      ],
+      "limit": [
+        "25"
+      ]
+    },
+    "string": "facet=properties.beneficiary&filter:schema=Payment&limit=25&metric:sum=properties.amountEur&select=group.dates&select=properties.amountEur&sort=date%3Adesc",
+    "rql": "and(eq(schema,Payment),aggregate(properties.beneficiary,sum(properties.amountEur)),select(group.dates,properties.amountEur))",
+    "params_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "schema",
+              "op": "eq",
+              "v": "Payment"
+            }
+          }
+        ]
+      },
+      "order_by": "-date",
+      "limit": 25,
+      "offset": 0,
+      "aggregations": [
+        {
+          "func": "sum",
+          "field": "properties.amountEur",
+          "by": [
+            "properties.beneficiary"
+          ]
+        }
+      ],
+      "select": [
+        "group.dates",
+        "properties.amountEur"
+      ]
+    },
+    "rql_dict": {
+      "q": {
+        "and": [
+          {
+            "leaf": {
+              "t": "M",
+              "f": "schema",
+              "op": "eq",
+              "v": "Payment"
+            }
+          }
+        ]
+      },
+      "aggregations": [
+        {
+          "func": "sum",
+          "field": "properties.amountEur",
+          "by": [
+            "properties.beneficiary"
+          ]
+        }
+      ],
+      "select": [
+        "group.dates",
+        "properties.amountEur"
+      ]
+    }
   }
 ]

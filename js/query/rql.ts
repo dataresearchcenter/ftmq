@@ -119,6 +119,9 @@ const TO_RQL_FUNCTIONS: Record<string, string> = {
 };
 const AGG_OPERATORS = new Set([...Object.keys(RQL_FUNCTIONS), "aggregate"]);
 
+// the RQL projection operator, carrying a `Query.select` field list
+const SELECT_OPERATOR = "select";
+
 function rqlLeaf(op: string, args: RqlArg[]): Expr {
   const comparator = RQL_COMPARATORS[op];
   if (comparator === undefined) {
@@ -263,17 +266,27 @@ function aggsToRql(aggs: Agg[]): RqlNode[] {
 }
 
 /** Parse an RQL query string into a filter `Expr` and aggregation specs. */
-export function parseRqlQuery(value: string): [Expr | null, Agg[]] {
+function nodeSelection(node: RqlNode): Ref[] {
+  return node.args.map((arg) => refFromWire(String(arg)));
+}
+
+export function parseRqlQuery(value: string): [Expr | null, Agg[], Ref[]] {
   const data = parseRql(value);
-  if (!data) return [null, []];
+  if (!data) return [null, [], []];
   const aggs: Agg[] = [];
+  let selection: Ref[] = [];
+  if (data.name === SELECT_OPERATOR) {
+    return [null, aggs, nodeSelection(data)];
+  }
   if (AGG_OPERATORS.has(data.name)) {
-    return [null, nodeAggs(data)];
+    return [null, nodeAggs(data), selection];
   }
   if (data.name === "and") {
     const filters: RqlNode[] = [];
     for (const child of data.args) {
-      if (isNode(child) && AGG_OPERATORS.has(child.name)) {
+      if (isNode(child) && child.name === SELECT_OPERATOR) {
+        selection = nodeSelection(child);
+      } else if (isNode(child) && AGG_OPERATORS.has(child.name)) {
         aggs.push(...nodeAggs(child));
       } else {
         filters.push(child as RqlNode);
@@ -283,13 +296,20 @@ export function parseRqlQuery(value: string): [Expr | null, Agg[]] {
       filters.map((f) => rqlToExpr(f)),
       AND,
     );
-    return [expr, aggs];
+    return [expr, aggs, selection];
   }
-  return [rqlToExpr(data), aggs];
+  return [rqlToExpr(data), aggs, selection];
 }
 
-/** Serialize a filter tree and aggregation specs to an RQL query string. */
-export function toRql(expr: Expr | null, aggs: Agg[] = []): string {
+/**
+ * Serialize a filter tree, aggregation specs and a field projection to an RQL
+ * query string.
+ */
+export function toRql(
+  expr: Expr | null,
+  aggs: Agg[] = [],
+  selection: Ref[] = [],
+): string {
   const nodes: RqlNode[] = [];
   if (expr && !expr.isEmpty) {
     const filterAst = exprToRql(expr);
@@ -300,6 +320,8 @@ export function toRql(expr: Expr | null, aggs: Agg[] = []): string {
     }
   }
   nodes.push(...aggsToRql(aggs));
+  const fields = selection.map((ref) => ref.wire).sort(byString);
+  if (fields.length) nodes.push({ name: SELECT_OPERATOR, args: fields });
   if (nodes.length === 0) return "";
   if (nodes.length === 1) return unparseRql(nodes[0]);
   return unparseRql({ name: "and", args: nodes });

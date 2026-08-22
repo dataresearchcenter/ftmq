@@ -1,9 +1,12 @@
-from followthemoney import model
+import pytest
+import sqlalchemy as sa
+from followthemoney import Statement, StatementEntity, model
 from sqlalchemy import column, literal_column, table
 from sqlalchemy.sql.selectable import Select
 
 from ftmq.query import A, C, G, M, P, Query, Year
 from ftmq.query.sql import Sql, SqlSource, numeric_value, prune_by_schema
+from ftmq.util import make_dataset, make_entity
 
 
 def _literal(stmt) -> str:
@@ -323,13 +326,46 @@ def test_sql_comparators():
 
 
 def test_sql_context_multi_key():
-    # different context columns AND at the entity level: `origin` and `lang`
-    # may be satisfied by two different statement rows
+    def compile(q: Query) -> str:
+        return " ".join(str(q.sql.canonical_ids).split())
+
+    # AND-ed context columns co-refer: one statement row carries both, so they
+    # share a single membership sub-select instead of getting one each
     q = Query().where(C(origin="x"), C(lang="en"))
-    compiled = " ".join(str(q.sql.canonical_ids).split())
+    compiled = compile(q)
+    assert compiled.count("SELECT DISTINCT test_table.canonical_id") == 2
+    assert "test_table.lang = :lang_1 AND test_table.origin = :origin_1" in compiled
+
+    # so a range over one column restricts, instead of being satisfied by two
+    # unrelated rows
+    q = Query().where(C(first_seen__gte="2024-01-01"), C(first_seen__lt="2024-02-01"))
+    compiled = compile(q)
+    assert compiled.count("SELECT DISTINCT test_table.canonical_id") == 2
+    assert (
+        "test_table.first_seen >= :first_seen_1 "
+        "AND test_table.first_seen < :first_seen_2" in compiled
+    )
+
+    # under OR they stay independent - two rows may satisfy the disjunction
+    compiled = compile(Query().where(C(origin="x") | C(lang="en")))
     assert compiled.count("SELECT DISTINCT test_table.canonical_id") == 3
-    assert "test_table.lang = :lang_1" in compiled
-    assert "test_table.origin = :origin_1" in compiled
+    assert " OR test_table.canonical_id IN " in compiled
+
+    # a negated conjunction negates the joined clause: no row is both
+    compiled = compile(Query().where(~(C(origin="x") & C(lang="en"))))
+    assert compiled.count("SELECT DISTINCT test_table.canonical_id") == 2
+    assert "canonical_id NOT IN" in compiled
+    assert "test_table.lang = :lang_1 AND test_table.origin = :origin_1" in compiled
+
+    # an absence test cannot join the conjunction - it stays an anti-join
+    compiled = compile(Query().where(C(origin__null=True), C(lang="en")))
+    assert compiled.count("SELECT DISTINCT test_table.canonical_id") == 3
+    assert "test_table.origin IS NOT NULL" in compiled
+
+    # other families keep their per-leaf entity semantics: a merged entity's
+    # schema and its statements' origins are not properties of one row
+    compiled = compile(Query().where(C(origin="x"), M(schema="Person")))
+    assert compiled.count("SELECT DISTINCT test_table.canonical_id") == 3
 
 
 def test_sql_origins():
@@ -562,3 +598,320 @@ def test_sql_prune():
 
     # the default source has no prune rules
     assert "bucket" not in _literal(Query().where(M(schema="Person")).sql.canonical_ids)
+
+
+# a real statement table to run the co-reference cases against: asserting
+# entity ids is what actually pins the semantics, the compiled sql only shows
+# how it gets there
+COREF = sa.Table(
+    "coref",
+    sa.MetaData(),
+    sa.Column("id", sa.Unicode(255), primary_key=True),
+    sa.Column("entity_id", sa.Unicode(255)),
+    sa.Column("canonical_id", sa.Unicode(255)),
+    sa.Column("schema", sa.Unicode(255)),
+    sa.Column("prop", sa.Unicode(255)),
+    sa.Column("prop_type", sa.Unicode(255)),
+    sa.Column("value", sa.Unicode()),
+    sa.Column("dataset", sa.Unicode(255)),
+    sa.Column("origin", sa.Unicode(255)),
+    sa.Column("first_seen", sa.Unicode(255)),
+)
+
+# (entity, schema, prop, value, dataset, origin, first_seen)
+COREF_ROWS = [
+    # spans the window on two different statements, is in neither dataset twice
+    ("doc-split", "Document", "title", "a", "d1", "crawl", "2020-01-01"),
+    ("doc-split", "Document", "fileName", "b", "d1", "bulk", "2026-08-22"),
+    # one statement that is both crawl and fresh
+    ("doc-hit", "Document", "title", "c", "d1", "crawl", "2026-08-22"),
+    # a merged entity: `Person` rows and `crawl` rows come from different
+    # datasets, so no single row is both
+    ("merged", "LegalEntity", "name", "e", "d1", "crawl", "2020-01-01"),
+    ("merged", "Person", "name", "e", "d2", "bulk", "2020-01-01"),
+    # a payment dated on both sides of october 2024, but never inside it
+    ("pay-split", "Payment", "date", "2023-01-01", "d1", "crawl", "2020-01-01"),
+    ("pay-split", "Payment", "date", "2025-06-01", "d1", "crawl", "2020-01-01"),
+    # ... and one dated inside it
+    ("pay-hit", "Payment", "date", "2024-10-05", "d1", "crawl", "2020-01-01"),
+]
+
+
+@pytest.fixture(scope="module")
+def coref_engine():
+    engine = sa.create_engine("sqlite://")
+    COREF.metadata.create_all(engine)
+    rows = [
+        {
+            "id": str(ix),
+            "entity_id": entity,
+            "canonical_id": entity,
+            "schema": schema,
+            "prop": prop,
+            "prop_type": "date" if prop == "date" else "name",
+            "value": value,
+            "dataset": dataset,
+            "origin": origin,
+            "first_seen": first_seen,
+        }
+        for ix, (entity, schema, prop, value, dataset, origin, first_seen) in enumerate(
+            COREF_ROWS
+        )
+    ]
+    with engine.begin() as conn:
+        conn.execute(sa.insert(COREF), rows)
+    return engine
+
+
+def test_sql_coreference(coref_engine):
+    """Conditions that could hold of one statement row must hold of the same
+    row - and the two evaluators have to agree on which those are."""
+
+    def ids(q: Query) -> list[str]:
+        with coref_engine.connect() as conn:
+            return sorted(
+                r[0] for r in conn.execute(Sql(q, SqlSource(COREF)).canonical_ids)
+            )
+
+    def memberships(q: Query) -> int:
+        return _literal(Sql(q, SqlSource(COREF)).canonical_ids).count("SELECT DISTINCT")
+
+    # --- joins: distinct row-scoped columns share a row ---------------------
+    # the case that started this: an old crawl statement plus a fresh statement
+    # of another origin is not a fresh crawl statement
+    q = Query().where(C(origin="crawl"), C(first_seen__gte="2026-08-22"))
+    assert ids(q) == ["doc-hit"]
+    assert memberships(q) == 2  # the outer select plus one shared membership
+
+    # `dataset` is row-scoped too, so it joins them
+    assert ids(Query().where(M(dataset="d2"), C(origin="crawl"))) == []
+    assert ids(Query().where(M(dataset="d1"), C(origin="crawl"))) == [
+        "doc-hit",
+        "doc-split",
+        "merged",
+        "pay-hit",
+        "pay-split",
+    ]
+
+    # --- joins: bounds on one field describe one value ----------------------
+    window = Query().where(P(date__gte="2024-10"), P(date__lt="2024-11"))
+    assert ids(window) == ["pay-hit"]
+    assert memberships(window) == 2
+    # ... for a prop-type group as well
+    assert ids(Query().where(G(dates__gte="2024-10"), G(dates__lt="2024-11"))) == [
+        "pay-hit"
+    ]
+    # ... and a row-scoped range joins the other row-scoped columns with it
+    q = Query().where(
+        C(origin="crawl"),
+        C(first_seen__gte="2026-01-01"),
+        C(first_seen__lt="2027-01-01"),
+    )
+    assert ids(q) == ["doc-hit"]
+    assert memberships(q) == 2
+
+    # --- no join: entity-wide facts ----------------------------------------
+    # a merged entity's schema is the join over its rows, so a `Person` filter
+    # must not be forced onto the same row as the origin filter
+    assert ids(Query().where(C(origin="crawl"), M(schema="Person"))) == ["merged"]
+    assert memberships(Query().where(C(origin="crawl"), M(schema="Person"))) == 3
+
+    # --- no join: repeated equality keeps set semantics ---------------------
+    # "present in both datasets", not "one statement in two datasets"
+    assert ids(Query().where(M(dataset="d1")).where(M(dataset="d2"))) == ["merged"]
+    # "has both origins", not "one statement with two origins"
+    assert ids(Query().where(C(origin="crawl")).where(C(origin="bulk"))) == [
+        "doc-split",
+        "merged",
+    ]
+    # a split field does not co-refer with anything else either
+    q = Query().where(M(dataset="d1")).where(M(dataset="d2")).where(C(origin="crawl"))
+    assert ids(q) == ["merged"]
+
+    # --- no join: different props never share a row -------------------------
+    assert ids(Query().where(P(title="a"), P(fileName="b"))) == ["doc-split"]
+
+    # --- a mixed-comparator group is conservatively not joined --------------
+    q = Query().where(C(first_seen__gte="2020-01-01"), C(first_seen__not="2026-08-22"))
+    assert memberships(q) == 3
+
+    # --- OR never joins -----------------------------------------------------
+    assert (
+        memberships(Query().where(C(origin="crawl") | C(first_seen__gte="2026"))) == 3
+    )
+
+    # --- a negated conjunction negates the joined clause --------------------
+    q = Query().where(~(C(origin="crawl") & C(first_seen__gte="2026-08-22")))
+    assert "NOT IN" in _literal(Sql(q, SqlSource(COREF)).canonical_ids)
+    assert "doc-hit" not in ids(q)
+
+    # --- an absence test stays an anti-join ---------------------------------
+    q = Query().where(C(origin__null=True), C(first_seen__gte="2020-01-01"))
+    assert memberships(q) == 3
+
+    # --- the view scope stays its own conjunct ------------------------------
+    # scoping selects entities; it must not require the *matching* statement to
+    # live in a scoped dataset
+    scoped = Sql(Query().where(C(origin="crawl")), SqlSource(COREF), scope=["d2"])
+    with coref_engine.connect() as conn:
+        assert sorted(r[0] for r in conn.execute(scoped.canonical_ids)) == ["merged"]
+
+
+def test_coreference_in_memory():
+    """The in-memory evaluator reads the same rule as the SQL one."""
+    span = make_entity(
+        {
+            "id": "pay-split",
+            "schema": "Payment",
+            "datasets": ["d1"],
+            "properties": {"date": ["2023-01-01", "2025-06-01"]},
+        }
+    )
+    hit = make_entity(
+        {
+            "id": "pay-hit",
+            "schema": "Payment",
+            "datasets": ["d1"],
+            "properties": {"date": ["2024-10-05"]},
+        }
+    )
+    # bounds co-refer: one date has to fall inside the window
+    window = Query().where(P(date__gte="2024-10"), P(date__lt="2024-11"))
+    assert not window.apply(span)
+    assert window.apply(hit)
+    # ... the same for a prop-type group
+    group_window = Query().where(G(dates__gte="2024-10"), G(dates__lt="2024-11"))
+    assert not group_window.apply(span)
+    assert group_window.apply(hit)
+
+    both = make_entity(
+        {
+            "id": "e",
+            "schema": "Person",
+            "datasets": ["d1", "d2"],
+            "properties": {"name": ["a", "b"]},
+        }
+    )
+    # repeated equality keeps set semantics, as in SQL
+    assert Query().where(M(dataset="d1")).where(M(dataset="d2")).apply(both)
+    assert Query().where(P(name="a")).where(P(name="b")).apply(both)
+    # a mixed-comparator group is not joined, so each condition stands alone
+    assert Query().where(P(date__gte="2024-10"), P(date__not="2024-10-05")).apply(span)
+    # OR is unaffected
+    assert (Query().where(P(date__gte="2025") | P(date__lt="2024"))).apply(span)
+
+
+def _statement_entity(entity_id: str, rows: list[tuple[str, str, str, str, str]]):
+    """Build a `StatementEntity` from raw rows, so the in-memory evaluator sees
+    the same statements the SQL one does."""
+    statements = []
+    for prop, value, dataset, origin, first_seen in rows:
+        statement = Statement(
+            entity_id=entity_id,
+            canonical_id=entity_id,
+            prop=prop,
+            value=value,
+            dataset=dataset,
+            schema="Document",
+        )
+        statement.origin = origin
+        statement.first_seen = first_seen
+        statements.append(statement)
+    return StatementEntity.from_statements(make_dataset("d"), statements)
+
+
+def test_coreference_in_memory_row_scoped():
+    """Row-scoped columns co-refer in memory too: a statement entity carries
+    its rows, so the correlation the SQL backends read is available here."""
+    split = _statement_entity(
+        "doc-split",
+        [
+            ("title", "a", "d1", "crawl", "2020-01-01"),
+            ("fileName", "b", "d1", "bulk", "2026-08-22"),
+        ],
+    )
+    hit = _statement_entity("doc-hit", [("title", "c", "d1", "crawl", "2026-08-22")])
+
+    # `C` used to match nothing at all on a statement entity - it read
+    # `entity.context`, which `StatementEntity` never sets
+    assert Query().where(C(origin="crawl")).apply(split)
+    assert not Query().where(C(origin="nope")).apply(split)
+
+    # distinct row-scoped columns have to hold for one statement
+    fresh_crawl = Query().where(C(origin="crawl"), C(first_seen__gte="2026-08-22"))
+    assert not fresh_crawl.apply(split)
+    assert fresh_crawl.apply(hit)
+    # ... `dataset` among them
+    assert Query().where(M(dataset="d1"), C(origin="crawl")).apply(hit)
+    assert not Query().where(M(dataset="d2"), C(origin="crawl")).apply(hit)
+
+    # repeated equality keeps set semantics
+    assert Query().where(C(origin="crawl")).where(C(origin="bulk")).apply(split)
+    # an entity-wide fact does not join the row conjunction
+    assert Query().where(M(schema="Document"), C(origin="crawl")).apply(split)
+    # OR stays independent
+    assert Query().where(C(origin="crawl") | C(first_seen__gte="2026")).apply(split)
+
+    # an entity without statements (a json stream) has only the aggregated
+    # context dict, so its conditions are tested one by one
+    aggregated = make_entity(
+        {
+            "id": "doc-split",
+            "schema": "Document",
+            "datasets": ["d1"],
+            "origin": ["crawl", "bulk"],
+            "first_seen": "2026-08-22",
+            "properties": {"title": ["a"]},
+        }
+    )
+    assert Query().where(C(origin="crawl")).apply(aggregated)
+    assert fresh_crawl.apply(aggregated)
+
+
+def test_sql_select_projection():
+    q = Query().where(M(schema="Person")).select(P("name"), G("countries"))
+    statements = _literal(Sql(q, SqlSource(COREF)).statements)
+    # the projection is a row predicate on the statement fetch ...
+    assert "coref.prop = 'name'" in statements
+    assert "coref.prop_type = 'country'" in statements
+    # ... and the entity's own id statement always comes back, so an entity
+    # holding none of the selected properties is not silently dropped
+    assert "coref.prop = 'id'" in statements
+
+    # it must not reach anything that decides *which* entities match
+    for select in (
+        Sql(q, SqlSource(COREF)).canonical_ids,
+        Sql(q, SqlSource(COREF)).count,
+    ):
+        assert "coref.prop" not in _literal(select)
+
+    # nor the aggregations, which read the whole entity
+    agg = q.aggregate(A(count=M("id"), by=G("countries")))
+    assert _literal(Sql(agg, SqlSource(COREF)).aggregations) == _literal(
+        Sql(
+            Query()
+            .where(M(schema="Person"))
+            .aggregate(A(count=M("id"), by=G("countries"))),
+            SqlSource(COREF),
+        ).aggregations
+    )
+
+    # a sort reads the sortable value from the unprojected table, so ordering
+    # by a property that was projected away still works
+    sorted_sql = _literal(Sql(q.order_by("-birthDate"), SqlSource(COREF)).statements)
+    assert "coref.prop = 'birthDate'" in sorted_sql
+    assert "coref.prop = 'id'" in sorted_sql
+
+    # a slice routes through the canonical_ids sub-select, which stays unprojected
+    sliced = _literal(Sql(q[:10], SqlSource(COREF)).statements)
+    assert "coref.prop = 'id'" in sliced
+
+    # the row-level escape hatch is projected too
+    assert "coref.prop = 'id'" in _literal(Sql(q, SqlSource(COREF)).row_statements)
+
+    # without a selection nothing changes
+    plain = Query().where(M(schema="Person"))
+    assert (
+        "coref.prop"
+        not in _literal(Sql(plain, SqlSource(COREF)).statements).split("WHERE", 1)[1]
+    )

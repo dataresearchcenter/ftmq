@@ -198,6 +198,21 @@ export function paramsToAggregations(items: Params): Agg[] {
   return aggs;
 }
 
+/**
+ * Project a `Query.select` projection to `select=` params. Fields are spelled
+ * exactly as the filter keys are (`properties.<name>`, `group.<name>`).
+ */
+export function selectionToParams(refs: Ref[]): Params {
+  const fields = refs.map((ref) => ref.wire).sort(byString);
+  return fields.length ? { select: fields } : {};
+}
+
+/** Rebuild a projection from `select=` params. */
+export function paramsToSelection(items: Params): Ref[] {
+  const fields = [...new Set(items.select ?? [])].sort(byString);
+  return fields.map(refFromWire);
+}
+
 // match Python `urllib.parse.quote(value, safe="/")`
 function quote(value: string): string {
   return encodeURIComponent(value)

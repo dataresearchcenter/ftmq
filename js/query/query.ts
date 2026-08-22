@@ -11,11 +11,14 @@ import {
   type Params,
   paramsToAggregations,
   paramsToExpr,
+  paramsToSelection,
   paramsToString,
+  selectionToParams,
   stringToParams,
 } from "./aleph.js";
 import { QueryError } from "./exceptions.js";
 import { AND, combine, Expr } from "./nodes.js";
+import { refFromWire, type Ref } from "./refs.js";
 import { parseRqlQuery, toRql } from "./rql.js";
 import { byString } from "./util.js";
 
@@ -72,6 +75,14 @@ interface QueryInit {
   aggregations?: Agg[];
   sort?: Sort | null;
   slice?: Slice | null;
+  selection?: Ref[];
+}
+
+/** Dedupe and order refs by their wire spelling, as the Python side does. */
+function uniqueRefs(refs: Ref[]): Ref[] {
+  const seen = new Map<string, Ref>();
+  for (const ref of refs) seen.set(ref.wire, ref);
+  return [...seen.values()].sort((a, b) => byString(a.wire, b.wire));
 }
 
 /** A filter over FtM entities, mirroring the Python `ftmq.Query` serialization. */
@@ -80,12 +91,14 @@ export class Query {
   aggregations: Agg[];
   sort: Sort | null;
   sliceRange: Slice | null;
+  selection: Ref[];
 
   constructor(init: QueryInit = {}) {
     this.q = init.q ?? null;
     this.aggregations = uniqueAggs(init.aggregations ?? []);
     this.sort = init.sort ?? null;
     this.sliceRange = init.slice ?? null;
+    this.selection = uniqueRefs(init.selection ?? []);
   }
 
   private chain(patch: QueryInit): Query {
@@ -97,6 +110,8 @@ export class Query {
           : this.aggregations,
       sort: patch.sort !== undefined ? patch.sort : this.sort,
       slice: patch.slice !== undefined ? patch.slice : this.sliceRange,
+      selection:
+        patch.selection !== undefined ? patch.selection : this.selection,
     });
   }
 
@@ -125,6 +140,18 @@ export class Query {
     const aggs = [...this.aggregations];
     for (const node of nodes) aggs.push(...node.aggs);
     return this.chain({ aggregations: uniqueAggs(aggs) });
+  }
+
+  /**
+   * Restrict the properties the matching entities are read with.
+   *
+   * A projection, not a filter: it never changes *which* entities match, only
+   * which of their properties come back. Takes `P` / `G` refs; the server
+   * rejects anything else (as everywhere in this package, field validation is
+   * server-side).
+   */
+  select(...refs: Ref[]): Query {
+    return this.chain({ selection: uniqueRefs([...this.selection, ...refs]) });
   }
 
   // --- slice accessors -----------------------------------------------------
@@ -187,6 +214,9 @@ export class Query {
     if (this.aggregations.length) {
       data.aggregations = aggregationsToDict(this.aggregations);
     }
+    if (this.selection.length) {
+      data.select = this.selection.map((ref) => ref.wire);
+    }
     return data;
   }
 
@@ -200,7 +230,10 @@ export class Query {
     const aggregations = data.aggregations
       ? aggregationsFromDict(data.aggregations)
       : [];
-    return new Query({ q, sort, slice, aggregations });
+    const selection = (data.select ?? []).map((f: string) =>
+      refFromWire(String(f)),
+    );
+    return new Query({ q, sort, slice, aggregations, selection });
   }
 
   toParams(): Params {
@@ -208,6 +241,7 @@ export class Query {
     if (this.aggregations.length) {
       Object.assign(params, aggregationsToParams(this.aggregations));
     }
+    Object.assign(params, selectionToParams(this.selection));
     if (this.sort) {
       const direction = this.sort.ascending ? "asc" : "desc";
       params.sort = [`${this.sort.value}:${direction}`];
@@ -240,7 +274,13 @@ export class Query {
       const limit = items.limit ? parseInt(items.limit[0], 10) : null;
       slice = makeSlice(limit, offset);
     }
-    return new Query({ q, sort, slice, aggregations: aggs });
+    return new Query({
+      q,
+      sort,
+      slice,
+      aggregations: aggs,
+      selection: paramsToSelection(items),
+    });
   }
 
   toString(): string {
@@ -253,12 +293,12 @@ export class Query {
   }
 
   toRql(): string {
-    return toRql(this.q, this.aggregations);
+    return toRql(this.q, this.aggregations, this.selection);
   }
 
   static fromRql(value: string): Query {
-    const [q, aggregations] = parseRqlQuery(value);
-    return new Query({ q, aggregations });
+    const [q, aggregations, selection] = parseRqlQuery(value);
+    return new Query({ q, aggregations, selection });
   }
 
   /**
@@ -278,6 +318,7 @@ export class Query {
     if (this.aggregations.length) {
       Object.assign(params, aggregationsToParams(this.aggregations));
     }
+    Object.assign(params, selectionToParams(this.selection));
     if (this.sort) {
       const direction = this.sort.ascending ? "asc" : "desc";
       params.sort = [`${this.sort.value}:${direction}`];

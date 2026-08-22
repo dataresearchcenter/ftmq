@@ -66,6 +66,27 @@ class Ref:
         """Yield this field's values for an entity."""
         raise NotImplementedError
 
+    def row_value(self, statement: Any) -> str | None:
+        """This field's value on a single statement, `None` if it has none.
+
+        Only the row-scoped columns have one - the value of `schema` or `id` on
+        a row is a partial observation of an entity-wide fact, not a fact about
+        that row, so those stay `None` here (see
+        [`is_row_scoped`][ftmq.query.leaves.is_row_scoped]).
+        """
+        return None
+
+    def selects(self, prop: Property) -> bool:
+        """Whether a [`select`][ftmq.Query.select] projection on this ref keeps
+        the given property.
+
+        Only the families that address the statement's `prop` / `prop_type`
+        column can - `Query.select` rejects the others, so this stays `False`
+        for them. The in-memory counterpart of the row predicates
+        [`Sql.lookup`][ftmq.query.sql.Sql.lookup] returns.
+        """
+        return False
+
     @property
     def is_numeric(self) -> bool:
         """Whether the values are numbers (read through followthemoney's
@@ -135,6 +156,10 @@ class DatasetRef(MetaRef):
         # `.datasets` is added by the StatementEntity / ValueEntity subclasses
         yield from getattr(entity, "datasets", [])
 
+    def row_value(self, statement: Any) -> str | None:
+        value = getattr(statement, "dataset", None)
+        return None if value is None else str(value)
+
 
 class SchemaRef(MetaRef):
     """The entity schema."""
@@ -159,6 +184,9 @@ class PropRef(Ref):
 
     def values(self, entity: EntityProxy) -> Iterator[str]:
         yield from entity.get(self.key, quiet=True)
+
+    def selects(self, prop: Property) -> bool:
+        return prop.name == self.key
 
     @property
     def is_numeric(self) -> bool:
@@ -194,6 +222,9 @@ class GroupRef(Ref):
     def values(self, entity: EntityProxy) -> Iterator[str]:
         yield from entity.get_type_values(self.prop_type)
 
+    def selects(self, prop: Property) -> bool:
+        return bool(prop.type == self.prop_type)
+
     @property
     def wire(self) -> str:
         return f"{GROUP_PREFIX}{self.key}"
@@ -209,9 +240,35 @@ class ContextRef(Ref):
         self.key = key
 
     def values(self, entity: EntityProxy) -> Iterator[str]:
+        # a statement entity carries the rows themselves, and its `context` slot
+        # is never populated - read the column off each statement, the way the
+        # SQL backends do. Only an entity without statements (a `ValueEntity`
+        # off a json stream) falls back to the aggregated context dict.
+        statements = getattr(entity, "statements", None)
+        if statements is not None:
+            seen: set[str] = set()
+            for statement in statements:
+                value = self.row_value(statement)
+                if value is not None and value not in seen:
+                    seen.add(value)
+                    yield value
+            return
         context: dict[str, Any] = getattr(entity, "context", None) or {}
-        for value in ensure_list(context.get(self.key)):
+        values = context.get(self.key)
+        if values is None:
+            # `ValueEntity` / `EntityProxy` pop the well-known provenance
+            # fields (`first_seen`, `last_seen`, `datasets`) into their own
+            # attributes instead of leaving them in `context`, so a field is
+            # addressable under one spelling either way
+            attribute = getattr(entity, self.key, None)
+            if not callable(attribute):
+                values = attribute
+        for value in ensure_list(values):
             yield str(value)
+
+    def row_value(self, statement: Any) -> str | None:
+        value = getattr(statement, self.key, None)
+        return None if value is None else str(value)
 
     @property
     def wire(self) -> str:

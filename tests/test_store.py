@@ -883,3 +883,61 @@ def test_store_default_dataset_name_resolves(tmp_path):
         assert [e.id for e in view.query(Query())] == ["e1"]
         # the detail path has to resolve what the list path returned
         assert view.get_entity("e1") is not None
+
+
+def test_store_select_projection(tmp_path, eu_authorities):
+    """`Query.select` narrows the properties read back, identically on a
+    statement backend (a `prop` pushdown) and in memory (a post-assembly
+    prune) - and never drops a matching entity."""
+    scope = get_scope_dataset("eu_authorities")
+    entities = [e for e in eu_authorities if e.schema.name == "PublicBody"]
+    # an entity holding none of the selected properties: it still has to come
+    # back (its `id` statement is always read), just without properties
+    entities.append(
+        make_entity(
+            {
+                "id": "bare",
+                "schema": "PublicBody",
+                "datasets": ["eu_authorities"],
+                "properties": {"description": ["nothing selected here"]},
+            },
+            StatementEntity,
+            scope,
+        )
+    )
+
+    base = Query().where(M(schema="PublicBody"))
+    selected = base.select(P("name"), G("countries"))
+
+    def read(store: Store) -> dict[str, dict]:
+        with store.writer() as bulk:
+            for proxy in entities:
+                bulk.add_entity(proxy)
+        view = store.view(scope)
+        assert sorted(e.id for e in view.query(base)) == sorted(
+            e.id for e in view.query(selected)
+        ), "a projection must not change which entities match"
+        return {e.id: e.properties for e in view.query(selected)}
+
+    memory = read(MemoryStore(dataset=scope, linker=get_resolver()))
+    sql = read(
+        SQLStore(
+            dataset=scope, linker=get_resolver(), uri=f"sqlite:///{tmp_path}/sel.db"
+        )
+    )
+    assert memory == sql
+
+    # only the selected property and the country-typed ones survive
+    assert {p for props in sql.values() for p in props} == {"name", "jurisdiction"}
+    assert sql["bare"] == {}
+    assert any(props.get("name") for props in sql.values())
+
+    # aggregations read the full entity, so a projection cannot change them
+    agg = base.aggregate(A(count=M("id"), by=G("countries")))
+    store = SQLStore(
+        dataset=scope, linker=get_resolver(), uri=f"sqlite:///{tmp_path}/sel.db"
+    )
+    view = store.view(scope)
+    assert view.aggregations(agg) == view.aggregations(
+        agg.select(P("name"))
+    ), "a projection must not change aggregations"

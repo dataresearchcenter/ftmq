@@ -1,7 +1,10 @@
+from typing import Any
+
 import pytest
 
 from ftmq import A, C, G, M, P, Query, QueryError, Year
 from ftmq.query import Expr
+from ftmq.query.refs import GroupRef, PropRef
 from ftmq.util import make_entity
 
 PERSON = make_entity(
@@ -527,3 +530,91 @@ def test_context_node():
     q = Query().where(C(fragment="x"))
     assert q.to_params() == {"filter:context.fragment": ["x"]}
     assert Query.from_string(q.to_string()).to_dict() == q.to_dict()
+
+
+def test_select_projection():
+    q = Query().where(M(schemata="Document")).select(P("title"), P("fileName"))
+    assert q.selection == (PropRef("fileName"), PropRef("title"))
+    # a projection is not a filter: it leaves the tree alone
+    assert q.q == Query().where(M(schemata="Document")).q
+
+    # only the families addressing the `prop` / `prop_type` column project
+    for ref in (M("dataset"), M("id"), C("origin"), Year()):
+        with pytest.raises(QueryError):
+            Query().select(ref)
+    assert Query().select(G("countries")).selection == (GroupRef("countries"),)
+
+    # the wire spelling is the one the filter grammar uses
+    assert q.to_dict()["select"] == ["properties.fileName", "properties.title"]
+    assert q.to_params()["select"] == ["properties.fileName", "properties.title"]
+    assert "select=properties.fileName&select=properties.title" in q.to_string()
+    assert q.to_rql() == (
+        "and(eq(schemata,Document),select(properties.fileName,properties.title))"
+    )
+
+    # ... and round-trips losslessly on all four surfaces, alongside every
+    # other part of a query
+    q = (
+        q.where(P(country="de"))
+        .aggregate(A(count=M("id"), by=G("countries")))
+        .order_by("-title")[10:20]
+    )
+    for other in (
+        Query.from_dict(q.to_dict()),
+        Query.from_params(q.to_params()),
+        Query.from_string(q.to_string()),
+    ):
+        assert other.to_dict() == q.to_dict()
+    # rql carries no sort or slice
+    assert Query.from_rql(q.to_rql()).selection == q.selection
+
+    # selecting again unions
+    assert Query().select(P("title")).select(P("title"), P("name")).selection == (
+        PropRef("name"),
+        PropRef("title"),
+    )
+    # an empty selection serializes nothing
+    assert "select" not in Query().where(P(name="x")).to_dict()
+    assert "select" not in Query().where(P(name="x")).to_params()
+
+
+def test_select_projects_entities():
+    entities = [
+        make_entity(
+            {
+                "id": "e1",
+                "schema": "Person",
+                "datasets": ["d"],
+                "properties": {
+                    "name": ["Jane"],
+                    "country": ["de"],
+                    "notes": ["secret"],
+                },
+            }
+        ),
+        make_entity(
+            {
+                "id": "e2",
+                "schema": "Person",
+                "datasets": ["d"],
+                "properties": {"notes": ["nothing selected"]},
+            }
+        ),
+    ]
+    q = Query().where(M(schema="Person")).select(P("name"), G("countries"))
+    projected = list(q.apply_iter(iter(entities)))
+    # a projection never drops a match, it only narrows what is read
+    assert [e.id for e in projected] == ["e1", "e2"]
+    assert projected[0].properties == {"name": ["Jane"], "country": ["de"]}
+    assert projected[1].properties == {}
+    # the caller's entities are cloned, not mutated
+    assert entities[0].get("notes") == ["secret"]
+
+    # the projection runs last, so aggregations still see the full entity
+    def count_notes(query: Query) -> Any:
+        _ = list(query.apply_iter(iter(entities)))
+        return dict(query.aggregator.result)
+
+    agg = Query().where(M(schema="Person")).aggregate(A(count=P("notes")))
+    assert count_notes(agg)["count"]["properties.notes"] == 2
+    assert count_notes(agg.select(P("name"))) == count_notes(agg)

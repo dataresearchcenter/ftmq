@@ -573,3 +573,32 @@ def test_cli_statements_cast_types(tmp_path: Path):
         cli, ["statements", "cast-types", "-i", str(in_uri), "--output-format", "xml"]
     )
     assert result.exit_code == 1
+
+
+def test_cli_select(fixtures_path: Path):
+    """A query string is a whole query, so its `select` projection has to
+    survive the CLI's reassembly of `-q` / `--rql` into one query."""
+    in_uri = str(fixtures_path / "eu_authorities.ftm.json")
+
+    def props(*args: str) -> dict:
+        result = runner.invoke(cli, ["-i", in_uri, *args])
+        assert result.exit_code == 0, result.output
+        return orjson.loads(_get_lines(result.output)[0])["properties"]
+
+    full = props("-q", "filter:schema=PublicBody&limit=1")
+    assert len(full) > 2
+
+    # aleph params, rql, and both at once (they union)
+    assert props(
+        "-q",
+        "filter:schema=PublicBody&limit=1&select=properties.name&select=group.countries",
+    ) == {"name": full["name"], "jurisdiction": full["jurisdiction"]}
+    assert props(
+        "--rql", "and(eq(schema,PublicBody),select(properties.name))", "-q", "limit=1"
+    ) == {"name": full["name"]}
+    assert props(
+        "--rql",
+        "select(properties.name)",
+        "-q",
+        "filter:schema=PublicBody&limit=1&select=group.countries",
+    ) == {"name": full["name"], "jurisdiction": full["jurisdiction"]}
