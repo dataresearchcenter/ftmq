@@ -1,6 +1,6 @@
 {
   "name": "@dataresearchcenter/ftmq",
-  "version": "4.10.0",
+  "version": "5.0.0",
   "description": "javascript interface for ftmq",
   "type": "module",
   "main": "dist/index.js",
