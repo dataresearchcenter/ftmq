@@ -69,6 +69,13 @@ class Catalog(BaseModel):
         for dataset in self.datasets:
             yield from dataset.iterate()
 
+    def get(self, name: str) -> Dataset | None:
+        """Get a dataset by name from this catalog."""
+        for dataset in self.datasets:
+            if dataset.name == name:
+                return dataset
+        return None
+
     @property
     def names(self) -> set[str]:
         """Get the names of all datasets in the catalog."""

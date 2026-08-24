@@ -12,8 +12,11 @@
 - Sql:
     - sqlite: `get_store("sqlite:///data.db")`
     - postgresql: `get_store("postgresql://user:password@host/db")`
+    - duckdb: `get_store("duckdb://data.duckdb")` (needs the `duckdb` extra)
     - ...any other supported by [`sqlalchemy`](https://www.sqlalchemy.org/)
 - Clickhouse via [`ftm-clickhouse`](https://github.com/investigativedata/ftm-columnstore/): `get_store("clickhouse://localhost")`
+
+The duckdb backend is the sql store against a [duckdb](https://duckdb.org) database file. Its path is spelled directly after the scheme: `duckdb://relative.duckdb`, `duckdb:///absolute/path.duckdb`, and an empty path (or `duckdb://:memory:`) opens an in-memory database. Don't confuse it with the delta lake store (`lake+...`), which queries parquet files through duckdb instead of owning a database file.
 
 ## Read and query entities
 
@@ -29,9 +32,9 @@ proxies = store.iterate()
 Filter entities with a [`Query`](./query.md) object using a [store view][ftmq.store.base.View]:
 
 ```python
-from ftmq import Query
+from ftmq import Query, M
 
-q = Query().where(dataset="my_dataset", schema="Person")
+q = Query().where(M(dataset="my_dataset"), M(schema="Person"))
 view = store.default_view()
 proxies = store.query(q)
 ```
@@ -39,7 +42,7 @@ proxies = store.query(q)
 ### Command line
 
 ```bash
-ftmq -i sqlite:///followthemoney.store --dataset=my_dataset --schema=Person
+ftmq -i sqlite:///followthemoney.store -d my_dataset -q 'filter:schema=Person'
 ```
 
 [cli reference](./reference/cli.md)
@@ -64,16 +67,18 @@ from ftmq.io import smart_write_proxies
 smart_write_proxies("sqlite:///followthemoney.store", proxies)
 ```
 
+The writer normalizes number and date values on the way in (`"324,687.00"` is stored as `"324687.00"`, the raw string as the statement's `original_value`); the SQL backends rely on this format when aggregating or sorting numerically. Pass `cast_types=False` to `get_store` to skip it, and migrate existing data with [`ftmq statements cast-types`](./cli.md#statements).
+
 ### Command line
 
 ```bash
 cat entities.ftm.json | ftmq -o sqlite:///followthemoney.store
 ```
 
-If the input entities don't have a `dataset` property, ensure a default dataset with the `--store-dataset` parameter.
+Input entities that don't carry a `dataset` property are stored in the `default` dataset. To put them into a named one, stamp it on with [`ftmq apply-dataset`](./cli.md) (with `--replace-dataset`, so the entities end up in that dataset alone - a statement carries exactly one):
 
 ```bash
-ftmq -i s3://data/entities.ftm.json -o sqlite:///followthemoney.store --store-dataset=my_dataset
+ftmq apply-dataset -d my_dataset --replace-dataset -i s3://data/entities.ftm.json -o sqlite:///followthemoney.store
 ```
 
 [cli reference](./reference/cli.md)

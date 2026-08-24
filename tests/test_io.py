@@ -83,3 +83,15 @@ def test_io_store(tmp_path, eu_authorities):
     assert res == 151
     res = [p for p in smart_read_proxies(uri, dataset="eu_authorities")]
     assert len(res) == 151
+
+
+def test_io_store_without_dataset(tmp_path, eu_authorities):
+    # regression: reading a store uri without `dataset=` used to scope the
+    # view to the store's "default" writer dataset instead of its implicit
+    # scope (every dataset in the backend), so nothing came back
+    uri = f"sqlite:///{tmp_path}/store.db"
+    res = smart_write_proxies(uri, eu_authorities)
+    assert res == 151
+    res = [p for p in smart_read_proxies(uri)]
+    assert len(res) == 151
+    assert {ds for p in res for ds in p.datasets} == {"eu_authorities"}

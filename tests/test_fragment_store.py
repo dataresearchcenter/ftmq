@@ -379,3 +379,31 @@ def test_fragment_store_timestamp_filter_postgres():
 
     dataset.drop()
     dataset.store.close()
+
+
+def test_fragment_store_bulk_upsert_sqlite():
+    """A known (id, origin, fragment) in a batch must not drop the new rows"""
+    dataset = get_fragments("test_bulk_upsert", database_uri="sqlite://")
+
+    bulk = dataset.bulk()
+    bulk.put({"id": "p1", "schema": "Person", "properties": {"name": ["Jane"]}})
+    bulk.flush()
+    assert {e.id for e in dataset.iterate()} == {"p1"}
+
+    # p1 is re-emitted (stable content id) alongside a new entity
+    bulk = dataset.bulk()
+    bulk.put({"id": "p1", "schema": "Person", "properties": {"name": ["Jane Doe"]}})
+    bulk.put({"id": "m1", "schema": "Email", "properties": {}})
+    bulk.flush()
+    assert {e.id for e in dataset.iterate()} == {"p1", "m1"}
+    assert dataset.get("p1").get("name") == ["Jane Doe"]
+
+    # a conflict is only the full (id, origin, fragment) tuple
+    bulk = dataset.bulk()
+    bulk.put({"id": "p1", "schema": "LegalEntity", "properties": {}}, fragment="f")
+    bulk.put({"id": "p1", "schema": "LegalEntity", "properties": {}}, origin="o")
+    bulk.flush()
+    assert len(list(dataset.fragments(entity_ids="p1"))) == 3
+
+    dataset.drop()
+    dataset.store.close()

@@ -5,7 +5,6 @@ from urllib.parse import urlparse
 from anystore.types import Uri
 from followthemoney.dataset.dataset import Dataset
 from nomenklatura import Resolver, settings
-from nomenklatura.db import get_metadata
 
 from ftmq.store.base import Store, View
 from ftmq.store.memory import MemoryStore
@@ -16,6 +15,7 @@ def get_store(
     uri: Uri | None = settings.DB_URL,
     dataset: Dataset | str | None = None,
     linker: Resolver | None = None,
+    cast_types: bool = True,
 ) -> Store:
     """
     Get an initialized [Store][ftmq.store.base.Store]. The backend is inferred
@@ -31,17 +31,19 @@ def get_store(
         # a leveldb store:
         get_store("leveldb:///var/lib/data")
 
-        # a redis (or kvrocks) store:
-        get_store("redis://localhost")
-
         # a sqlite store
         get_store("sqlite:///data/followthemoney.db")
+
+        # a duckdb store
+        get_store("duckdb:///data/followthemoney.duckdb")
         ```
 
     Args:
         uri: The store backend uri
         dataset: A `followthemoney.Dataset` instance to limit the scope to
         linker: A `nomenklatura.Resolver` instance with linked / deduped data
+        cast_types: Normalize statement values on write (see
+            [`ftmq.statements`][ftmq.statements])
 
     Returns:
         The initialized store. This is a cached object.
@@ -49,35 +51,38 @@ def get_store(
     uri = str(uri)
     parsed = urlparse(uri)
     if parsed.scheme == "memory":
-        return MemoryStore(dataset, linker=linker)
+        return MemoryStore(dataset, linker=linker, cast_types=cast_types)
     if parsed.scheme == "leveldb":
         path = uri.replace("leveldb://", "")
         path = Path(path).absolute()
         try:
             from ftmq.store.level import LevelDBStore
 
-            return LevelDBStore(dataset, path=path, linker=linker)
+            return LevelDBStore(
+                dataset, path=path, linker=linker, cast_types=cast_types
+            )
         except ImportError:
             raise ImportError("Can not load LevelDBStore. Install `plyvel`")
-    if parsed.scheme == "redis":
+    if parsed.scheme == "duckdb":
         try:
-            from ftmq.store.redis import RedisStore
+            from ftmq.store.duckdb import DuckDBStore
 
-            return RedisStore(dataset, linker=linker)
+            return DuckDBStore(dataset, uri=uri, linker=linker, cast_types=cast_types)
         except ImportError:
-            raise ImportError("Can not load RedisStore. Install `redis`")
+            raise ImportError("Can not load DuckDBStore. Install `duckdb-engine`")
     if "sql" in parsed.scheme:
         try:
             from ftmq.store.sql import SQLStore
 
-            get_metadata.cache_clear()
-            return SQLStore(dataset, uri=uri, linker=linker)
+            return SQLStore(dataset, uri=uri, linker=linker, cast_types=cast_types)
         except ImportError:
             raise ImportError("Can not load SqlStore. Install sql dependencies.")
     if "aleph" in parsed.scheme:
         try:
             from ftmq.store.aleph import AlephStore
 
+            # no `cast_types`: the aleph writer posts entity proxies to the
+            # remote api, no statements pass through it
             return AlephStore.from_uri(uri, dataset=dataset, linker=linker)
         except ImportError:
             raise ImportError("Can not load AlephStore. Install `alephclient`")
@@ -86,7 +91,9 @@ def get_store(
             from ftmq.store.lake import LakeStore
 
             uri = str(uri)[5:]
-            return LakeStore(uri=uri, dataset=dataset, linker=linker)
+            return LakeStore(
+                uri=uri, dataset=dataset, linker=linker, cast_types=cast_types
+            )
         except ImportError:
             raise ImportError("Can not load LakeStore. Install `[lake]` dependencies")
     if uri.startswith("fragments+"):

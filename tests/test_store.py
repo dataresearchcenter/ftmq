@@ -1,20 +1,24 @@
+from pathlib import Path
+
 from followthemoney import EntityProxy, StatementEntity
 
-from ftmq.query import Query
+from ftmq.query import A, C, G, M, P, Query, Year
 from ftmq.store import MemoryStore, Store, get_store
 from ftmq.store.aleph import AlephStore, parse_uri
 from ftmq.store.base import get_resolver
+from ftmq.store.duckdb import DuckDBStore
+from ftmq.store.duckdb import parse_uri as duckdb_parse_uri
 from ftmq.store.fragments import get_fragments
 from ftmq.store.lake import LakeStore
 from ftmq.store.level import LevelDBStore
 from ftmq.store.sql import SQLStore
-from ftmq.util import get_scope_dataset, make_dataset
+from ftmq.util import get_scope_dataset, make_dataset, make_entity
 
 
 def _run_store_test_implicit(cls: type[Store], proxies, **kwargs):
     # implicit catalog from store content
     store = cls(linker=get_resolver(), **kwargs)
-    # assert not store.get_scope().dataset_names
+    assert store._implicit_scope is True
 
     datasets_seen = set()
     with store.writer() as bulk:
@@ -24,6 +28,22 @@ def _run_store_test_implicit(cls: type[Store], proxies, **kwargs):
                 datasets_seen.update(proxy.datasets)
 
     assert store.get_scope().leaf_names == {"donations", "eu_authorities"}
+
+    # regression: an unscoped store implicitly spans every dataset present in
+    # the backend. nomenklatura scopes a view to `dataset.leaf_names`, so a
+    # store opened without a dataset used to surface only entities literally
+    # tagged dataset="default" (the `__init__` scope guard silently stopped
+    # firing once followthemoney made a plain dataset its own leaf). The writer
+    # scope stays "default", but the read scope and `default_view()` must span
+    # all datasets.
+    assert store.dataset.leaf_names == {"default"}
+    assert store.scope.leaf_names == {"donations", "eu_authorities"}
+    entities = list(store.default_view().entities())
+    assert entities
+    assert {ds for e in entities for ds in e.datasets} == {
+        "donations",
+        "eu_authorities",
+    }
     return True
 
 
@@ -74,31 +94,28 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
     assert len([e for e in view.entities()]) == 151
 
     view = store.default_view()
-    q = Query().where(dataset="eu_authorities")
+    q = Query().where(M(dataset="eu_authorities"))
     res = [e for e in view.query(q)]
     assert len(res) == 151
     assert "eu_authorities" in res[0].datasets
-    q = Query().where(schema="Payment", prop="date", value=2011, comparator="gte")
+    q = Query().where(M(schema="Payment"), P(date__gte=2011))
     res = [e for e in view.query(q)]
     assert all(r.schema.name == "Payment" for r in res)
     assert len(res) == 21
 
-    # schemata filters
-    q = Query().where(schema="Organization", schema_include_matchable=True)
+    # schemata (is-a) filters
+    q = Query().where(M(schemata="Organization"))
     res = [e for e in view.query(q)]
     assert len(res) == 224
-    q = Query().where(schema="LegalEntity")
+    q = Query().where(M(schema="LegalEntity"))
     res = [e for e in view.query(q)]
     assert len(res) == 0
-    q = Query().where(schema="LegalEntity", schema_include_matchable=True)
-    res = [e for e in view.query(q)]
-    assert len(res) == 246
-    q = Query().where(schema="LegalEntity", schema_include_descendants=True)
+    q = Query().where(M(schemata="LegalEntity"))
     res = [e for e in view.query(q)]
     assert len(res) == 246
 
     # stats
-    q = Query().where(dataset="eu_authorities")
+    q = Query().where(M(dataset="eu_authorities"))
     stats = view.stats(q)
     assert [c.model_dump() for c in stats.things.countries] == [
         {"code": "eu", "label": "European Union", "count": 151}
@@ -115,7 +132,7 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
     assert view.count(q) == 151
 
     # ordering
-    q = Query().where(schema="Payment", prop="date", value=2011, comparator="gte")
+    q = Query().where(M(schema="Payment"), P(date__gte=2011))
     q = q.order_by("amountEur")
     res = [e for e in view.query(q)]
     assert len(res) == 21
@@ -126,27 +143,30 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
     assert res[0].get("amountEur") == ["320000"]
 
     # slice
-    q = Query().where(schema="Payment", prop="date", value=2011, comparator="gte")
+    q = Query().where(M(schema="Payment"), P(date__gte=2011))
     q = q.order_by("amountEur")
     q = q[:10]
     res = [e for e in view.query(q)]
     assert len(res) == 10
     assert res[0].get("payer") == ["efccc434cdf141c7ba6f6e539bb6b42ecd97c368"]
 
-    q = Query().where(schema="Person").order_by("name")[0]
+    q = Query().where(M(schema="Person")).order_by("name")[0]
     res = [e for e in view.query(q)]
     assert len(res) == 1
     assert res[0].caption == "Dr.-Ing. E. h. Martin Herrenknecht"
 
     # aggregation
-    q = Query().aggregate("max", "date").aggregate("min", "date")
+    q = Query().aggregate(A(max=P("date")), A(min=P("date")))
     res = view.aggregations(q)
-    assert res == {"max": {"date": "2011-12-29"}, "min": {"date": "2002-07-04"}}
+    assert res == {
+        "max": {"properties.date": "2011-12-29"},
+        "min": {"properties.date": "2002-07-04"},
+    }
 
-    q = Query().aggregate("count", "id", groups="beneficiary")
+    q = Query().aggregate(A(count=M("id"), by=P("beneficiary")))
     res = view.aggregations(q)
     assert (
-        res["groups"]["beneficiary"]["count"]["id"][
+        res["groups"]["properties.beneficiary"]["count"]["id"][
             "6d03aec76fdeec8f9697d8b19954ab6fc2568bc8"
         ]
         == 10
@@ -155,15 +175,15 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
 
     q = (
         Query()
-        .where(dataset="donations")
-        .aggregate("sum", "amountEur", groups="beneficiary")
+        .where(M(dataset="donations"))
+        .aggregate(A(sum=P("amountEur"), by=P("beneficiary")))
     )
     res = view.aggregations(q)
     assert res == {
         "groups": {
-            "beneficiary": {
+            "properties.beneficiary": {
                 "sum": {
-                    "amountEur": {
+                    "properties.amountEur": {
                         "6d03aec76fdeec8f9697d8b19954ab6fc2568bc8": 3368136.15,
                         "783d918df9f9178400d6b3386439ab3b3679979c": 6039987,
                         "6d8377d3938b85fa1bfd1985486f0f913c42e224": 6394282,
@@ -179,15 +199,19 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
                 }
             }
         },
-        "sum": {"amountEur": 40589689.15},
+        "sum": {"properties.amountEur": 40589689.15},
     }
-    q = Query().where(dataset="donations").aggregate("sum", "amountEur", groups="year")
+    q = (
+        Query()
+        .where(M(dataset="donations"))
+        .aggregate(A(sum=P("amountEur"), by=Year()))
+    )
     res = view.aggregations(q)
     assert res == {
         "groups": {
             "year": {
                 "sum": {
-                    "amountEur": {
+                    "properties.amountEur": {
                         "2011": 1953402.15,
                         "2010": 3899002,
                         "2009": 6451130,
@@ -202,16 +226,16 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
                 }
             }
         },
-        "sum": {"amountEur": 40589689.15},
+        "sum": {"properties.amountEur": 40589689.15},
     }
 
-    q = Query().where(dataset="donations").aggregate("avg", "amountEur")
+    q = Query().where(M(dataset="donations")).aggregate(A(avg=P("amountEur")))
     res = view.aggregations(q)
-    assert res == {"avg": {"amountEur": 139964.44534482757}}
+    assert res == {"avg": {"properties.amountEur": 139964.44534482757}}
 
-    # reversed
+    # reverse lookup (the `entities` group)
     entity_id = "783d918df9f9178400d6b3386439ab3b3679979c"
-    q = Query().where(reverse=entity_id)
+    q = Query().where(G(entities=entity_id))
     res = [p for p in view.query(q)]
     assert len(res) == 53
     tested = False
@@ -220,33 +244,103 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
         tested = True
     assert tested
 
-    q = Query().where(reverse=entity_id, schema="Payment")
-    q = q.where(prop="date", value=2007, comparator="gte")
+    q = Query().where(G(entities=entity_id), M(schema="Payment"))
+    q = q.where(P(date__gte=2007))
     res = [p for p in q.apply_iter(proxies)]
     assert len(res) == 37
-    q = Query().where(reverse=entity_id, schema="Person")
+    q = Query().where(G(entities=entity_id), M(schema="Person"))
     res = [p for p in q.apply_iter(proxies)]
     assert len(res) == 0
 
     # ids
-    q = Query().where(entity_id="eu-authorities-chafea")
+    q = Query().where(M(entity_id="eu-authorities-chafea"))
     res = [p for p in view.query(q)]
     assert len(res) == 1
-    q = Query().where(canonical_id="eu-authorities-chafea")
+    q = Query().where(M(canonical_id="eu-authorities-chafea"))
     res = [p for p in view.query(q)]
     assert len(res) == 1
-    q = Query().where(entity_id="eu-authorities-chafea", dataset="donations")
+    q = Query().where(M(entity_id="eu-authorities-chafea", dataset="donations"))
     res = [p for p in view.query(q)]
     assert len(res) == 0
-    q = Query().where(canonical_id="eu-authorities-chafea", dataset="donations")
+    q = Query().where(M(canonical_id="eu-authorities-chafea", dataset="donations"))
     res = [p for p in view.query(q)]
     assert len(res) == 0
-    q = Query().where(entity_id__startswith="eu-authorities-")
+    q = Query().where(M(entity_id__startswith="eu-authorities-"))
     res = [p for p in view.query(q)]
     assert len(res) == 151
-    q = Query().where(canonical_id__startswith="eu-authorities-")
+    q = Query().where(M(canonical_id__startswith="eu-authorities-"))
     res = [p for p in view.query(q)]
     assert len(res) == 151
+
+    # `null` presence filters must agree with the in-memory evaluator on every
+    # backend (they used to compile to `value IS true/false`: silently empty on
+    # sqlite, a cast error on duckdb)
+    q = Query().where(P(name__null=False))
+    assert len([p for p in view.query(q)]) == 246
+    q = Query().where(P(name__null=True))
+    assert len([p for p in view.query(q)]) == 625 - 246
+    q = Query().where(P(deathDate__null=True))
+    assert len([p for p in view.query(q)]) == 625
+    q = Query().where(G(countries__null=False))
+    assert len([p for p in view.query(q)]) == 321
+    q = Query().where(G(countries__null=True))
+    assert len([p for p in view.query(q)]) == 625 - 321
+    q = Query().where(M(schema="Payment"), P(amountEur__null=False))
+    res = [p for p in view.query(q)]
+    assert len(res) == 290
+    assert all(r.get("amountEur") for r in res)
+
+    # boolean composition must agree with the in-memory evaluator on every
+    # backend: the SQL translation used to OR all property filters into one row
+    # predicate (so an AND over two props matched either) and to drop `~`
+    q = Query().where(P(name__ilike="agency"))
+    assert len([p for p in view.query(q)]) == 23
+    q = Query().where(P(name__ilike="agency"), P(jurisdiction="eu"))
+    assert len([p for p in view.query(q)]) == 23
+    q = Query().where(P(name__ilike="agency"), P(country="eu"))  # no country prop
+    assert len([p for p in view.query(q)]) == 0
+    q = Query().where(P(name__ilike="bank") | P(name__ilike="agency"))
+    assert len([p for p in view.query(q)]) == 30
+    q = Query().where(~P(name__ilike="agency"))
+    assert len([p for p in view.query(q)]) == 625 - 23
+    q = Query().where(
+        M(schema="Person") & (P(name__ilike="herren") | G(countries="de"))
+    )
+    assert len([p for p in view.query(q)]) == 22
+    q = Query().where(G(countries="de"), G(names__ilike="herren"))
+    assert len([p for p in view.query(q)]) == 1
+
+    # `M(id=...)` addresses the entity, not the statement's own id column
+    q = Query().where(M(id="eu-authorities-chafea"))
+    assert len([p for p in view.query(q)]) == 1
+
+    # negated / OR-ed schema filters - on the lake backend these must also
+    # disable `bucket` partition pruning, which is only sound for positive
+    # schema conjuncts
+    n_person = len([p for p in view.query(Query().where(M(schema="Person")))])
+    assert n_person > 0
+    q = Query().where(~M(schema="Person"))
+    assert len([p for p in view.query(q)]) == 625 - n_person
+    q = Query().where(M(schema="Person") | M(schema="PublicBody"))
+    assert len([p for p in view.query(q)]) == n_person + 151
+
+    # an empty negated node matches nothing (it used to compile to TRUE)
+    q = Query().where(~M())
+    assert len([p for p in view.query(q)]) == 0
+
+    # `notlike` is a real comparator, not a silent fall-through
+    q = Query().where(P(name__notlike="xyzzy"))
+    assert len([p for p in view.query(q)]) == 246
+
+    # offset-only and empty slices must not be dropped
+    q = Query().where(M(dataset="eu_authorities"))
+    assert len([p for p in view.query(q[10:])]) == 141
+    assert len([p for p in view.query(q[0:0])]) == 0
+
+    # chained same-field filters AND (like the in-memory evaluator); spell
+    # alternatives as `__in`
+    q = Query().where(M(dataset="eu_authorities")).where(M(dataset="donations"))
+    assert len([p for p in view.query(q)]) == 0
 
     # pop
     # FIXME
@@ -257,11 +351,98 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
         assert len(statements) == 0
 
     # origin
-    q = Query().where(origin="test")
+    q = Query().where(C(origin="test"))
     res = [p for p in view.query(q)]
     assert len(res) == 0
 
     return True
+
+
+def test_store_scoped_views(tmp_path):
+    # a canonical entity spanning two datasets: the scope selects which
+    # *entities* a view surfaces (those with a statement in a scoped dataset),
+    # while filters and assembly see the full canonical entity - this is the
+    # nomenklatura in-memory view behaviour, and the SQL/Lake compilation must
+    # match it, including for `~` / `|` trees and anti-joins
+    entities = [
+        # e1 exists in ds_a (birthDate) and ds_b (name)
+        make_entity(
+            {"id": "e1", "schema": "Person", "properties": {"birthDate": ["1980"]}},
+            StatementEntity,
+            "ds_a",
+        ),
+        make_entity(
+            {"id": "e1", "schema": "Person", "properties": {"name": ["Jane"]}},
+            StatementEntity,
+            "ds_b",
+        ),
+        make_entity(
+            {"id": "e2", "schema": "Person", "properties": {"name": ["Alice"]}},
+            StatementEntity,
+            "ds_a",
+        ),
+        make_entity(
+            {"id": "e3", "schema": "Person", "properties": {"name": ["Bob"]}},
+            StatementEntity,
+            "ds_b",
+        ),
+        make_entity(
+            {"id": "e4", "schema": "Company", "properties": {"name": ["Acme"]}},
+            StatementEntity,
+            "ds_c",
+        ),
+    ]
+
+    from followthemoney.dataset.dataset import Dataset as FtmDataset
+
+    def scope(name, *names):
+        # a uniquely named scope dataset - `get_scope_dataset` names every
+        # scope "default", and followthemoney interns datasets by name, which
+        # would clobber the "default" scope other tests rely on
+        ds = FtmDataset({"name": name, "datasets": list(names)})
+        ds.children = {make_dataset(n) for n in names}
+        return ds
+
+    def build(cls, **kwargs):
+        store = cls(
+            dataset=scope("scope_abc", "ds_a", "ds_b", "ds_c"),
+            linker=get_resolver(),
+            **kwargs,
+        )
+        with store.writer() as bulk:
+            for e in entities:
+                bulk.add_entity(e)
+        return store
+
+    from nomenklatura.db import get_metadata
+
+    stores = [build(MemoryStore)]
+    get_metadata.cache_clear()
+    stores.append(build(SQLStore, uri=f"sqlite:///{tmp_path}/scope.db"))
+    stores.append(build(LakeStore, uri=tmp_path / "scope-lake"))
+
+    def ids(view, q):
+        return {e.id for e in view.query(q)}
+
+    for store in stores:
+        view_a = store.view(make_dataset("ds_a"))
+        view_ab = store.view(scope("scope_ab", "ds_a", "ds_b"))
+
+        # e1 is in scope via its ds_a fragment; its name (from ds_b) is
+        # visible because the canonical entity assembles across datasets
+        assert ids(view_a, Query().where(P(name="Jane"))) == {"e1"}
+        assert ids(view_a, Query().where(P(name__null=True))) == set()
+        res = [e for e in view_a.query(Query().where(P(birthDate__null=False)))]
+        assert [e.id for e in res] == ["e1"]
+        assert res[0].get("name") == ["Jane"]
+        # out-of-scope entities stay invisible, even when they match
+        assert ids(view_a, Query().where(P(name="Bob"))) == set()
+        assert ids(view_a, Query().where(P(name="Acme"))) == set()
+        # negation composes with the scope: entities without a ds_a fragment
+        assert ids(view_ab, Query().where(~M(dataset="ds_a"))) == {"e3"}
+        # an out-of-scope dataset filter matches nothing (no error)
+        assert ids(view_ab, Query().where(M(dataset="ds_c"))) == set()
+        assert len([e for e in view_a.query(Query())]) == 2
 
 
 def test_store_memory(proxies):
@@ -284,6 +465,37 @@ def test_store_sql_sqlite(tmp_path, proxies):
 
     get_metadata.cache_clear()
     assert _run_store_test(SQLStore, proxies, test_pop=False, uri=uri)  # FIXME
+
+
+def test_store_duckdb(tmp_path, proxies):
+    uri = f"duckdb://{tmp_path}/test.duckdb"
+    assert _run_store_test_implicit(DuckDBStore, proxies, uri=uri)
+
+    from nomenklatura.db import get_metadata
+
+    get_metadata.cache_clear()
+    assert _run_store_test(DuckDBStore, proxies, test_pop=False, uri=uri)  # FIXME
+
+    # the store uri spells the path right after the scheme; sqlalchemy's own
+    # url grammar (host / root slashes) must not change which file is opened
+    assert duckdb_parse_uri("duckdb:///tmp/test.duckdb") == "duckdb:////tmp/test.duckdb"
+    assert (
+        duckdb_parse_uri("duckdb:////tmp/test.duckdb") == "duckdb:////tmp/test.duckdb"
+    )
+    assert duckdb_parse_uri("duckdb://test.duckdb").endswith(
+        f"{Path.cwd()}/test.duckdb"
+    )
+    assert duckdb_parse_uri("duckdb://") == "duckdb:///:memory:"
+    assert duckdb_parse_uri("duckdb://:memory:") == "duckdb:///:memory:"
+
+    # regression: the in-memory engine patch (for the sqlite resolver / lake
+    # store) used to intercept *any* `:memory:` url and hand duckdb sqlite's
+    # `check_same_thread` connect arg, which its driver rejects
+    get_metadata.cache_clear()
+    store = DuckDBStore(linker=get_resolver(), uri="duckdb://")
+    with store.writer() as bulk:
+        bulk.add_entity(proxies[0])
+    assert [e.id for e in store.iterate()] == [proxies[0].id]
 
 
 def test_store_lake(tmp_path, proxies):
@@ -367,7 +579,80 @@ def test_store_lake_fragment(tmp_path):
     statements = lake.writer().pop("person-1")
     keys = {s.dedupe_key for s in statements}
     assert len(statements) == 3
-    assert {k.split("\t")[1] for k in keys} == {"", "row-1", "row-2"}
+    # dedupe_key is `id\torigin\tfragment`
+    assert {k.split("\t")[1] for k in keys} == {"ingest"}
+    assert {k.split("\t")[2] for k in keys} == {"", "row-1", "row-2"}
+
+
+def test_store_lake_origins(tmp_path):
+    """The same content under two origins is two rows, not one.
+
+    `origin` is a partition column and the statement id does not hash it, so
+    the writer batch must key on it – otherwise one flush keeps only the last
+    origin's row and the rest of the provenance is gone.
+    """
+    from followthemoney.statement import Statement
+
+    lake = LakeStore(uri=tmp_path / "origin_lake", dataset="test")
+    stmt = Statement(
+        entity_id="person-1",
+        prop="name",
+        schema="Person",
+        value="John Doe",
+        dataset="test",
+        last_seen="2024-01-01T00:00:00",
+    )
+    with lake.writer() as bulk:
+        bulk.add_statement(stmt.clone(origin="crawl"))
+        bulk.add_statement(stmt.clone(origin="enrich"))
+
+    import duckdb
+
+    df = duckdb.arrow(lake.deltatable.to_pyarrow_dataset()).df()
+    rows = df[df["value"] == "John Doe"]
+    assert sorted(rows["origin"]) == ["crawl", "enrich"]
+    assert len(set(rows["id"])) == 1  # same content, same statement id
+
+
+def test_store_lake_statements_to_table():
+    """The columnar packer produces exactly what `pack_statement` describes."""
+    from ftmq.store.lake import (
+        ARROW_SCHEMA,
+        LakeStatement,
+        pack_statement,
+        statements_to_table,
+    )
+
+    stmt = LakeStatement(
+        entity_id="person-1",
+        prop="name",
+        schema="Person",
+        value="John Doe",
+        dataset="test",
+        lang="eng",
+        origin="crawl",
+        first_seen="2024-01-01T00:00:00",
+        last_seen="2024-01-02T00:00:00+02:00",
+        fragment="row-1",
+    )
+    stmt.canonical_id = "canon-1"
+    table = statements_to_table([stmt])
+    assert table.schema.equals(ARROW_SCHEMA)
+
+    (packed,) = table.to_pylist()
+    expected = pack_statement(stmt)
+    for field in ARROW_SCHEMA.names:
+        if field == "source":  # writers set that column themselves
+            assert packed[field] is None
+        else:
+            assert packed[field] == expected[field], field
+
+    # timestamps land as aware UTC, parsed from whatever the producer wrote
+    assert packed["first_seen"].tzinfo is not None
+    assert packed["last_seen"].hour == 22  # +02:00 converted to UTC
+
+    # empty input still carries the schema
+    assert statements_to_table([]).schema.equals(ARROW_SCHEMA)
 
 
 def test_store_init(tmp_path):
@@ -380,6 +665,8 @@ def test_store_init(tmp_path):
     assert isinstance(store, LevelDBStore)
     store = get_store("sqlite:///:memory:")
     assert isinstance(store, SQLStore)
+    store = get_store(f"duckdb://{tmp_path}/test.duckdb")
+    assert isinstance(store, DuckDBStore)
     store = get_store(dataset="test_dataset")
     assert store.dataset.name == "test_dataset"
     store = get_store("http+aleph://test_dataset@aleph.example.org")
@@ -437,3 +724,220 @@ def test_store_fragments_to_lake(tmp_path):
     entities = list(lake.iterate())
     assert len(entities) == 2
     assert lake.get_origins() == {"ingest", "source1", "source2"}
+
+
+def _numeric_fixture() -> list[StatementEntity]:
+    """Payments whose amounts arrive display-formatted, as followthemoney's
+    `number` type stores them verbatim (it neither normalizes nor rejects)."""
+    return [
+        make_entity(
+            {
+                "id": f"pay-{i}",
+                "schema": "Payment",
+                "properties": {"amountEur": [raw], "date": ["2023-01-01"]},
+            },
+            StatementEntity,
+            "numbers",
+        )
+        for i, raw in enumerate(["1,000.50", "2000", "3,000,000.00", "1,500"])
+    ]
+
+
+def test_store_writer_casts_types():
+    # a store writer normalizes statement values on the way in, so the read
+    # side can assume the canonical format of the property type
+    proxy = _numeric_fixture()[0]
+    store = MemoryStore(dataset="numbers", linker=get_resolver())
+    with store.writer() as bulk:
+        bulk.add_entity(proxy)
+    entity = list(store.iterate())[0]
+    assert entity.get("amountEur") == ["1000.50"]
+    # the raw value survives as the source value
+    amounts = [s for s in entity.statements if s.prop == "amountEur"]
+    assert [s.original_value for s in amounts] == ["1,000.50"]
+
+    # opt out for a store that gets its values normalized elsewhere
+    store = MemoryStore(dataset="numbers", linker=get_resolver(), cast_types=False)
+    with store.writer() as bulk:
+        bulk.add_entity(proxy)
+    assert list(store.iterate())[0].get("amountEur") == ["1,000.50"]
+
+
+def test_store_numeric_aggregation_agrees_with_memory(tmp_path):
+    # the sql backends cast `value` to NUMERIC, so they agree with the
+    # in-memory evaluator (which reads through `registry.number.to_number`)
+    # only for values in the canonical format - which is what every store
+    # writer casts them into on the way in (see `ftmq.statements`)
+    entities = _numeric_fixture()
+    scope = get_scope_dataset("numbers")
+    q = (
+        Query()
+        .where(M(schema="Payment"))
+        .aggregate(
+            A(
+                sum=P("amountEur"),
+                min=P("amountEur"),
+                max=P("amountEur"),
+                count=M("id"),
+            )
+        )
+    )
+
+    expected = {"sum": 3004500.5, "min": 1000.5, "max": 3000000.0}
+    stores: dict[str, Store] = {
+        "memory": MemoryStore(dataset=scope, linker=get_resolver()),
+        "sqlite": SQLStore(
+            dataset=scope, linker=get_resolver(), uri=f"sqlite:///{tmp_path}/num.db"
+        ),
+        "duckdb": DuckDBStore(
+            dataset=scope, linker=get_resolver(), uri=f"duckdb://{tmp_path}/num.duckdb"
+        ),
+        "lake": LakeStore(dataset=scope, linker=get_resolver(), uri=tmp_path / "lake"),
+    }
+    for name, store in stores.items():
+        with store.writer() as bulk:
+            for proxy in entities:
+                bulk.add_entity(proxy)
+        res = store.default_view().aggregations(q)
+        for func, value in expected.items():
+            assert res[func]["properties.amountEur"] == value, (name, func)
+        # the meta field counts entities, not the `value` of a `prop = "id"`
+        # row - which is the *unresolved* id, i.e. referents
+        assert res["count"]["id"] == len(entities) == store.default_view().count(q)
+
+
+def test_store_numeric_aggregation_skips_non_numeric(tmp_path):
+    # a value that isn't a number at all (an unmigrated store, or one written
+    # with `cast_types=False`) must not fail the aggregation: the sql backends
+    # read it as NULL, so it drops out the way it does in memory, where
+    # `registry.number.to_number` returns None
+    entities = [
+        make_entity(
+            {
+                "id": f"pay-{i}",
+                "schema": "Payment",
+                "properties": {"amountEur": [raw]},
+            },
+            StatementEntity,
+            "numbers",
+        )
+        for i, raw in enumerate(["1000.50", "n/a", "2000", "unknown"])
+    ]
+    scope = get_scope_dataset("numbers")
+    q = (
+        Query()
+        .where(M(schema="Payment"))
+        .aggregate(A(sum=P("amountEur"), min=P("amountEur"), max=P("amountEur")))
+    )
+    expected = {"sum": 3000.5, "min": 1000.5, "max": 2000.0}
+    stores: dict[str, Store] = {
+        "memory": MemoryStore(dataset=scope, linker=get_resolver(), cast_types=False),
+        "sqlite": SQLStore(
+            dataset=scope,
+            linker=get_resolver(),
+            uri=f"sqlite:///{tmp_path}/nan.db",
+            cast_types=False,
+        ),
+        "duckdb": DuckDBStore(
+            dataset=scope,
+            linker=get_resolver(),
+            uri=f"duckdb://{tmp_path}/nan.duckdb",
+            cast_types=False,
+        ),
+        "lake": LakeStore(
+            dataset=scope,
+            linker=get_resolver(),
+            uri=tmp_path / "lake",
+            cast_types=False,
+        ),
+    }
+    for name, store in stores.items():
+        with store.writer() as bulk:
+            for proxy in entities:
+                bulk.add_entity(proxy)
+        res = store.default_view().aggregations(q)
+        for func, value in expected.items():
+            assert res[func]["properties.amountEur"] == value, (name, func)
+
+
+def test_store_default_dataset_name_resolves(tmp_path):
+    # regression: an implicit scope over a dataset literally named "default"
+    # collapsed to an empty `leaf_names`, so `get_entity` filtered on
+    # `dataset IN ()` and every entity 404'd while list queries still worked
+    entity = make_entity(
+        {"id": "e1", "schema": "Company", "properties": {"name": ["Acme"]}},
+        StatementEntity,
+        "default",
+    )
+    for cls, kwargs in (
+        (MemoryStore, {}),
+        (SQLStore, {"uri": f"sqlite:///{tmp_path}/default.db"}),
+        (DuckDBStore, {"uri": f"duckdb://{tmp_path}/default.duckdb"}),
+        (LakeStore, {"uri": tmp_path / "default_lake"}),
+    ):
+        store = cls(linker=get_resolver(), **kwargs)
+        with store.writer() as bulk:
+            bulk.add_entity(entity)
+        assert store.scope.leaf_names == {"default"}
+        view = store.default_view()
+        assert [e.id for e in view.query(Query())] == ["e1"]
+        # the detail path has to resolve what the list path returned
+        assert view.get_entity("e1") is not None
+
+
+def test_store_select_projection(tmp_path, eu_authorities):
+    """`Query.select` narrows the properties read back, identically on a
+    statement backend (a `prop` pushdown) and in memory (a post-assembly
+    prune) - and never drops a matching entity."""
+    scope = get_scope_dataset("eu_authorities")
+    entities = [e for e in eu_authorities if e.schema.name == "PublicBody"]
+    # an entity holding none of the selected properties: it still has to come
+    # back (its `id` statement is always read), just without properties
+    entities.append(
+        make_entity(
+            {
+                "id": "bare",
+                "schema": "PublicBody",
+                "datasets": ["eu_authorities"],
+                "properties": {"description": ["nothing selected here"]},
+            },
+            StatementEntity,
+            scope,
+        )
+    )
+
+    base = Query().where(M(schema="PublicBody"))
+    selected = base.select(P("name"), G("countries"))
+
+    def read(store: Store) -> dict[str, dict]:
+        with store.writer() as bulk:
+            for proxy in entities:
+                bulk.add_entity(proxy)
+        view = store.view(scope)
+        assert sorted(e.id for e in view.query(base)) == sorted(
+            e.id for e in view.query(selected)
+        ), "a projection must not change which entities match"
+        return {e.id: e.properties for e in view.query(selected)}
+
+    memory = read(MemoryStore(dataset=scope, linker=get_resolver()))
+    sql = read(
+        SQLStore(
+            dataset=scope, linker=get_resolver(), uri=f"sqlite:///{tmp_path}/sel.db"
+        )
+    )
+    assert memory == sql
+
+    # only the selected property and the country-typed ones survive
+    assert {p for props in sql.values() for p in props} == {"name", "jurisdiction"}
+    assert sql["bare"] == {}
+    assert any(props.get("name") for props in sql.values())
+
+    # aggregations read the full entity, so a projection cannot change them
+    agg = base.aggregate(A(count=M("id"), by=G("countries")))
+    store = SQLStore(
+        dataset=scope, linker=get_resolver(), uri=f"sqlite:///{tmp_path}/sel.db"
+    )
+    view = store.view(scope)
+    assert view.aggregations(agg) == view.aggregations(
+        agg.select(P("name"))
+    ), "a projection must not change aggregations"

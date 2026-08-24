@@ -1,8 +1,8 @@
+from datetime import datetime, timezone
 from functools import cache
-from typing import Any, Generator, Type
+from typing import Any, Type
 
 from anystore.types import SDict, StrGenerator
-from banal import ensure_list, is_listish
 from followthemoney import E, model
 from followthemoney.compare import _normalize_names
 from followthemoney.dataset import Dataset
@@ -16,11 +16,12 @@ from normality import latinize_text, slugify, squash_spaces
 from rigour.names import NameTypeTag, Symbol, analyze_names
 from rigour.territories import lookup_territory
 from rigour.text.scripts import can_latinize
+from rigour.time import utc_now
 
-from ftmq.enums import Comparators
 from ftmq.types import Entity
 
 DEFAULT_DATASET = "default"
+SCOPE_DATASET = "ftmq_scope"
 
 
 @cache
@@ -29,8 +30,12 @@ def make_dataset(name: str | None = DEFAULT_DATASET) -> Dataset:
     return Dataset.make({"name": name, "title": name.title()})
 
 
-@cache
 def ensure_dataset(ds: str | Dataset | None = None) -> Dataset:
+    # deliberately not cached: followthemoney identifies datasets by name
+    # alone, so caching would hand back an *equal but different* dataset - two
+    # scopes spanning different members share a name (see `get_scope_dataset`)
+    # and the first one built would win. The name -> dataset construction it
+    # delegates to is cached instead.
     if not ds:
         return make_dataset()
     if isinstance(ds, str):
@@ -40,40 +45,18 @@ def ensure_dataset(ds: str | Dataset | None = None) -> Dataset:
 
 @cache
 def get_scope_dataset(*names: str) -> Dataset:
-    ds = Dataset({"name": "default", "datasets": names})
+    """A store's read scope over `names`: a single dataset is its own scope,
+    several are wrapped in a synthetic `ftmq_scope` collection.
+
+    The collection name must differ from every member: followthemoney
+    identifies datasets by name, and a collection sharing a member's name
+    would absorb that member and drop it from `leaf_names`.
+    """
+    if len(names) == 1:
+        return make_dataset(names[0])
+    ds = Dataset({"name": SCOPE_DATASET, "datasets": names})
     ds.children = {make_dataset(n) for n in names}
     return ds
-
-
-def parse_comparator(key: str) -> tuple[str, Comparators]:
-    key, *comparator = key.split("__", 1)
-    if comparator:
-        comparator = Comparators[comparator[0]]
-    else:
-        comparator = Comparators["eq"]
-    return key, comparator
-
-
-def parse_unknown_filters(
-    filters: tuple[str, ...],
-) -> Generator[tuple[str, str | list[str], str], None, None]:
-    _filters = (f for f in filters)
-    for prop in _filters:
-        prop = prop.lstrip("-")
-        if "=" in prop:  # 'country=de'
-            prop, value = prop.split("=")
-        else:  # ("country", "de"):
-            value = next(_filters)
-
-        prop, *op = prop.split("__")
-        op = op[0] if op else Comparators.eq
-        if op == Comparators["in"]:
-            # de,fr or ["de", "fr"]
-            if is_listish(value):
-                value = ensure_list(value)
-            else:
-                value = value.split(",")
-        yield prop, value, op
 
 
 def make_entity(
@@ -432,25 +415,6 @@ def make_fingerprint_id(*values: Any) -> str | None:
     return make_entity_id(*map(make_fingerprint, values))
 
 
-@cache
-def prop_is_numeric(schema: Schema, prop: str) -> bool:
-    """
-    Indicate if the given property is numeric type
-
-    Args:
-        schema: followthemoney schema
-        prop: Property
-
-    Returns:
-        `False` if the property is not numeric type or not found in the schema
-            at all
-    """
-    prop_ = schema.get(prop)
-    if prop_ is not None:
-        return prop_.type == registry.number
-    return False
-
-
 def get_entity_caption_property(e: Entity) -> SDict:
     """Get the minimal properties dict required to compute the caption"""
     for prop in e.schema.caption:
@@ -542,3 +506,75 @@ def select_symbols(e: EntityProxy) -> set[str]:
 def select_annotations(e: EntityProxy) -> set[str]:
     """Select stored annotations in `indexText`"""
     return {s for s in select_data(e, SELECT_ANNOTATED)}
+
+
+def iso_datetime(v: str | datetime | None) -> datetime | None:
+    """
+    Parse an ISO datetime string into an aware UTC `datetime`.
+
+    Like `rigour.time.iso_datetime` but keeps microseconds. The value is
+    parsed with `datetime.fromisoformat`; a naive value is assumed to be
+    UTC, an explicit offset is converted to UTC.
+
+    Examples:
+        >>> iso_datetime("2024-01-15T10:30:00")
+        datetime(2024, 1, 15, 10, 30, tzinfo=timezone.utc)
+        >>> iso_datetime("2024-01-15T10:30:00.123456")
+        datetime(2024, 1, 15, 10, 30, 0, 123456, tzinfo=timezone.utc)
+        >>> iso_datetime(None)
+        None
+
+    Args:
+        v: An ISO datetime string or `None`
+
+    Returns:
+        An aware datetime in UTC, or `None` for empty input
+    """
+    if not v:
+        return None
+    if isinstance(v, str):
+        v = datetime.fromisoformat(v)
+    if v.tzinfo is None:
+        # astimezone on a naive datetime would assume local time, not utc
+        return v.replace(tzinfo=timezone.utc)
+    return v.astimezone(timezone.utc)
+
+
+def datetime_iso(v: datetime | str | None, default_now: bool = False) -> str | None:
+    """
+    Ensure a UTC ISO datetime string from an arbitrary value.
+
+    A naive `datetime` is assumed to be UTC, an aware one is converted to
+    UTC; a string is passed through unchanged. Empty input stays `None` –
+    nullable fields (tombstone markers, optional seen-timestamps) must not
+    get fabricated values – unless `default_now=True` explicitly asks for
+    the current timestamp.
+
+    Examples:
+        >>> datetime_iso(datetime(2024, 1, 15, 10, 30))
+        "2024-01-15T10:30:00+00:00"
+        >>> datetime_iso("2024-01-15")
+        "2024-01-15"
+        >>> datetime_iso(None)
+        None
+
+    Args:
+        v: A `datetime`, an ISO string, or `None`
+        default_now: Return the current UTC timestamp for empty input
+            (instead of `None`)
+
+    Returns:
+        The ISO datetime string, or `None`
+    """
+    if not v:
+        if default_now:
+            return utc_now().isoformat()
+        return None
+
+    if isinstance(v, datetime):
+        if v.tzinfo is None:
+            v = v.replace(tzinfo=timezone.utc)
+        else:
+            v = v.astimezone(timezone.utc)
+        return v.isoformat()
+    return v

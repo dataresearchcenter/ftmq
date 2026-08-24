@@ -12,11 +12,13 @@ from followthemoney.proxy import EntityProxy
 from followthemoney.schema import Schema
 from followthemoney.statement.entity import StatementEntity
 
-from ftmq.enums import Schemata
 from ftmq.types import Entity, StatementEntities
 from ftmq.util import make_entity
 
-SCHEMATA: dict[Schemata, int] = {s: len(model[s].extends) for s in Schemata}
+# schema name -> how many parents it extends (specificity for ancestor picking)
+SCHEMATA: dict[str, int] = {
+    name: len(schema.extends) for name, schema in model.schemata.items()
+}
 
 
 def extends(s: Schema) -> set[Schema]:

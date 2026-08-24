@@ -1,8 +1,9 @@
 from functools import cache, wraps
-from typing import Generic, Iterable, TypeVar
+from typing import Any, Iterable, TypeAlias
 from urllib.parse import urlparse
 
 from anystore.logging import get_logger
+from followthemoney import Statement
 from followthemoney.dataset.dataset import Dataset
 from nomenklatura import db as nk_db
 from nomenklatura import store as nk
@@ -12,17 +13,16 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.pool import StaticPool
 
-from ftmq.aggregations import AggregatorResult
 from ftmq.model.stats import Collector, DatasetStats
 from ftmq.query import Query
+from ftmq.query.aggregations import AggregatorResult
+from ftmq.statements import cast_statement
 from ftmq.types import StatementEntities, StatementEntity
-from ftmq.util import DEFAULT_DATASET, ensure_dataset
+from ftmq.util import ensure_dataset
 
 log = get_logger(__name__)
 
 DEFAULT_ORIGIN = "default"
-
-V = TypeVar("V", bound="View")
 
 
 def _memory_engine(url: str = "sqlite:///:memory:") -> Engine:
@@ -49,8 +49,10 @@ def _patch_nomenklatura_sqlite_engines() -> None:
     The resolver and every ``LakeStore`` (via ``SQLStore.__init__`` →
     ``get_engine(uri)``) share one process-cached engine per URL. ``LakeStore``
     fakes ``sqlite:///:memory:`` and exposes no seam to configure that engine,
-    so the factory is wrapped once at import. Only ``:memory:`` URLs are
-    intercepted; file and postgres engines keep nomenklatura's behaviour.
+    so the factory is wrapped once at import. Only sqlite ``:memory:`` URLs are
+    intercepted; file, postgres and duckdb engines keep nomenklatura's
+    behaviour (``check_same_thread`` is a sqlite connect arg - passing it to
+    another driver raises).
     """
     global _PATCHED
     if _PATCHED:
@@ -60,7 +62,7 @@ def _patch_nomenklatura_sqlite_engines() -> None:
 
     @wraps(_orig)
     def _make_engine(url: str) -> Engine:
-        if url.endswith(":memory:"):
+        if url.startswith("sqlite") and url.endswith(":memory:"):
             if url not in _engines:
                 _engines[url] = _memory_engine(url)
             return _engines[url]
@@ -82,7 +84,30 @@ def get_resolver(uri: str | None = None) -> Resolver[StatementEntity]:
     return Resolver[StatementEntity](Session(engine), create=True)
 
 
-class Store(nk.Store[Dataset, StatementEntity], Generic[V]):
+_CASTING_WRITERS: dict[type[Any], type[Any]] = {}
+
+
+def _casting_writer(cls: type[Any]) -> type[Any]:
+    """A backend writer class that casts statement values on the way in."""
+    if cls not in _CASTING_WRITERS:
+
+        class CastingWriter(cls):  # type: ignore[misc]
+            # no attributes of its own, so an instance can be reblessed into it
+            __slots__ = ()
+
+            def add_statement(self, stmt: Statement, *args: Any, **kwargs: Any) -> None:
+                # a value that doesn't parse is written as it came in
+                super().add_statement(cast_statement(stmt) or stmt, *args, **kwargs)
+
+        CastingWriter.__name__ = f"Casting{cls.__name__}"
+        _CASTING_WRITERS[cls] = CastingWriter
+    return _CASTING_WRITERS[cls]
+
+
+Writer: TypeAlias = nk.Writer[Dataset, StatementEntity]
+
+
+class Store(nk.Store[Dataset, StatementEntity]):
     """
     Feature add-ons to `nomenklatura.store.Store`
     """
@@ -91,6 +116,7 @@ class Store(nk.Store[Dataset, StatementEntity], Generic[V]):
         self,
         dataset: Dataset | str | None = None,
         linker: Resolver | None = None,
+        cast_types: bool = True,
         **kwargs,
     ) -> None:
         """
@@ -100,13 +126,38 @@ class Store(nk.Store[Dataset, StatementEntity], Generic[V]):
         Args:
             dataset: A `followthemoney.Dataset` instance to limit the scope to
             linker: A `nomenklatura.Resolver` instance with linked / deduped data
+            cast_types: Normalize statement values on write (see
+                [`ftmq.statements`][ftmq.statements])
         """
-        dataset = ensure_dataset(dataset)
+        # An unscoped store (no explicit `dataset`) implicitly spans every
+        # dataset present in the backend. nomenklatura scopes a view to
+        # `dataset.leaf_names`, so without this the store would only surface
+        # entities literally tagged `dataset="default"`. Resolved lazily (see
+        # `scope`) so opening a store never queries the backend.
+        self._implicit_scope = dataset is None
+        self.cast_types = cast_types
         linker = linker or get_resolver(kwargs.get("uri"))
-        super().__init__(dataset=dataset, linker=linker, **kwargs)
-        # implicit set all datasets as default store scope:
-        if dataset.name == DEFAULT_DATASET and not dataset.leaf_names:
-            self.dataset = self.get_scope()
+        super().__init__(dataset=ensure_dataset(dataset), linker=linker, **kwargs)
+
+    def writer(self, *args: Any, **kwargs: Any) -> Writer:
+        """The backend writer, normalizing statement values on the way in.
+
+        Values are cast into the canonical format of their property type (see
+        [`ftmq.statements`][ftmq.statements]); values that don't parse are
+        passed through unchanged (`ftmq statements cast-types --drop-invalid`
+        cleans those out of an existing dump). Disable with the store's
+        `cast_types=False`.
+        """
+        return self.casting_writer(super().writer(*args, **kwargs))
+
+    def casting_writer(self, writer: Writer) -> Writer:
+        """Rebless a backend writer so it casts statement values on write (see
+        [`writer`][ftmq.store.base.Store.writer]). A store that builds its
+        writer itself has to route it through here."""
+        if self.cast_types:
+            cls: type[Any] = type(writer)
+            writer.__class__ = _casting_writer(cls)
+        return writer
 
     def get_scope(self) -> Dataset:
         """
@@ -114,11 +165,17 @@ class Store(nk.Store[Dataset, StatementEntity], Generic[V]):
         """
         raise NotImplementedError
 
-    def view(self, scope: Dataset | None = None, external: bool = False) -> V:
+    @property
+    def scope(self) -> Dataset:
+        """The effective read scope: the store's explicit `dataset`, or all
+        datasets present in the backend when it was opened without one."""
+        return self.get_scope() if self._implicit_scope else self.dataset
+
+    def view(self, scope: Dataset | None = None, external: bool = False) -> "View":
         raise NotImplementedError
 
-    def default_view(self, external: bool = False) -> V:
-        return self.view(self.dataset, external)
+    def default_view(self, external: bool = False) -> "View":
+        return self.view(self.scope, external)
 
     def iterate(self, dataset: str | Dataset | None = None) -> StatementEntities:
         """
@@ -131,21 +188,16 @@ class Store(nk.Store[Dataset, StatementEntity], Generic[V]):
             Generator of `nomenklatura.entity.CompositeEntity`
         """
         if dataset is not None:
-            dataset = ensure_dataset(dataset)
-            view = self.view(dataset)
+            view = self.view(ensure_dataset(dataset))
         else:
-            view = self.view(self.get_scope())
+            view = self.default_view()
         yield from view.entities()
 
 
-class View(nk.View):
+class View(nk.View[Dataset, StatementEntity]):
     """
     Feature add-ons to `nomenklatura.store.base.View`
     """
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._cache = {}
 
     def query(self, query: Query | None = None) -> StatementEntities:
         """
@@ -175,12 +227,8 @@ class View(nk.View):
         return seen
 
     def stats(self, query: Query | None = None) -> DatasetStats:
-        key = f"stats-{hash(query)}"
-        if key in self._cache:
-            return self._cache[key]
         c = Collector()
         cov = c.collect_many(self.query(query))
-        self._cache[key] = cov
         return cov
 
     def count(self, query: Query | None = None) -> int:
@@ -189,11 +237,7 @@ class View(nk.View):
     def aggregations(self, query: Query) -> AggregatorResult | None:
         if not query.aggregations:
             return
-        key = f"agg-{hash(query)}"
-        if key in self._cache:
-            return self._cache[key]
         _ = [x for x in self.query(query)]
         if query.aggregator:
             res = dict(query.aggregator.result)
-            self._cache[key] = res
             return res

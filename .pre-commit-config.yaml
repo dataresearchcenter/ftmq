@@ -13,6 +13,7 @@ repos:
       - id: check-symlinks
       - id: check-toml
       - id: check-yaml
+        args: [--unsafe]
       - id: debug-statements
       - id: end-of-file-fixer
       - id: mixed-line-ending
@@ -31,7 +32,7 @@ repos:
     - id: absolufy-imports
 
   - repo: https://github.com/pycqa/isort
-    rev: 9.0.0b1
+    rev: 9.0.0b5
     hooks:
       - id: isort
         args: ["--profile", "black"]

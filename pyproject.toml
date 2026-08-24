@@ -16,30 +16,35 @@ classifiers = [
 ]
 requires-python = ">=3.11,<3.15"
 dependencies = [
-    "anystore (>=1.2.5,<2.0.0)",
+    "anystore (>=1.2.6,<2.0.0)",
     "rigour (>=2.3.1,<3.0.0)",
-    "click (>=8.4.2,<9.0.0)",
+    "followthemoney (>=4.10.2,<5.0.0)",
     "followthemoney (>=4.10.1,<5.0.0)",
-    "nomenklatura (>=4.13.0,<5.0.0)",
-    "rigour (>=2.1.2,<3.0.0)",
-    "click-default-group (>=1.2.4,<2.0.0)",
+    "nomenklatura (>=4.14.0,<5.0.0)",
+    "typer (>=0.26.8,<1)",
     "orjson (>=3.10.18,<4.0.0)",
-    "pydantic (>=2.13.3,<3.0.0)",
     "normality (>=3.1.0,<4.0.0)",
+    "pyrql (>=0.7.11,<1.0.0)",
 ]
 
 [project.optional-dependencies]
 level = ["plyvel (>=1.5.1,<2.0.0)"]
 sql = ["sqlalchemy (>=2.0.51,<3.0.0)"]
 postgres = ["sqlalchemy (>=2.0.51,<3.0.0)", "psycopg[pool] (>=3.2.9,<4.0.0)"]
-redis = ["redis (>=5.2.1,<6.0.0)", "fakeredis (>=2.37.0,<3.0.0)"]
+duckdb = ["sqlalchemy (>=2.0.51,<3.0.0)", "duckdb-engine (>=0.17.0,<0.18.0)", "duckdb (>=1.5.5,<2.0.0)"]
 lake = [
     "duckdb (>=1.5.5,<2.0.0)",
-    "deltalake (>=1.6.2,<2.0.0)",
-    "pyarrow (>=24.0.0,<25.0.0)",
+    "deltalake (>=1.6.3,<2.0.0)",
+    "pyarrow (>=25.0.1,<26.0.0)",
     "pandas (>=3.0.5,<4.0.0)",
 ]
 aleph = ["furl (>=2.1.4,<3.0.0)", "alephclient (>=2.6.0,<3.0.0)"]
+search = ["tantivy (>=0.26.0,<0.27.0)"]
+api = [
+    "fastapi (>=0.139.2,<0.140.0)",
+    "furl (>=2.1.4,<3.0.0)",
+    "granian (>=2.7.9,<3.0.0)",
+]
 
 [project.scripts]
 ftmq = "ftmq.cli:cli"
@@ -61,20 +66,35 @@ pre-commit = "^4.6.1"
 flake8 = ">=6.1,<8.0"
 ipdb = "^0.13.13"
 bump2version = "^1.0.1"
-mkdocs = "^1.6.1"
+zensical = "^0.0.51"
 mkdocs-autorefs = "^1.4.4"
 mkdocstrings-python = "^2.0.5"
-mkdocs-material = "^9.7.7"
+griffe-pydantic = "^1.1.6"
 mkdocs-click = "^0.9.0"
-griffe = "<3"
 anystore = {extras = ["http", "s3"], version = "^1.2.6"}
+httpx = "^0.28.1"
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    # pyrql drives pyparsing through its deprecated camelCase api on every
+    # parse; ftmq installs a matching runtime filter at import (ftmq/query/rql.py),
+    # but pytest manages warning filters per test and would re-surface them
+    "ignore::DeprecationWarning:pyrql.*",
+    "ignore::DeprecationWarning:pyparsing.*",
+    # sqlalchemy constructs deprecated in *our* code are a build failure, so a
+    # removal in a future sqlalchemy release cannot land as a runtime break.
+    # Scoped to ftmq modules: a dependency's own deprecations are not ours.
+    "error::sqlalchemy.exc.SADeprecationWarning:ftmq.*",
+]
 
 [tool.pytest_env]
 NOMENKLATURA_STATEMENT_TABLE = "test_table"
 NOMENKLATURA_DB_URL = "sqlite:///:memory:"
 DEBUG = 1
 MAX_SQL_AGG_GROUPS = 11
+FTMQ_API_USE_CACHE = 1
+FTMQ_API_CACHE_URI = "memory:///ftmq-api-cache"

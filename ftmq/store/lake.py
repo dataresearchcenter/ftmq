@@ -19,9 +19,10 @@ Layout:
 """
 
 from contextlib import contextmanager
+from datetime import datetime
 from functools import cache, cached_property
 from pathlib import Path
-from typing import Any, Callable, Generator, Iterator, cast
+from typing import Any, Callable, Generator, Iterable, Iterator, cast
 from urllib.parse import urlparse
 
 import duckdb
@@ -46,18 +47,16 @@ from followthemoney.dataset.dataset import Dataset
 from followthemoney.statement import Statement, StatementDict
 from nomenklatura import settings as nks
 from nomenklatura import store as nk
-from nomenklatura.db import get_metadata
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import Boolean, DateTime, column, select, table
 from sqlalchemy.sql import Select
 from sqlalchemy.sql.elements import ColumnElement
 
-from ftmq.query import Query
+from ftmq.query.sql import PruneFn, SqlSource, prune_by_schema
 from ftmq.store.base import DEFAULT_ORIGIN, Store
 from ftmq.store.sql import SQLQueryView, SQLStore
-from ftmq.types import StatementEntities
-from ftmq.util import apply_dataset, ensure_entity, get_scope_dataset
+from ftmq.util import apply_dataset, ensure_entity, get_scope_dataset, iso_datetime
 
 log = get_logger(__name__)
 
@@ -92,14 +91,16 @@ _COMMON_COLUMNS = {
     "last_seen": ColumnProperties(statistics_enabled="CHUNK"),
 }
 WRITER_SMALL = WriterProperties(
-    compression="SNAPPY",
+    compression="ZSTD",
+    compression_level=3,
     data_page_size_limit=2 * 1024 * 1024,
     dictionary_page_size_limit=1 * 1024 * 1024,
     max_row_group_size=1_000_000,
     column_properties={**_COMMON_COLUMNS, "value": _STATS_BLOOM},
 )
 WRITER_LARGE = WriterProperties(
-    compression="SNAPPY",
+    compression="ZSTD",
+    compression_level=3,
     data_page_size_limit=16 * 1024 * 1024,
     dictionary_page_size_limit=1 * 1024 * 1024,
     max_row_group_size=10_000,
@@ -113,7 +114,7 @@ def writer_for_bucket(bucket: str) -> WriterProperties:
 
 SA_TO_ARROW: dict[type, pa.DataType] = {
     Boolean: pa.bool_(),
-    DateTime: pa.timestamp("us"),
+    DateTime: pa.timestamp("us", tz="UTC"),
 }
 
 TABLE = table(
@@ -171,7 +172,7 @@ class LakeStatement(Statement):
         :class:`LakeWriter` batch-key idiom and sorts a non-fragment row
         before fragment rows of the same id.
         """
-        return f"{self.id}\t{self.fragment}"
+        return f"{self.id}\t{self.origin or DEFAULT_ORIGIN}\t{self.fragment}"
 
     @classmethod
     def from_statement(
@@ -203,9 +204,14 @@ class LakeStatement(Statement):
         return stmt
 
 
+SECRETS_DIR = Path("/run/secrets")
+
+
 class StorageSettings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env", extra="ignore", secrets_dir="/run/secrets"
+        env_file=".env",
+        extra="ignore",
+        secrets_dir=str(SECRETS_DIR) if SECRETS_DIR.is_dir() else None,
     )
 
     key: str | None = Field(default=None, alias="aws_access_key_id")
@@ -273,13 +279,97 @@ def get_schema_bucket(schema_name: str) -> str:
     return BUCKET_THING
 
 
+# the `bucket` partition is a function of the statement's schema, so a schema
+# filter prunes it (built once - the rule is a closure over `get_schema_bucket`)
+PRUNE: dict[str, PruneFn] = {"bucket": prune_by_schema(get_schema_bucket)}
+
+
 def pack_statement(stmt: Statement, source: str | None = None) -> SDict:
-    data = stmt.to_db_row()
+    """Pack statement to wire format for db but keep microseconds"""
+    data = cast(SDict, stmt.to_dict())
+    data["prop_type"] = stmt.prop_type
+    data["first_seen"] = iso_datetime(data["first_seen"])
+    data["last_seen"] = iso_datetime(data["last_seen"])
     data["bucket"] = get_schema_bucket(data["schema"])
     data["source"] = source
     data["origin"] = data["origin"] or DEFAULT_ORIGIN
     data["fragment"] = stmt.fragment if isinstance(stmt, LakeStatement) else ""
     return data
+
+
+def statements_to_table(statements: Iterable[Statement]) -> pa.Table:
+    """Pack statements into an :data:`ARROW_SCHEMA` table, columnwise.
+
+    One pass over ``statements``, appending each field into its own list, then a
+    single :func:`pyarrow.table` call. Prefer this over mapping
+    :func:`pack_statement` when writing many statements at once.
+
+    ``source`` is left null: it is per-write provenance rather than statement
+    content, so writers set that column themselves.
+
+    Args:
+        statements: The statements to pack.
+
+    Returns:
+        A table with exactly :data:`ARROW_SCHEMA`.
+    """
+    ids: list[str | None] = []
+    entity_ids: list[str | None] = []
+    canonical_ids: list[str | None] = []
+    datasets: list[str] = []
+    buckets: list[str] = []
+    origins: list[str] = []
+    schemata: list[str] = []
+    props: list[str] = []
+    prop_types: list[str | None] = []
+    values: list[str] = []
+    original_values: list[str | None] = []
+    langs: list[str | None] = []
+    externals: list[bool] = []
+    first_seens: list[datetime | None] = []
+    last_seens: list[datetime | None] = []
+    fragments: list[str] = []
+
+    for stmt in statements:
+        ids.append(stmt.id)
+        entity_ids.append(stmt.entity_id)
+        canonical_ids.append(stmt.canonical_id)
+        datasets.append(stmt.dataset)
+        buckets.append(get_schema_bucket(stmt.schema))
+        origins.append(stmt.origin or DEFAULT_ORIGIN)
+        schemata.append(stmt.schema)
+        props.append(stmt.prop)
+        prop_types.append(stmt.prop_type)
+        values.append(stmt.value)
+        original_values.append(stmt.original_value)
+        langs.append(stmt.lang)
+        externals.append(stmt.external)
+        first_seens.append(iso_datetime(stmt.first_seen))
+        last_seens.append(iso_datetime(stmt.last_seen))
+        fragments.append(stmt.fragment if isinstance(stmt, LakeStatement) else "")
+
+    return pa.table(
+        {
+            "id": ids,
+            "entity_id": entity_ids,
+            "canonical_id": canonical_ids,
+            "dataset": datasets,
+            "bucket": buckets,
+            "origin": origins,
+            "source": [None] * len(ids),
+            "schema": schemata,
+            "prop": props,
+            "prop_type": prop_types,
+            "value": values,
+            "original_value": original_values,
+            "lang": langs,
+            "external": externals,
+            "first_seen": first_seens,
+            "last_seen": last_seens,
+            "fragment": fragments,
+        },
+        schema=ARROW_SCHEMA,
+    )
 
 
 ViewSqlBuilder = Callable[[DeltaTable], str]
@@ -324,27 +414,17 @@ class Row:
         return list(self.__iter__())[i]
 
 
-def ensure_schema_buckets(q: Query) -> Select:
-    if not q.schemata_names:
-        return q.sql.statements
-    buckets: set[str] = set()
-    for schema in q.schemata_names:
-        buckets.add(get_schema_bucket(schema))
-    return q.sql.statements.where(TABLE.c.bucket.in_(buckets))
+class LakeStore(SQLStore):
+    @property
+    def source(self) -> SqlSource:
+        """The lake statement view, with schema-filter -> `bucket` partition
+        pruning and the view filter folded into every compiled query."""
+        return SqlSource(
+            self.table,
+            prune=PRUNE,
+            base_filter=self._view_filter,
+        )
 
-
-class LakeQueryView(SQLQueryView):
-    def query(self, query: Query | None = None) -> StatementEntities:
-        if query:
-            query.table = self.store.table
-            query = self.ensure_scoped_query(query)
-            sql = ensure_schema_buckets(query)
-            yield from self.store._iterate(sql)
-        else:
-            yield from super().query(query)
-
-
-class LakeStore(SQLStore[LakeQueryView]):
     def __init__(self, *args, **kwargs) -> None:
         self._backend = FSStore(uri=kwargs.pop("uri"))
         self._partition_by = kwargs.pop("partition_by", PARTITION_BY)
@@ -357,8 +437,7 @@ class LakeStore(SQLStore[LakeQueryView]):
         }
         self._duckdb_config: dict[str, str] = kwargs.pop("duckdb_config", None) or {}
         kwargs["uri"] = "sqlite:///:memory:"  # fake it till you make it
-        get_metadata.cache_clear()
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)  # clears the cached MetaData
         self.table = TABLE
         self.uri = self._backend.uri
         setup_duckdb_storage()
@@ -460,14 +539,15 @@ class LakeStore(SQLStore[LakeQueryView]):
 
     def view(
         self, scope: Dataset | None = None, external: bool = False
-    ) -> LakeQueryView:
+    ) -> SQLQueryView:
         scope = scope or self.dataset
-        return LakeQueryView(self, scope, external)
+        return SQLQueryView(self, scope, external)
 
     def writer(
         self, origin: str | None = DEFAULT_ORIGIN, source: str | None = None
     ) -> "LakeWriter":
-        return LakeWriter(self, origin=origin or DEFAULT_ORIGIN, source=source)
+        writer = LakeWriter(self, origin=origin or DEFAULT_ORIGIN, source=source)
+        return cast("LakeWriter", self.casting_writer(writer))
 
     def get_origins(self) -> set[str]:
         q = select(self.table.c.origin).distinct()
@@ -496,7 +576,7 @@ class LakeWriter(nk.Writer):
         canonical_id = self.store.linker.get_canonical(stmt.entity_id)
         stmt.canonical_id = canonical_id
         dedupe = stmt.dedupe_key if isinstance(stmt, LakeStatement) else stmt.id
-        key = f"{canonical_id}\t{dedupe}"
+        key = f"{canonical_id}\t{dedupe}\t{stmt.origin}"
         self.batch[key] = (stmt, source or self.source)
 
     def add_entity(
@@ -518,11 +598,16 @@ class LakeWriter(nk.Writer):
             self.flush()
 
     def _build_table(self) -> pa.Table:
-        rows: list[SDict] = []
-        for key in sorted(self.batch):
-            stmt, source = self.batch[key]
-            rows.append(pack_statement(stmt, source))
-        return pa.Table.from_pylist(rows, schema=ARROW_SCHEMA)
+        keys = sorted(self.batch)
+        table = statements_to_table(self.batch[key][0] for key in keys)
+        # `source` is per statement, not per statement content – set the whole
+        # column at once instead of threading it through the packer
+        sources = [self.batch[key][1] for key in keys]
+        return table.set_column(
+            ARROW_SCHEMA.get_field_index("source"),
+            "source",
+            pa.array(sources, pa.string()),
+        )
 
     def flush(self) -> None:
         if not self.batch:
