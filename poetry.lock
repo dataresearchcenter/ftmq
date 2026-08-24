@@ -492,19 +492,6 @@ astroid = ["astroid (>=2,<5)"]
 test = ["astroid (>=2,<5)", "pytest (<9.0)", "pytest-cov", "pytest-xdist"]
 
 [[package]]
-name = "async-timeout"
-version = "5.0.1"
-description = "Timeout context manager for asyncio programs"
-optional = true
-python-versions = ">=3.8"
-groups = ["main"]
-markers = "extra == \"redis\" and python_full_version < \"3.11.3\""
-files = [
-    {file = "async_timeout-5.0.1-py3-none-any.whl", hash = "sha256:39e3809566ff85354557ec2398b55e096c8364bacac9405a7a1fa429e77fe76c"},
-    {file = "async_timeout-5.0.1.tar.gz", hash = "sha256:d9321a7a3d5a6a5e187e824d2fa0793ce379a202935782d555d6e9d2735677d3"},
-]
-
-[[package]]
 name = "attrs"
 version = "26.1.0"
 description = "Classes Without Boilerplate"
@@ -1263,32 +1250,6 @@ files = [
 
 [package.extras]
 tests = ["asttokens (>=2.1.0)", "coverage", "coverage-enable-subprocess", "ipython", "littleutils", "pytest", "rich ; python_version >= \"3.11\""]
-
-[[package]]
-name = "fakeredis"
-version = "2.37.1"
-description = "Python implementation of redis API, can be used for testing purposes."
-optional = true
-python-versions = ">=3.8"
-groups = ["main"]
-markers = "extra == \"redis\""
-files = [
-    {file = "fakeredis-2.37.1-py3-none-any.whl", hash = "sha256:f15c41be151c1e9206416dece764369a4dedb6b1341df3734c3c2c000e405508"},
-    {file = "fakeredis-2.37.1.tar.gz", hash = "sha256:9045851b0a9fe56312696aadc82435141aa43a193cab462d372c8fb583a7c087"},
-]
-
-[package.dependencies]
-redis = ">=4.3"
-sortedcontainers = ">=2"
-
-[package.extras]
-bf = ["pyprobables (>=0.6)"]
-cf = ["pyprobables (>=0.6)"]
-json = ["jsonpath-ng (>=1.6)"]
-lua = ["lupa (>=2.1)"]
-probabilistic = ["pyprobables (>=0.6)"]
-valkey = ["valkey (>=6)"]
-vectorset = ["jsonpath-ng (>=1.6) ; python_version >= \"3.11\"", "numpy (>=2.4.0) ; python_version >= \"3.11\""]
 
 [[package]]
 name = "fastapi"
@@ -4373,22 +4334,6 @@ files = [
 ]
 
 [[package]]
-name = "pyjwt"
-version = "2.13.0"
-description = "JSON Web Token implementation in Python"
-optional = true
-python-versions = ">=3.9"
-groups = ["main"]
-markers = "extra == \"redis\""
-files = [
-    {file = "pyjwt-2.13.0-py3-none-any.whl", hash = "sha256:66adcc2aff09b3f1bbd95fc1e1577df8ac8723c978552fd43304c8a290ac5728"},
-    {file = "pyjwt-2.13.0.tar.gz", hash = "sha256:41571c89ca91598c79e8ef18a2d07367d4810fbbd6f637794879baf1b7703423"},
-]
-
-[package.extras]
-crypto = ["cryptography (>=3.4.0)"]
-
-[[package]]
 name = "pymdown-extensions"
 version = "11.0.2"
 description = "Extension pack for Python Markdown."
@@ -4744,27 +4689,6 @@ lxml = ["lxml (>=4.3,<6.0)"]
 networkx = ["networkx (>=2,<4)"]
 orjson = ["orjson (>=3.9.14,<4)"]
 rdf4j = ["httpx (>=0.28.1,<0.29.0)"]
-
-[[package]]
-name = "redis"
-version = "5.3.1"
-description = "Python client for Redis database and key-value store"
-optional = true
-python-versions = ">=3.8"
-groups = ["main"]
-markers = "extra == \"redis\""
-files = [
-    {file = "redis-5.3.1-py3-none-any.whl", hash = "sha256:dc1909bd24669cc31b5f67a039700b16ec30571096c5f1f0d9d2324bff31af97"},
-    {file = "redis-5.3.1.tar.gz", hash = "sha256:ca49577a531ea64039b5a36db3d6cd1a0c7a60c34124d46924a45b956e8cf14c"},
-]
-
-[package.dependencies]
-async-timeout = {version = ">=4.0.3", markers = "python_full_version < \"3.11.3\""}
-PyJWT = ">=2.9.0"
-
-[package.extras]
-hiredis = ["hiredis (>=3.0.0)"]
-ocsp = ["cryptography (>=36.0.1)", "pyopenssl (==23.2.1)", "requests (>=2.31.0)"]
 
 [[package]]
 name = "regex"
@@ -5273,19 +5197,6 @@ groups = ["main", "dev"]
 files = [
     {file = "six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274"},
     {file = "six-1.17.0.tar.gz", hash = "sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81"},
-]
-
-[[package]]
-name = "sortedcontainers"
-version = "2.4.0"
-description = "Sorted Containers -- Sorted List, Sorted Dict, Sorted Set"
-optional = true
-python-versions = "*"
-groups = ["main"]
-markers = "extra == \"redis\""
-files = [
-    {file = "sortedcontainers-2.4.0-py2.py3-none-any.whl", hash = "sha256:a163dcaede0f1c021485e957a39245190e74249897e2ae4b2aa38595db237ee0"},
-    {file = "sortedcontainers-2.4.0.tar.gz", hash = "sha256:25caa5a06cc30b6b83d11423433f65d1f9d76c4c6a0c90e3379eaa43b9bfdb88"},
 ]
 
 [[package]]
@@ -6075,11 +5986,10 @@ duckdb = ["duckdb", "duckdb-engine", "sqlalchemy"]
 lake = ["deltalake", "duckdb", "pandas", "pyarrow"]
 level = ["plyvel"]
 postgres = ["psycopg", "sqlalchemy"]
-redis = ["fakeredis", "redis"]
 search = ["tantivy"]
 sql = ["sqlalchemy"]
 
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.15"
-content-hash = "35dd8b0318c0981994ce4ffd3a56c7867a6b8064aecec17ec7b76537196c7e71"
+content-hash = "3e50206c54de5a4acd5fbb401502f27aaf088adcb1772685c679cf92f09173fe"

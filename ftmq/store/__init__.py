@@ -31,9 +31,6 @@ def get_store(
         # a leveldb store:
         get_store("leveldb:///var/lib/data")
 
-        # a redis (or kvrocks) store:
-        get_store("redis://localhost")
-
         # a sqlite store
         get_store("sqlite:///data/followthemoney.db")
 
@@ -66,13 +63,6 @@ def get_store(
             )
         except ImportError:
             raise ImportError("Can not load LevelDBStore. Install `plyvel`")
-    if parsed.scheme == "redis":
-        try:
-            from ftmq.store.redis import RedisStore
-
-            return RedisStore(dataset, linker=linker, cast_types=cast_types)
-        except ImportError:
-            raise ImportError("Can not load RedisStore. Install `redis`")
     if parsed.scheme == "duckdb":
         try:
             from ftmq.store.duckdb import DuckDBStore
