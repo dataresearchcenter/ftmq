@@ -33,6 +33,6 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
-    "@opensanctions/followthemoney": "^4.10.0"
+    "@opensanctions/followthemoney": "^4.10.2"
   }
 }
