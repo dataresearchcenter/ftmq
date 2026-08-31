@@ -2,14 +2,19 @@ from pathlib import Path
 
 import orjson
 from anystore.logging import configure_logging
-from followthemoney import Statement, ValueEntity
+from followthemoney import Statement, StatementEntity, ValueEntity
 from followthemoney.dataset.dataset import DatasetModel
 from followthemoney.statement import read_statements, write_statements
 from typer.testing import CliRunner
 
 from ftmq.cli import cli
-from ftmq.io import make_entity
+from ftmq.io import (
+    make_entity,
+    smart_read_statements,
+    smart_write_proxies,
+)
 from ftmq.model.dataset import Catalog
+from ftmq.query import P, Query
 
 runner = CliRunner()
 
@@ -602,3 +607,131 @@ def test_cli_select(fixtures_path: Path):
         "-q",
         "filter:schema=PublicBody&limit=1&select=group.countries",
     ) == {"name": full["name"], "jurisdiction": full["jurisdiction"]}
+
+
+def test_cli_statements_read_write(tmp_path, eu_authorities):
+    """Statements go out of a store into a stream, and back into another."""
+    source = f"sqlite:///{tmp_path}/source.db"
+    smart_write_proxies(source, eu_authorities[:5], dataset="eu_authorities")
+
+    dump = tmp_path / "dump.csv"
+    result = runner.invoke(cli, ["statements", "read", "-i", source, "-o", str(dump)])
+    assert result.exit_code == 0, result.output
+    with open(dump, "rb") as fh:
+        statements = list(read_statements(fh, "csv"))
+    assert len(statements) > 5
+    assert {s.dataset for s in statements} == {"eu_authorities"}
+
+    # json as well
+    dump_json = tmp_path / "dump.json"
+    result = runner.invoke(
+        cli,
+        [
+            "statements",
+            "read",
+            "-i",
+            source,
+            "-o",
+            str(dump_json),
+            "--output-format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    with open(dump_json, "rb") as fh:
+        assert len(list(read_statements(fh, "json"))) == len(statements)
+
+    # an unknown format exits non-zero, as for `cast-types`
+    result = runner.invoke(
+        cli, ["statements", "read", "-i", source, "--output-format", "xml"]
+    )
+    assert result.exit_code == 1
+
+    # and the dump loads into another store unchanged
+    target = f"sqlite:///{tmp_path}/target.db"
+    result = runner.invoke(cli, ["statements", "write", "-i", str(dump), "-o", target])
+    assert result.exit_code == 0, result.output
+    assert {s.id for s in smart_read_statements(target)} == {s.id for s in statements}
+
+
+def test_cli_statements_resolve_roundtrip(tmp_path):
+    """The documented pipeline: dump, apply the resolver, load back in place."""
+    from nomenklatura.db import Session, get_engine
+    from nomenklatura.judgement import Judgement
+    from nomenklatura.resolver import Resolver
+
+    from ftmq.store import get_store
+    from ftmq.store.base import get_linker
+    from ftmq.util import make_dataset
+
+    # a dedupe decision, exported the way `nomenklatura dump-resolver` does
+    edges = tmp_path / "resolver.ijson"
+    with Session(get_engine(f"sqlite:///{tmp_path}/resolver.db")) as session:
+        resolver = Resolver[StatementEntity](session, create=True)
+        canonical = str(
+            resolver.decide("rt-left", "rt-right", Judgement.POSITIVE, user="test")
+        )
+        resolver.dump(edges)
+    linker = get_linker(edges)
+
+    # an unresolved store: its statements carry their own ids
+    store_uri = f"sqlite:///{tmp_path}/roundtrip.db"
+    dataset = make_dataset("roundtrip")
+    proxies = [
+        make_entity(
+            {
+                "id": "rt-left",
+                "schema": "Person",
+                "properties": {"name": ["Jane Doe"], "country": ["de"]},
+            },
+            StatementEntity,
+            dataset,
+        ),
+        make_entity(
+            {"id": "rt-right", "schema": "Person", "properties": {"name": ["J. Doe"]}},
+            StatementEntity,
+            dataset,
+        ),
+    ]
+    smart_write_proxies(store_uri, proxies, dataset="roundtrip")
+    before = {s.id for s in smart_read_statements(store_uri)}
+
+    # 1. dump
+    dump = tmp_path / "statements.csv"
+    result = runner.invoke(
+        cli, ["statements", "read", "-i", store_uri, "-o", str(dump)]
+    )
+    assert result.exit_code == 0, result.output
+
+    # 2. stamp the canonical ids on - what `nomenklatura apply-statements` does
+    resolved = tmp_path / "resolved.csv"
+    with open(dump, "rb") as fh:
+        stamped = [linker.apply_statement(s) for s in read_statements(fh, "csv")]
+    with open(resolved, "wb") as fh:
+        write_statements(fh, "csv", stamped)
+
+    # 3. load back into the same store
+    result = runner.invoke(
+        cli, ["statements", "write", "-i", str(resolved), "-o", store_uri]
+    )
+    assert result.exit_code == 0, result.output
+
+    # in place: the same rows, now carrying the canonical id
+    after = list(smart_read_statements(store_uri))
+    assert {s.id for s in after} == before
+    assert {s.canonical_id for s in after} == {canonical}
+
+    # and the store now serves the merged entity
+    store = get_store(store_uri, dataset="roundtrip", linker=linker)
+    view = store.default_view()
+    entity = view.get_entity(canonical)
+    assert entity is not None
+    assert entity.id == canonical
+    assert sorted(entity.get("name")) == ["J. Doe", "Jane Doe"]
+    assert entity.get("country") == ["de"]
+    assert entity.extra_referents == {"rt-left", "rt-right"}
+
+    # a query returns one entity, not one per referent
+    entities = list(view.query(Query().where(P(name="Jane Doe"))))
+    assert len(entities) == 1
+    assert entities[0].id == canonical

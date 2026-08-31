@@ -133,3 +133,28 @@ Values that do not parse are logged and passed through unchanged; `--drop-invali
 ```bash
 cat statements.csv | ftmq statements cast-types -t number --drop-invalid -o s3://data/statements.csv
 ```
+
+### Statements in and out of a store
+
+`read` dumps the statements of a store, `write` loads a statement stream into one. Together they let the nomenklatura resolver tooling, which works on statement streams, operate on a store - this is how a store is [resolved](./stores.md#merged-entities-resolver--linker) so that merged entities read back as one:
+
+```bash
+nomenklatura dump-resolver resolver.ijson
+ftmq statements read -i duckdb://followthemoney.duckdb -o statements.csv
+nomenklatura apply-statements -i statements.csv -o resolved.csv
+ftmq statements write -i resolved.csv -o duckdb://followthemoney.duckdb
+```
+
+The last step updates the store in place: a statement's id is a hash over its dataset, entity id, property, value and language - not over `canonical_id` - so the resolved rows upsert onto the rows they came from. Nothing is duplicated and nothing is deleted, so this also works to add a dump to a store that already holds other data.
+
+`write` preserves the `canonical_id` each statement carries and never re-derives it from a resolver. That is what keeps the `apply-statements` pass meaningful; it also means a stream that was never resolved loads unresolved, whatever the target store knows.
+
+`read` yields the rows as stored - external statements included, in no particular order - so a dump loads back verbatim. It needs a SQL-family backend (sqlite, postgres, duckdb, lake); other stores raise. Restrict it to one dataset with `-d`:
+
+```bash
+ftmq statements read -i sqlite:///followthemoney.store -d my_dataset -o statements.csv
+```
+
+Both commands take `--input-format` / `--output-format` for their file side. Use `csv` or `json` for anything involving a resolver: the `pack` format has no `canonical_id` column at all, so it silently reads merged statements back as their referents (a warning is logged).
+
+Two things are specific to the [delta lake store](./stores.md): it appends rather than upserting, so loading into one adds rows instead of updating them, and its `fragment` column has no place in any of the statement formats, so a dump does not carry it.

@@ -2,39 +2,19 @@
 `ftmq statements` - work on raw statement streams (csv, json, pack).
 """
 
-import io
-from typing import IO, Annotated, Any, BinaryIO, Optional, cast
+from typing import Annotated, Optional
 
 import typer
 from anystore.cli import ErrorHandler
-from anystore.io import smart_open
-from followthemoney.statement import CSV, FORMATS, read_statements, write_statements
+from anystore.logging import get_logger
+from followthemoney.statement import CSV, FORMATS
+from nomenklatura import settings as nk_settings
 
+from ftmq.io import smart_read_statements, smart_write_statements
 from ftmq.statements import DEFAULT_TYPES, cast_types
 
+log = get_logger(__name__)
 statements_cli = typer.Typer(no_args_is_help=True)
-
-
-class KeepOpen(io.RawIOBase):
-    """Pass writes through to a handle that outlives this wrapper.
-
-    The csv / pack statement writers wrap the output in a `TextIOWrapper`,
-    which closes what it wraps as soon as it is collected - tearing down a
-    shared stdout for whatever else runs in the same process. Closing the real
-    handle is `smart_open`'s job.
-    """
-
-    def __init__(self, fh: IO[bytes]) -> None:
-        self.fh = fh
-
-    def writable(self) -> bool:
-        return True
-
-    def write(self, data: Any) -> int:
-        return self.fh.write(data)
-
-    def flush(self) -> None:
-        self.fh.flush()
 
 
 def _ensure_format(value: str) -> str:
@@ -84,9 +64,61 @@ def cli_statements_cast_types(
     input_format = _ensure_format(input_format)
     output_format = _ensure_format(output_format)
     with ErrorHandler():
-        with smart_open(input_uri, mode="rb") as in_fh:
-            statements = read_statements(cast(BinaryIO, in_fh), format=input_format)
-            typed = cast_types(statements, types, drop_invalid=drop_invalid)
-            with smart_open(output_uri, mode="wb") as out_fh:
-                fh = cast(BinaryIO, KeepOpen(cast(IO[bytes], out_fh)))
-                write_statements(fh, output_format, typed)
+        statements = smart_read_statements(input_uri, format=input_format)
+        typed = cast_types(statements, types, drop_invalid=drop_invalid)
+        smart_write_statements(output_uri, typed, format=output_format)
+
+
+@statements_cli.command("read")
+def cli_statements_read(
+    input_uri: Annotated[
+        str, typer.Option("-i", "--input-uri", help="store uri")
+    ] = nk_settings.DB_URL,
+    output_uri: Annotated[
+        str, typer.Option("-o", "--output-uri", help="output file or uri")
+    ] = "-",
+    output_format: Annotated[
+        str, typer.Option("--output-format", help="csv, json or pack")
+    ] = CSV,
+    dataset: Annotated[
+        Optional[str], typer.Option("-d", "--dataset", help="Dataset to limit scope to")
+    ] = None,
+) -> None:
+    """
+    Dump the raw statements of a store into a statement stream.
+
+    The rows come back as stored, external statements included and in no
+    particular order, so the dump loads back verbatim via `ftmq statements
+    write`. Only the SQL family of backends can do this.
+    """
+    output_format = _ensure_format(output_format)
+    with ErrorHandler():
+        statements = smart_read_statements(input_uri, dataset=dataset)
+        smart_write_statements(output_uri, statements, format=output_format)
+
+
+@statements_cli.command("write")
+def cli_statements_write(
+    input_uri: Annotated[
+        str, typer.Option("-i", "--input-uri", help="input file or uri")
+    ] = "-",
+    output_uri: Annotated[
+        str, typer.Option("-o", "--output-uri", help="store uri")
+    ] = nk_settings.DB_URL,
+    input_format: Annotated[
+        str, typer.Option("--input-format", help="csv, json or pack")
+    ] = CSV,
+) -> None:
+    """
+    Load a statement stream into a store.
+
+    Each statement keeps the `canonical_id` it carries - it is never
+    re-derived from a resolver - so a stream stamped by `nomenklatura
+    apply-statements` stays resolved. A SQL store upserts on the statement id,
+    so loading a dump back into the store it came from updates it in place.
+    """
+    input_format = _ensure_format(input_format)
+    with ErrorHandler():
+        statements = smart_read_statements(input_uri, format=input_format)
+        count = smart_write_statements(output_uri, statements)
+        log.info(f"Wrote `{count}` statements.", uri=output_uri)

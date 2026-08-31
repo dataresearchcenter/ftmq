@@ -37,21 +37,20 @@ store = get_store("sqlite:///followthemoney.store", linker=get_linker("s3://data
 
 **A linker resolves ids, not data.** A statement store answers by the `canonical_id` column, so the merge has to be *in the statements*: the sql-family and lake writers stamp the canonical id onto everything they write, and a store written before the decisions existed keeps the old ids. Handing such a store a linker afterwards is not enough - a filter, a count, an aggregation and the search index all still see the cluster members as separate entities, and `filter:id=<canonical>` matches nothing.
 
-**So resolve the data before serving it.** Either write the entities through a store that has the linker, or apply the decisions to a dump with the nomenklatura cli, which is what [`Linker.apply_statement`](https://github.com/opensanctions/nomenklatura) does per statement:
+**So resolve the data before serving it.** Dump the store's statements, stamp the decisions onto them with the nomenklatura cli, and load them back - `ftmq statements read` / `write` are the store-side halves of that round trip (see [the cli docs](./cli.md#statements-in-and-out-of-a-store)):
 
 ```bash
-# export the decisions, then stamp them onto a statement dump
 nomenklatura dump-resolver resolver.ijson
-nomenklatura apply-statements -i statements.json -o resolved.json -f json
-
-# or, for a stream of entities rather than statements
-nomenklatura apply entities.ftm.json -o resolved.ftm.json
+ftmq statements read -i sqlite:///followthemoney.store -o statements.csv
+nomenklatura apply-statements -i statements.csv -o resolved.csv
+ftmq statements write -i resolved.csv -o sqlite:///followthemoney.store
 ```
 
-```python
-# the same thing through a store: the writer applies the linker it was given
-from ftmq.io import smart_read_proxies
+The reload updates the store in place: the statement id does not cover `canonical_id`, so a resolved statement upserts onto the row it came from. `ftmq statements write` keeps the canonical id the stream carries and never re-derives it, so the `apply-statements` pass is what decides the outcome.
 
+Data that has not been written yet needs none of this - a writer applies the linker it was given:
+
+```python
 store = get_store("sqlite:///resolved.store", linker=get_linker("resolver.ijson"))
 with store.writer() as bulk:
     for proxy in smart_read_proxies("entities.ftm.json"):
@@ -60,7 +59,7 @@ with store.writer() as bulk:
 
 An already resolved store still needs the linker on the read side, for one thing: a lookup by a *referent* id. The statements carry the canonical id, so `get_entity("left-1")` finds nothing - the reader maps the id through the linker first (the api does this in [`ftmq.api.store.View.get_entity`][ftmq.api.store.View.get_entity]). Everything else - filters, counts, aggregations - reads the resolved ids straight out of the data.
 
-The in-memory store is the exception to the write side: it keeps whatever canonical id a statement already carries, so merges have to be applied before writing to it.
+The in-memory store is the exception to the write side: it keeps whatever canonical id a statement already carries, so merges have to be applied before writing to it. It cannot dump its statements either - `ftmq statements read` and [`Store.statements`][ftmq.store.base.Store.statements] need a SQL-family backend.
 
 ## Read and query entities
 

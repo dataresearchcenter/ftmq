@@ -20,7 +20,7 @@ from ftmq.model.stats import Collector, DatasetStats
 from ftmq.query import Query
 from ftmq.query.aggregations import AggregatorResult
 from ftmq.statements import cast_statement
-from ftmq.types import StatementEntities, StatementEntity
+from ftmq.types import StatementEntities, StatementEntity, Statements
 from ftmq.util import ensure_dataset
 
 log = get_logger(__name__)
@@ -150,6 +150,48 @@ def get_linker(uri: Uri) -> Linker[StatementEntity]:
     return linker
 
 
+class PreservingLinker(Linker[StatementEntity]):
+    """A linker that hands back the canonical id a statement already carries.
+
+    Every backend writer stamps `canonical_id` from the store's linker
+    (`nomenklatura.store.sql.SQLWriter.add_statement` and its siblings), so a
+    store whose linker knows nothing collapses a resolved statement back onto
+    its entity id. Point the store at this linker instead and
+    [`preserve`][ftmq.store.base.PreservingLinker.preserve] a statement before
+    handing it to the writer: the stamping then reproduces what the statement
+    already says.
+
+    Any other id maps to itself - the memory and leveldb writers also resolve
+    entity-typed *values* through the linker for their inverted index, and
+    those must not be answered with the subject's canonical id.
+    """
+
+    def __init__(self) -> None:
+        super().__init__({})
+        self._stmt: Statement | None = None
+
+    def preserve(self, stmt: Statement) -> None:
+        """Resolve this statement's entity id to the canonical id it carries."""
+        self._stmt = stmt
+
+    def get_canonical(self, entity_id: str) -> str:
+        if self._stmt is not None and entity_id == self._stmt.entity_id:
+            return self._stmt.canonical_id
+        return entity_id
+
+
+@cache
+def get_preserving_linker() -> PreservingLinker:
+    """The process-wide [`PreservingLinker`][ftmq.store.base.PreservingLinker].
+
+    Cached because `get_store` keys its cache on the linker object: a fresh
+    instance per call would cache (and keep) a fresh store per call. Only one
+    statement is in flight at a time, so writing statement streams into two
+    stores concurrently from one process is not supported.
+    """
+    return PreservingLinker()
+
+
 _CASTING_WRITERS: dict[type[Any], type[Any]] = {}
 
 
@@ -242,6 +284,28 @@ class Store(nk.Store[Dataset, StatementEntity]):
 
     def default_view(self, external: bool = False) -> "View":
         return self.view(self.scope, external)
+
+    def statements(self, dataset: str | Dataset | None = None) -> Statements:
+        """
+        Iterate the raw statements in this store, as they are stored.
+
+        Unlike [`iterate`][ftmq.store.base.Store.iterate], which reads
+        *entities*, this yields the stored rows unchanged - assembling an
+        entity rewrites entity-typed values to their canonical ids and
+        synthesizes its own `id` statement, so a dump taken that way would
+        carry statement ids that aren't in the store and would load back as new
+        rows instead of updating the existing ones. External statements are
+        included; the order is unspecified.
+
+        Only the SQL family of backends implements this.
+
+        Args:
+            dataset: `Dataset` instance or name to limit scope to
+
+        Yields:
+            Generator of `followthemoney.Statement`
+        """
+        raise NotImplementedError
 
     def iterate(self, dataset: str | Dataset | None = None) -> StatementEntities:
         """

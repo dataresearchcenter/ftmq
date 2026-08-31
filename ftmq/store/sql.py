@@ -17,8 +17,8 @@ from ftmq.query.aggregations import AggregatorResult
 from ftmq.query.refs import GroupRef, SchemaRef
 from ftmq.query.sql import Sql, SqlSource
 from ftmq.store.base import Store, View
-from ftmq.types import StatementEntities
-from ftmq.util import get_scope_dataset
+from ftmq.types import StatementEntities, Statements
+from ftmq.util import ensure_dataset, get_scope_dataset
 
 MAX_SQL_AGG_GROUPS = int(os.environ.get("MAX_SQL_AGG_GROUPS", 10))
 
@@ -141,6 +141,13 @@ class SQLStore(Store, nk.SQLStore):
         entity = self.assemble(stmts)
         if entity is not None:
             yield entity
+
+    def statements(self, dataset: str | Dataset | None = None) -> Statements:
+        """The stored statement rows, streamed (see
+        [`Store.statements`][ftmq.store.base.Store.statements])."""
+        scope = ensure_dataset(dataset) if dataset is not None else self.scope
+        q = select(self.table).where(self.table.c.dataset.in_(scope.leaf_names))
+        yield from self._iterate_stmts(q)
 
     def get_scope(self) -> Dataset:
         q = select(self.table.c.dataset).distinct()

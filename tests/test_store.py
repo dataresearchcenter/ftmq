@@ -1,6 +1,7 @@
 from pathlib import Path
 
-from followthemoney import EntityProxy, StatementEntity
+import pytest
+from followthemoney import EntityProxy, Statement, StatementEntity
 from nomenklatura.db import Session, get_engine
 from nomenklatura.judgement import Judgement
 from nomenklatura.resolver import Resolver
@@ -8,7 +9,12 @@ from nomenklatura.resolver import Resolver
 from ftmq.query import A, C, G, M, P, Query, Year
 from ftmq.store import MemoryStore, Store, get_store
 from ftmq.store.aleph import AlephStore, parse_uri
-from ftmq.store.base import get_linker, get_resolver
+from ftmq.store.base import (
+    PreservingLinker,
+    get_linker,
+    get_preserving_linker,
+    get_resolver,
+)
 from ftmq.store.duckdb import DuckDBStore
 from ftmq.store.duckdb import parse_uri as duckdb_parse_uri
 from ftmq.store.fragments import get_fragments
@@ -1029,3 +1035,80 @@ def test_store_merged_entities(tmp_path: Path):
             assert len(entities) == 1, name
             assert sorted(entities[0].get("name")) == ["J. Doe", "Jane Doe"], name
         assert view.count(Query().where(P(name="Jane Doe"))) == 1, name
+
+
+def test_store_statements(tmp_path: Path):
+    """The raw statement dump is the stored rows, not reassembled entities."""
+    dataset = make_dataset("dump")
+    other = make_dataset("dump2")
+    proxies = [
+        make_entity(
+            {
+                "id": "d-1",
+                "schema": "Person",
+                "properties": {"name": ["Jane Doe"], "country": ["de"]},
+            },
+            StatementEntity,
+            dataset,
+        ),
+        make_entity(
+            {"id": "d-2", "schema": "Address", "properties": {"full": ["Berlin"]}},
+            StatementEntity,
+            other,
+        ),
+    ]
+    scope = get_scope_dataset("dump", "dump2")
+    stores = {
+        "sql": SQLStore(
+            dataset=scope, linker=get_resolver(), uri=f"sqlite:///{tmp_path}/dump.db"
+        ),
+        "duckdb": DuckDBStore(
+            dataset=scope, linker=get_resolver(), uri=f"duckdb://{tmp_path}/dump.duckdb"
+        ),
+        "lake": LakeStore(
+            dataset=scope, linker=get_resolver(), uri=tmp_path / "dump-lake"
+        ),
+    }
+    written = {s.id for p in proxies for s in p.statements}
+    for name, store in stores.items():
+        with store.writer() as bulk:
+            for proxy in proxies:
+                bulk.add_entity(proxy)
+
+        statements = list(store.statements())
+        # the ids come back exactly as written - assembling an entity would
+        # synthesize its own `id` statement and regenerate cloned ones
+        assert {s.id for s in statements} == written, name
+        assert {s.prop for s in statements} >= {"id", "name", "country", "full"}, name
+        assert len(statements) > len(list(store.iterate())), name
+
+        # scoped to one dataset
+        assert {s.dataset for s in store.statements("dump")} == {"dump"}, name
+        assert {s.entity_id for s in store.statements("dump2")} == {"d-2"}, name
+
+    # only the sql family can dump statements
+    with pytest.raises(NotImplementedError):
+        list(MemoryStore(dataset=dataset, linker=get_resolver()).statements())
+
+
+def test_store_preserving_linker():
+    """The linker echoes a statement's own canonical id, and nothing else."""
+    linker = PreservingLinker()
+    assert linker.get_canonical("a-1") == "a-1"
+
+    stmt = Statement(
+        entity_id="a-1",
+        prop="name",
+        schema="Person",
+        value="Jane",
+        dataset="d",
+        canonical_id="NK-1",
+    )
+    linker.preserve(stmt)
+    assert linker.get_canonical("a-1") == "NK-1"
+    # an entity-typed *value* is resolved through the same linker (the memory
+    # and leveldb writers do this for their inverted index) and must not be
+    # answered with the subject's canonical id
+    assert linker.get_canonical("b-9") == "b-9"
+
+    assert get_preserving_linker() is get_preserving_linker()
