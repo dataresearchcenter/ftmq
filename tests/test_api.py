@@ -1,9 +1,13 @@
 import pytest
 
+from tests.conftest import FIXTURES_PATH
+
 pytest.importorskip("fastapi")
 
 ADDRESS_ID = "97149caa3aef14e2be5ae6b3974c6882e7536d88"
 METALL_ID = "62ad0fe6f56dbbf6fee57ce3da76e88c437024d5"
+A29WP_ID = "eu-authorities-a29wp"
+ACER_ID = "eu-authorities-acer"
 
 
 def test_api_index(api_client):
@@ -256,3 +260,73 @@ def test_api_autocomplete(api_client):
 
     res = api_client.get("/autocomplete?q=ab")
     assert res.status_code == 400
+
+
+def test_api_resolver_uri(api_client, tmp_path, monkeypatch):
+    """`resolver_uri` + a resolved store: a referent id serves the canonical.
+
+    The api reads a store whose statements already carry the canonical id (see
+    the note in `docs/api.md`), so this builds one: entities written through a
+    store that has the linker get it stamped on by the writer.
+    """
+    from followthemoney import StatementEntity
+    from nomenklatura.db import Session, get_engine
+    from nomenklatura.judgement import Judgement
+    from nomenklatura.resolver import Resolver
+
+    from ftmq.api import store as api_store
+    from ftmq.io import smart_read_proxies
+    from ftmq.store import get_store
+    from ftmq.store.base import get_linker
+
+    dump = tmp_path / "resolver.ijson"
+    with Session(get_engine(f"sqlite:///{tmp_path}/resolver.db")) as session:
+        resolver = Resolver[StatementEntity](session, create=True)
+        canonical = str(
+            resolver.decide(A29WP_ID, ACER_ID, Judgement.POSITIVE, user="test")
+        )
+        resolver.dump(dump)
+    linker = get_linker(dump)
+
+    store_uri = f"sqlite:///{tmp_path}/resolved.db"
+    proxies = [
+        p
+        for p in smart_read_proxies(
+            FIXTURES_PATH / "eu_authorities.ftm.json", entity_type=StatementEntity
+        )
+        if p.id in (A29WP_ID, ACER_ID)
+    ]
+    assert len(proxies) == 2
+    store = get_store(store_uri, dataset="eu_authorities", linker=linker)
+    with store.writer() as bulk:
+        for proxy in proxies:
+            bulk.add_entity(proxy)
+
+    monkeypatch.setattr(api_store.settings, "store_uri", store_uri)
+    monkeypatch.setattr(api_store.settings, "resolver_uri", str(dump))
+    for cached in (api_store.get_store, api_store.get_view, api_store.get_catalog):
+        cached.cache_clear()
+    try:
+        assert api_store.get_store().linker.get_canonical(A29WP_ID) == canonical
+
+        # either referent, or the canonical itself, serves the merged entity
+        for entity_id in (A29WP_ID, ACER_ID, canonical):
+            res = api_client.get(f"/entities/{entity_id}")
+            assert res.status_code == 200, entity_id
+            data = res.json()
+            assert data["id"] == canonical, entity_id
+            assert set(data["referents"]) == {A29WP_ID, ACER_ID}, entity_id
+            assert set(data["properties"]["name"]) == {
+                "Article 29 Working Party",
+                "Agency for the Cooperation of Energy Regulators",
+            }, entity_id
+
+        # and a query sees one entity, not one per referent
+        res = api_client.get("/entities?filter:schema=PublicBody")
+        data = res.json()
+        assert data["total"] == 1
+        assert data["results"][0]["id"] == canonical
+    finally:
+        monkeypatch.undo()
+        for cached in (api_store.get_store, api_store.get_view, api_store.get_catalog):
+            cached.cache_clear()

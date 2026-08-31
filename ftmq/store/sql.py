@@ -1,13 +1,15 @@
 import os
 from collections import defaultdict
 from decimal import Decimal
+from typing import Any
 
 from anystore.util import clean_dict
-from followthemoney import model
+from followthemoney import Statement, model
 from followthemoney.dataset.dataset import Dataset
 from nomenklatura.db import get_metadata
 from nomenklatura.store import sql as nk
 from sqlalchemy import select
+from sqlalchemy.sql import Select
 
 from ftmq.model.stats import DatasetStats, compile_stats
 from ftmq.query import Query
@@ -111,6 +113,34 @@ class SQLStore(Store, nk.SQLStore):
     def source(self) -> SqlSource:
         """The SQL source (statement table) queries compile against."""
         return SqlSource(self.table)
+
+    def _iterate(self, q: Select[Any], stream: bool = True) -> StatementEntities:
+        """Assemble a statement row stream into entities, grouped by
+        `canonical_id`.
+
+        nomenklatura groups the stream by `entity_id` while every select
+        feeding it orders by (or filters on) `canonical_id` - `SQLView.entities`,
+        `SQLView.get_entity` and the compiled query above. A merged cluster
+        then breaks apart into one partial entity per referent, all carrying
+        the same canonical id, and `get_entity` returns whichever fragment
+        comes first. Group by the column the rows are actually ordered by.
+
+        Without merges the two keys are the same value, so this only changes
+        what a store holding resolved data reads back.
+        """
+        stmts: list[Statement] = []
+        current_id: str | None = None
+        for stmt in self._iterate_stmts(q, stream=stream):
+            if current_id is not None and stmt.canonical_id != current_id:
+                entity = self.assemble(stmts)
+                if entity is not None:
+                    yield entity
+                stmts = []
+            current_id = stmt.canonical_id
+            stmts.append(stmt)
+        entity = self.assemble(stmts)
+        if entity is not None:
+            yield entity
 
     def get_scope(self) -> Dataset:
         q = select(self.table.c.dataset).distinct()

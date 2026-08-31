@@ -4,7 +4,7 @@ from urllib.parse import urlparse
 
 from anystore.types import Uri
 from followthemoney.dataset.dataset import Dataset
-from nomenklatura import Resolver, settings
+from nomenklatura import Linker, settings
 
 from ftmq.store.base import Store, View
 from ftmq.store.memory import MemoryStore
@@ -14,7 +14,7 @@ from ftmq.store.memory import MemoryStore
 def get_store(
     uri: Uri | None = settings.DB_URL,
     dataset: Dataset | str | None = None,
-    linker: Resolver | None = None,
+    linker: Linker | None = None,
     cast_types: bool = True,
 ) -> Store:
     """
@@ -41,7 +41,7 @@ def get_store(
     Args:
         uri: The store backend uri
         dataset: A `followthemoney.Dataset` instance to limit the scope to
-        linker: A `nomenklatura.Resolver` instance with linked / deduped data
+        linker: A `nomenklatura.Linker` instance with linked / deduped data
         cast_types: Normalize statement values on write (see
             [`ftmq.statements`][ftmq.statements])
 

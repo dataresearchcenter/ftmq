@@ -1,11 +1,14 @@
 from pathlib import Path
 
 from followthemoney import EntityProxy, StatementEntity
+from nomenklatura.db import Session, get_engine
+from nomenklatura.judgement import Judgement
+from nomenklatura.resolver import Resolver
 
 from ftmq.query import A, C, G, M, P, Query, Year
 from ftmq.store import MemoryStore, Store, get_store
 from ftmq.store.aleph import AlephStore, parse_uri
-from ftmq.store.base import get_resolver
+from ftmq.store.base import get_linker, get_resolver
 from ftmq.store.duckdb import DuckDBStore
 from ftmq.store.duckdb import parse_uri as duckdb_parse_uri
 from ftmq.store.fragments import get_fragments
@@ -941,3 +944,88 @@ def test_store_select_projection(tmp_path, eu_authorities):
     assert view.aggregations(agg) == view.aggregations(
         agg.select(P("name"))
     ), "a projection must not change aggregations"
+
+
+def test_store_linker(tmp_path: Path):
+    """Merge decisions load from a sql resolver table or from an edge dump."""
+    uri = f"sqlite:///{tmp_path}/resolver.db"
+    dump = tmp_path / "resolver.ijson"
+    with Session(get_engine(uri)) as session:
+        resolver = Resolver[StatementEntity](session, create=True)
+        canonical = str(resolver.decide("a-1", "b-1", Judgement.POSITIVE, user="test"))
+        resolver.decide("a-1", "c-1", Judgement.NEGATIVE, user="test")
+        resolver.dump(dump)
+
+    # a resolver only resolves once its judgements are indexed
+    assert get_resolver(uri).get_canonical("a-1") == canonical
+
+    for source in (uri, dump):
+        linker = get_linker(source)
+        assert linker.get_canonical("a-1") == canonical
+        assert linker.get_canonical("b-1") == canonical
+        assert linker.get_referents(canonical) == {"a-1", "b-1"}
+        # only positive judgements merge
+        assert linker.get_canonical("c-1") == "c-1"
+        assert linker.get_canonical("unknown") == "unknown"
+
+    # it reaches the store the entities are read through
+    store = get_store(f"sqlite:///{tmp_path}/store.db", linker=get_linker(dump))
+    assert store.linker.get_canonical("a-1") == canonical
+
+
+def test_store_merged_entities(tmp_path: Path):
+    """A merged cluster reads back as one entity, not one per referent."""
+    dump = tmp_path / "merged.ijson"
+    with Session(get_engine(f"sqlite:///{tmp_path}/merged-resolver.db")) as session:
+        resolver = Resolver[StatementEntity](session, create=True)
+        canonical = str(
+            resolver.decide("left-1", "right-1", Judgement.POSITIVE, user="test")
+        )
+        resolver.dump(dump)
+    linker = get_linker(dump)
+
+    dataset = make_dataset("merged")
+    proxies = [
+        make_entity(
+            {
+                "id": "left-1",
+                "schema": "Person",
+                "properties": {"name": ["Jane Doe"], "country": ["de"]},
+            },
+            StatementEntity,
+            dataset,
+        ),
+        make_entity(
+            {"id": "right-1", "schema": "Person", "properties": {"name": ["J. Doe"]}},
+            StatementEntity,
+            dataset,
+        ),
+    ]
+    stores = {
+        "sql": SQLStore(
+            dataset=dataset, linker=linker, uri=f"sqlite:///{tmp_path}/merged.db"
+        ),
+        "duckdb": DuckDBStore(
+            dataset=dataset, linker=linker, uri=f"duckdb://{tmp_path}/merged.duckdb"
+        ),
+    }
+    for name, store in stores.items():
+        with store.writer() as bulk:
+            for proxy in proxies:
+                bulk.add_entity(proxy)
+        view = store.default_view()
+
+        entity = view.get_entity(canonical)
+        assert entity is not None, name
+        assert entity.id == canonical, name
+        assert sorted(entity.get("name")) == ["J. Doe", "Jane Doe"], name
+        assert entity.extra_referents == {"left-1", "right-1"}, name
+
+        # both the unfiltered stream and a compiled query see the whole cluster
+        for entities in (
+            list(view.query()),
+            list(view.query(Query().where(P(name="Jane Doe")))),
+        ):
+            assert len(entities) == 1, name
+            assert sorted(entities[0].get("name")) == ["J. Doe", "Jane Doe"], name
+        assert view.count(Query().where(P(name="Jane Doe"))) == 1, name

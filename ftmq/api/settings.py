@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     store_uri: str = DB_URL
     """ftmq store uri"""
 
+    resolver_uri: str | None = None
+    """nomenklatura resolver uri: a sql database holding a `resolver` table, or
+    a json lines edge dump. Defaults to the store uri."""
+
     build_api_key: str = "secret-key-for-build"
     """Backend api key to use for build process (higher limit)"""
 

@@ -2,13 +2,16 @@ from functools import cache, wraps
 from typing import Any, Iterable, TypeAlias
 from urllib.parse import urlparse
 
+from anystore.io import smart_stream
 from anystore.logging import get_logger
+from anystore.types import Uri
 from followthemoney import Statement
 from followthemoney.dataset.dataset import Dataset
 from nomenklatura import db as nk_db
 from nomenklatura import store as nk
 from nomenklatura.db import Session, get_engine
-from nomenklatura.resolver import Resolver
+from nomenklatura.judgement import Judgement
+from nomenklatura.resolver import Edge, Linker, Resolver
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.pool import StaticPool
@@ -75,13 +78,76 @@ def _patch_nomenklatura_sqlite_engines() -> None:
 _patch_nomenklatura_sqlite_engines()
 
 
+def _is_sql_uri(uri: str) -> bool:
+    return "sql" in urlparse(uri).scheme
+
+
+def _sql_resolver(session: Session) -> Resolver[StatementEntity]:
+    return Resolver[StatementEntity](session, create=True)
+
+
+def _resolver_session(uri: str | None = None) -> Session:
+    """The session for a resolver table: the given sql database, or an
+    ephemeral in-memory one for any other uri (a duckdb / leveldb / lake store
+    keeps its resolver elsewhere)."""
+    engine = get_engine(uri) if uri and _is_sql_uri(uri) else _memory_engine()
+    return Session(engine)
+
+
 @cache
 def get_resolver(uri: str | None = None) -> Resolver[StatementEntity]:
-    if uri and "sql" in urlparse(uri).scheme:
-        engine = get_engine(uri)
-    else:
-        engine = _memory_engine()
-    return Resolver[StatementEntity](Session(engine), create=True)
+    """The read/write `Resolver` backed by a sql `resolver` table.
+
+    Args:
+        uri: A sql database uri. Anything else (or nothing) gets an ephemeral
+            in-memory table.
+
+    Returns:
+        The resolver, with its decisions loaded. This is a cached object: it
+        keeps the cluster index in memory and nothing refreshes it, so a
+        process that needs another session's writes has to call
+        `load_into_memory()` itself.
+    """
+    resolver = _sql_resolver(_resolver_session(uri))
+    # a `Resolver` resolves nothing until its judgements are indexed - the
+    # constructor only sets up the table
+    resolver.load_into_memory()
+    return resolver
+
+
+@cache
+def get_linker(uri: Uri) -> Linker[StatementEntity]:
+    """A read-only `Linker`: the merge decisions without the judgement history.
+
+    Use this where entities are only read (the api). The source is either a sql
+    database holding a nomenklatura `resolver` table, or an edge dump written
+    by `Resolver.dump()` / `nomenklatura dump-resolver` (json lines) - which
+    needs no database at all and can live anywhere anystore reads from.
+
+    Args:
+        uri: A sql database uri, or a file-like uri of a json lines edge dump
+
+    Returns:
+        The linker. This is a cached object.
+    """
+    uri = str(uri)
+    if _is_sql_uri(uri):
+        with _resolver_session(uri) as session:
+            return _sql_resolver(session).get_linker()
+    linker: Linker[StatementEntity] = Linker({})
+    merges = 0
+    for line in smart_stream(uri, mode="r"):
+        line = line.strip()
+        if not line:
+            continue
+        edge = Edge.from_line(line)
+        # the dump has no deletion field, but `all_edges()` exports negative
+        # and unsure judgements as well - only positive ones merge
+        if edge.judgement == Judgement.POSITIVE and edge.deleted_at is None:
+            linker.add(edge.source.id, edge.target.id)
+            merges += 1
+    log.info(f"Loaded `{merges}` merges.", uri=uri)
+    return linker
 
 
 _CASTING_WRITERS: dict[type[Any], type[Any]] = {}
@@ -115,7 +181,7 @@ class Store(nk.Store[Dataset, StatementEntity]):
     def __init__(
         self,
         dataset: Dataset | str | None = None,
-        linker: Resolver | None = None,
+        linker: Linker | None = None,
         cast_types: bool = True,
         **kwargs,
     ) -> None:
@@ -125,7 +191,7 @@ class Store(nk.Store[Dataset, StatementEntity]):
 
         Args:
             dataset: A `followthemoney.Dataset` instance to limit the scope to
-            linker: A `nomenklatura.Resolver` instance with linked / deduped data
+            linker: A `nomenklatura.Linker` instance with linked / deduped data
             cast_types: Normalize statement values on write (see
                 [`ftmq.statements`][ftmq.statements])
         """

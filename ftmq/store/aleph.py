@@ -6,7 +6,7 @@ from alephclient.settings import API_KEY, HOST, MAX_TRIES
 from followthemoney import Dataset, EntityProxy, Statement, StatementEntity, ValueEntity
 from followthemoney.namespace import Namespace
 from furl import furl
-from nomenklatura.resolver import Resolver
+from nomenklatura.resolver import Linker
 from nomenklatura.store import Writer
 
 from ftmq.query import Query
@@ -42,7 +42,7 @@ class AlephStore(Store):
         cls,
         uri: str,
         dataset: Dataset | str | None = None,
-        linker: Resolver | None = None,
+        linker: Linker | None = None,
     ) -> Self:
         host, api_key, foreign_id = parse_uri(uri)
         if dataset is None and foreign_id is not None:

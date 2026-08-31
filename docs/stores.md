@@ -18,6 +18,50 @@
 
 The duckdb backend is the sql store against a [duckdb](https://duckdb.org) database file. Its path is spelled directly after the scheme: `duckdb://relative.duckdb`, `duckdb:///absolute/path.duckdb`, and an empty path (or `duckdb://:memory:`) opens an in-memory database. Don't confuse it with the delta lake store (`lake+...`), which queries parquet files through duckdb instead of owning a database file.
 
+## Merged entities (resolver / linker)
+
+A store resolves entity ids through a [`nomenklatura`](https://github.com/opensanctions/nomenklatura) `Linker`: the deduplication decisions that make several source ids one canonical entity. Without one every id is its own entity, which is why a store opened without a `linker` still works.
+
+Two sources are supported, both via [`ftmq.store.base`][ftmq.store.base]:
+
+- [`get_resolver`][ftmq.store.base.get_resolver] returns the read/write `Resolver` backed by a `resolver` table in a sql database. This is the default: a store opened without a `linker` puts the table in its own database (a non-sql store gets an ephemeral in-memory one). The decisions are loaded into memory when the resolver is built - it is a cached object, so a process that has to see another writer's decisions calls `load_into_memory()` itself.
+- [`get_linker`][ftmq.store.base.get_linker] returns the read-only `Linker`: the merges without the judgement history. Its uri is either such a sql database, or an edge dump as written by `Resolver.dump()` / `nomenklatura dump-resolver` (json lines), which needs no database at all and can live anywhere [anystore](https://docs.investigraph.dev/lib/anystore) reads from.
+
+```python
+from ftmq.store import get_store
+from ftmq.store.base import get_linker
+
+# merge decisions from a json dump, entities from a sql store
+store = get_store("sqlite:///followthemoney.store", linker=get_linker("s3://data/resolver.ijson"))
+```
+
+**A linker resolves ids, not data.** A statement store answers by the `canonical_id` column, so the merge has to be *in the statements*: the sql-family and lake writers stamp the canonical id onto everything they write, and a store written before the decisions existed keeps the old ids. Handing such a store a linker afterwards is not enough - a filter, a count, an aggregation and the search index all still see the cluster members as separate entities, and `filter:id=<canonical>` matches nothing.
+
+**So resolve the data before serving it.** Either write the entities through a store that has the linker, or apply the decisions to a dump with the nomenklatura cli, which is what [`Linker.apply_statement`](https://github.com/opensanctions/nomenklatura) does per statement:
+
+```bash
+# export the decisions, then stamp them onto a statement dump
+nomenklatura dump-resolver resolver.ijson
+nomenklatura apply-statements -i statements.json -o resolved.json -f json
+
+# or, for a stream of entities rather than statements
+nomenklatura apply entities.ftm.json -o resolved.ftm.json
+```
+
+```python
+# the same thing through a store: the writer applies the linker it was given
+from ftmq.io import smart_read_proxies
+
+store = get_store("sqlite:///resolved.store", linker=get_linker("resolver.ijson"))
+with store.writer() as bulk:
+    for proxy in smart_read_proxies("entities.ftm.json"):
+        bulk.add_entity(proxy)
+```
+
+An already resolved store still needs the linker on the read side, for one thing: a lookup by a *referent* id. The statements carry the canonical id, so `get_entity("left-1")` finds nothing - the reader maps the id through the linker first (the api does this in [`ftmq.api.store.View.get_entity`][ftmq.api.store.View.get_entity]). Everything else - filters, counts, aggregations - reads the resolved ids straight out of the data.
+
+The in-memory store is the exception to the write side: it keeps whatever canonical id a statement already carries, so merges have to be applied before writing to it.
+
 ## Read and query entities
 
 Iterate through all the entities via [`Store.iterate`][ftmq.store.base.Store.iterate]:
