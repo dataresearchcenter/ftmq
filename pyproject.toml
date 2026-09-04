@@ -29,7 +29,7 @@ dependencies = [
 [project.optional-dependencies]
 level = ["plyvel (>=1.5.1,<2.0.0)"]
 sql = ["sqlalchemy (>=2.0.51,<3.0.0)"]
-postgres = ["sqlalchemy (>=2.0.51,<3.0.0)", "psycopg[pool] (>=3.2.9,<4.0.0)"]
+postgres = ["sqlalchemy (>=2.0.51,<3.0.0)", "psycopg[pool] (>=3.3.5,<4.0.0)"]
 duckdb = ["sqlalchemy (>=2.0.51,<3.0.0)", "duckdb-engine (>=0.17.0,<0.18.0)", "duckdb (>=1.5.5,<2.0.0)"]
 lake = [
     "duckdb (>=1.5.5,<2.0.0)",
