@@ -7,7 +7,7 @@ from ftmq.io import (
 from ftmq.query import A, C, G, M, P, Query, QueryError, Ref, Year
 from ftmq.util import make_entity
 
-__version__ = "5.0.0"
+__version__ = "5.1.0"
 __all__ = [
     "smart_read_proxies",
     "smart_read_statements",
