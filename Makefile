@@ -33,4 +33,4 @@ clean:
 
 documentation:
 	zensical build
-	aws --endpoint-url https://s3.investigativedata.org s3 sync ./site s3://docs.investigraph.dev/lib/ftmq
+	putfs sync --overwrite ./site putfs://static.darc.zone/docs.investigraph.dev/lib/ftmq
