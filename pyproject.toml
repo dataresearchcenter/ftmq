@@ -42,7 +42,7 @@ search = ["tantivy (>=0.26.2,<0.27.0)"]
 api = [
     "fastapi (>=0.139.2,<0.140.0)",
     "furl (>=2.1.4,<3.0.0)",
-    "granian (>=2.7.9,<3.0.0)",
+    "granian (>=2.8.3,<3.0.0)",
 ]
 
 [project.scripts]
