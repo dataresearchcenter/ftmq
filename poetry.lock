@@ -5069,48 +5069,48 @@ jupyter = ["ipywidgets (>=7.5.1,<9)"]
 
 [[package]]
 name = "rigour"
-version = "2.4.1"
+version = "2.5.0"
 description = "Financial crime domain data validation and normalization library."
 optional = false
 python-versions = ">=3.10"
 groups = ["main", "dev"]
 files = [
-    {file = "rigour-2.4.1-cp310-cp310-macosx_10_12_x86_64.whl", hash = "sha256:b3f0955ef905af7c29cd734c8c3145fb9d629d1e79a3e68bb9ef0d37e3ed4626"},
-    {file = "rigour-2.4.1-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:a10311062d8210721ce6a778a2d19b0a68d73dc0d6b0357263290e3c3240d891"},
-    {file = "rigour-2.4.1-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:2c728044ca75cd0eb976e01f0c7654bc34fa2124bc4dab0b9c249fa31881ede5"},
-    {file = "rigour-2.4.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:4dddd27326b719e65fcd26b55fdb414b867e68a2037f0ed02ece382df3d80d1a"},
-    {file = "rigour-2.4.1-cp310-cp310-musllinux_1_2_aarch64.whl", hash = "sha256:9758067e479e3918970edb1ac30b26bc4f26556b39643b60f21231700a04146c"},
-    {file = "rigour-2.4.1-cp310-cp310-musllinux_1_2_x86_64.whl", hash = "sha256:7ad40ef1a79ff02e6b39838507647beb1bdc711ae037d94c786db0a84bcc6c07"},
-    {file = "rigour-2.4.1-cp310-cp310-win_amd64.whl", hash = "sha256:9e1de36192a0b4926ffad928289d741c703897ccfe6e0c6d743e838a5d72cb06"},
-    {file = "rigour-2.4.1-cp311-cp311-macosx_10_12_x86_64.whl", hash = "sha256:c5121774894205b3ed840deaadd17d4dad8c075444ae05b1627ce411571df840"},
-    {file = "rigour-2.4.1-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:b2112d0ffc820b09101f385718a237c52300a1c59ae3bf583fc1f54a88bd467f"},
-    {file = "rigour-2.4.1-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:7ad27bf044a2386acf13a22b6997f6de72af9bb08b9dc707e20d381d110e8173"},
-    {file = "rigour-2.4.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:8bc064ccb3e2b5728c27995f690611924614f4787b6eb17bdcf38cc6e8652875"},
-    {file = "rigour-2.4.1-cp311-cp311-musllinux_1_2_aarch64.whl", hash = "sha256:0d60d50238ef5772c8fdd2e65633dfddb13bb6fb89e3d0a04357f93dd67f2ae9"},
-    {file = "rigour-2.4.1-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:012b543aee2b539f19b3c7a60948345b8853518449d937d033c6c9dd89963c82"},
-    {file = "rigour-2.4.1-cp311-cp311-win_amd64.whl", hash = "sha256:62398ea17a4e43226a58be7c5ce072e514ea34812fb4e98c180dd6dc95b6c7ff"},
-    {file = "rigour-2.4.1-cp312-cp312-macosx_10_12_x86_64.whl", hash = "sha256:5a8e3e69bb4166a2ea62a42a324a0f4c0495c44829b4336ea763b70695a284e0"},
-    {file = "rigour-2.4.1-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:2166d57c829fcdc294d62fc3bfceefa73ab333f42c2ecf2e0c37b76b1923f6fc"},
-    {file = "rigour-2.4.1-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:2d3ede57f19e85dcc0cb51d6528e13e27bb27c39471901d279b82327b36d557e"},
-    {file = "rigour-2.4.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:37a2724e207b9a2a9d8586f8f57bad47ded671be834b0b00de800131e35ef242"},
-    {file = "rigour-2.4.1-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:fb7042548bfa96d825a532b4013fc0d26a2e52e147d2e5e38666d9244e973fce"},
-    {file = "rigour-2.4.1-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:bf55c4474fc9ba3d840a32a2b5315c0eb9520f011e397d0197b542ec140db820"},
-    {file = "rigour-2.4.1-cp312-cp312-win_amd64.whl", hash = "sha256:2e2c6333bf43cb343817369bfb1bd2943083690378626069605b4f2b9a8c0165"},
-    {file = "rigour-2.4.1-cp313-cp313-macosx_10_12_x86_64.whl", hash = "sha256:705efa00a4dc35483d05cea7e8a20dd93a43df8b00c8b99ff12148e4fb0ed15c"},
-    {file = "rigour-2.4.1-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:f27ac728f161eae486be3e07bb5c63e2b28a8a3864fdd6a25e3a7bdbdb63b20f"},
-    {file = "rigour-2.4.1-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:d66eed1848bfc414ae79e2a62717b4bfbc90fd17c794f053ccf6b627002ea568"},
-    {file = "rigour-2.4.1-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:6c8f9fa55ac7b455e18fd86dbfc2f251f35e23cbdcb3c126a3e2cedf84b831ee"},
-    {file = "rigour-2.4.1-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:e10184a3784d0d301b0938b9ab6c17490abb14ee14447f850b5d45d092662bcf"},
-    {file = "rigour-2.4.1-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:3ea144d70925d36a0d141e1ec075d22243b7d8c2577c9eef441157a74e7f01ac"},
-    {file = "rigour-2.4.1-cp313-cp313-win_amd64.whl", hash = "sha256:4d1dbf2173fc4be9dc685cdb736b95202c40cdc37069e78e3c34162a98b1a32c"},
-    {file = "rigour-2.4.1-cp314-cp314-macosx_10_12_x86_64.whl", hash = "sha256:79d0e1d1e361425ead7f4792af7ad0ba5cc5122037b9b03bc1808f37f13154e0"},
-    {file = "rigour-2.4.1-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:5e73cde7a4a7bd353cbb49b6487c99f5921010802fd638420277d44e0fc0e2fb"},
-    {file = "rigour-2.4.1-cp314-cp314-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:9e6ea6b46da77a48222fe7d82a53906b0dcac098fd5281f2d6c46045ff758c2d"},
-    {file = "rigour-2.4.1-cp314-cp314-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:ea5c9c9bfc3d14a7d688e79a570f8e61ecab1fa38cee22ad6fbf11f62911b489"},
-    {file = "rigour-2.4.1-cp314-cp314-musllinux_1_2_aarch64.whl", hash = "sha256:7712afc8152fabf0f4373331924b946653350e2f89233998cc4b65533128bfff"},
-    {file = "rigour-2.4.1-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:d31ffc0f3ddd86b219bd4c4e597952362daccc5bb8125e7d4a64b376a33542a0"},
-    {file = "rigour-2.4.1-cp314-cp314-win_amd64.whl", hash = "sha256:a402cdfcafc36f2b067d53acb211f8fa9b5bbf63c7146419381b47201de62d5b"},
-    {file = "rigour-2.4.1.tar.gz", hash = "sha256:6bcb12648684c99eb5b3cd286632549a31f78e3ae77d6c2b293a4a2554aaa7a4"},
+    {file = "rigour-2.5.0-cp310-cp310-macosx_10_12_x86_64.whl", hash = "sha256:57bfbeee45c8ce6478a52c13ee145cdc868ee28d5cf4addd770fb2342d4ddd12"},
+    {file = "rigour-2.5.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:be67c6adf1db8c3430fe0c81b4ad9826e9be186fbeb172bd91e2bf7d6e1ef722"},
+    {file = "rigour-2.5.0-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:564c20b6f3ef76712e072f553ee605a464dc57e171614e155cb1a5cc3f6a720e"},
+    {file = "rigour-2.5.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:30b2aa22c7b5d0c74ee3846d45811a461e80598af6525fd17fcc793ddf68d805"},
+    {file = "rigour-2.5.0-cp310-cp310-musllinux_1_2_aarch64.whl", hash = "sha256:70e61660dda645b881fd64385bed1f69c1a97d55e2805f43b3b07c2b1db9ab5a"},
+    {file = "rigour-2.5.0-cp310-cp310-musllinux_1_2_x86_64.whl", hash = "sha256:037ab4b6936a1859b816ea65d566d753133e22b2a3ef278f8fb748a597ad71f8"},
+    {file = "rigour-2.5.0-cp310-cp310-win_amd64.whl", hash = "sha256:04124baafc783b7d0aebd3b8a55ae04939a529afffad2b3ff65076c7a05b6e23"},
+    {file = "rigour-2.5.0-cp311-cp311-macosx_10_12_x86_64.whl", hash = "sha256:34147ab012c994e31e0193776758e69065e570d73f49275ebe6eaa73bbc93268"},
+    {file = "rigour-2.5.0-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:1acf84f3edf166ed53d3f3c89c5660e6d04bfe0eea8b64f4d68775c70251142d"},
+    {file = "rigour-2.5.0-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:961ba5921dfeae75235837443a2986a7b449b59d48c4a41eecfc980447a5ef48"},
+    {file = "rigour-2.5.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:345c3a20c7dc7ad18730247fd3cf6539888a4134c2b53d45399ec6cb599c3168"},
+    {file = "rigour-2.5.0-cp311-cp311-musllinux_1_2_aarch64.whl", hash = "sha256:1b7fff5001377a995a803e7237d4e9570099ddd36c1d71730bc85c2b8994e7b2"},
+    {file = "rigour-2.5.0-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:945bbf0b5d29b8c94cc79d8c0f9d5846b0608d0a98b73063fd96973e7f843e46"},
+    {file = "rigour-2.5.0-cp311-cp311-win_amd64.whl", hash = "sha256:ad8710d0a2ab81840fb08ce0a75eb0c7cf4f4141b7019be68cd45e6918945ec6"},
+    {file = "rigour-2.5.0-cp312-cp312-macosx_10_12_x86_64.whl", hash = "sha256:49ff40bef994e9a2e3c2c10411d3d06f976a887cd20a8344eb6750a94f2ef659"},
+    {file = "rigour-2.5.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:418d5d0e8262f44c01c4186445cae78a6391c95be7f3945d8de7ccaafaf363e0"},
+    {file = "rigour-2.5.0-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:b06fd4f20b9b9bc11bdf9f8b74cebce84d643e7166065f9f5e1e40498effd783"},
+    {file = "rigour-2.5.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:2019f7c17b5aed5d3e5fcf73448cd00bf0ee7c6d703601f1e887ba52c6ea3791"},
+    {file = "rigour-2.5.0-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:1bcaab7802d7497d1dbd5a8517752ba061377d51f05be0cac3648bb0f984bd4c"},
+    {file = "rigour-2.5.0-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:bf0ea415f509a7b275b4e7e369772e2168b1fa9c1a9c06e843bc4c8b5ae3d2e3"},
+    {file = "rigour-2.5.0-cp312-cp312-win_amd64.whl", hash = "sha256:d824c291a3428e900532714365558af288eb0899e411a6c4a9c8de6e1ed09f71"},
+    {file = "rigour-2.5.0-cp313-cp313-macosx_10_12_x86_64.whl", hash = "sha256:c424ea8ab0db2d7bc9a6c702d04aed432b756960b739d47affbb76e7a0903134"},
+    {file = "rigour-2.5.0-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:949897fe4b5280291f094ca199807984a1dd8e99ba074dbe30bf890852616886"},
+    {file = "rigour-2.5.0-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:49399da2e73eea7f79c3895eaafa80b090dafb32d0fc2d134d1d88c22724d601"},
+    {file = "rigour-2.5.0-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:085c7379cb2495011e2970b99946e44abeee018c687a64163baa58f20fae8eec"},
+    {file = "rigour-2.5.0-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:fc93552dd79899b2618c31b07cc12a51d8a2703fc008b4047eede25eb14e8da2"},
+    {file = "rigour-2.5.0-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:e6ee2b7386b5c0ccbfe6ed7eaeaeba7a3d350a4e3795e449cb686323a442d65c"},
+    {file = "rigour-2.5.0-cp313-cp313-win_amd64.whl", hash = "sha256:24e3c22ea64715ab53c950c48bb2b620801a8a91ca04c1c7b51d3ee106767cb7"},
+    {file = "rigour-2.5.0-cp314-cp314-macosx_10_12_x86_64.whl", hash = "sha256:fe9c597dc0a8875d42314511584f43afc5b07dd5c649db46ea8230e22497d183"},
+    {file = "rigour-2.5.0-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:4a1edff193f5b91efcf67f674ce9902c52e1785d5a3317df01b9a1fcdd29bb1d"},
+    {file = "rigour-2.5.0-cp314-cp314-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:da5c7394e4d38ee020e0d1251c503998cff28226d7ba22b4e490ef5be62833b0"},
+    {file = "rigour-2.5.0-cp314-cp314-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:4e6ccdb020a59e259072e0af1daa7d6748e6d65dd9183b27d3dc3038d6cee268"},
+    {file = "rigour-2.5.0-cp314-cp314-musllinux_1_2_aarch64.whl", hash = "sha256:fc4038d1096c790978b8e640b3b44396fe2733945de97897f7b2aa09ef27de5f"},
+    {file = "rigour-2.5.0-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:6a32d1025fdd9530a123e268095645a17ced4d5f70590391abc665319ed07fbd"},
+    {file = "rigour-2.5.0-cp314-cp314-win_amd64.whl", hash = "sha256:58721384eb9c4817673ac9a1ae80d425ad40affddacebcf6922f2c5e2f9ced45"},
+    {file = "rigour-2.5.0.tar.gz", hash = "sha256:c03c4a7b7389604240330071cf461aa2a9c85e3c59011c661ecaddd075e9cf82"},
 ]
 
 [package.dependencies]
@@ -6176,4 +6176,4 @@ sql = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.15"
-content-hash = "409663d9e42a86444074a5802e9adb880717fb69d6b14166d32ea701451116fa"
+content-hash = "08d4eb6f8c2990929cd438db5fce96a60490811742152c9bfffb10c6bfdc3051"
