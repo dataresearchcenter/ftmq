@@ -293,8 +293,10 @@ class Sql:
     def _entity_ids(self, pred: Any) -> Select:
         """A sub-select of the entity ids having a row matching `pred`,
         over the rows visible to this source (the base filter)."""
-        return select(self.id_col.distinct()).where(
-            and_(true(), *self._base_clauses, pred)
+        return (
+            select(self.id_col)
+            .distinct()
+            .where(and_(true(), *self._base_clauses, pred))
         )
 
     def _absent(self, present: Any) -> Any:
@@ -732,7 +734,7 @@ class Sql:
 
     @cached_property
     def canonical_ids(self) -> Select:
-        q = select(self.id_col.distinct()).where(self.clause)
+        q = select(self.id_col).distinct().where(self.clause)
         if self.q.sort is None:
             # offset 0 (a start-less slice) is redundant; omit it from the SQL
             q = q.limit(self._limit).offset(self.q.offset or None)
