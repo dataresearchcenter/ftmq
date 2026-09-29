@@ -9,12 +9,11 @@ worker thread is closed on another and raises ``sqlite3.ProgrammingError``.
 import threading
 from typing import Any
 
-from nomenklatura.db import get_engine
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.pool import StaticPool
 
-from ftmq.store.base import _memory_engine, get_resolver
+from ftmq.store.base import _memory_engine, get_engine, get_resolver
 
 
 def _closes_across_threads(engine: Engine) -> bool:
@@ -46,10 +45,12 @@ def test_memory_engine_thread_safe() -> None:
     assert _closes_across_threads(engine)
 
 
-def test_nomenklatura_memory_engine_patched() -> None:
-    # The LakeStore builds its (faked) engine via get_engine("sqlite:///:memory:");
-    # the import-time patch must make that cross-thread safe as well.
-    assert _closes_across_threads(get_engine("sqlite:///:memory:"))
+def test_get_engine_memory_thread_safe() -> None:
+    # The LakeStore builds its (faked) engine via get_engine("sqlite:///:memory:"),
+    # which must be cross-thread safe as well, and shared per url.
+    engine = get_engine("sqlite:///:memory:")
+    assert engine is get_engine("sqlite:///:memory:")
+    assert _closes_across_threads(engine)
 
 
 def test_get_resolver_default_in_memory() -> None:

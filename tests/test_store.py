@@ -423,10 +423,7 @@ def test_store_scoped_views(tmp_path):
                 bulk.add_entity(e)
         return store
 
-    from nomenklatura.db import get_metadata
-
     stores = [build(MemoryStore)]
-    get_metadata.cache_clear()
     stores.append(build(SQLStore, uri=f"sqlite:///{tmp_path}/scope.db"))
     stores.append(build(LakeStore, uri=tmp_path / "scope-lake"))
 
@@ -470,9 +467,6 @@ def test_store_sql_sqlite(tmp_path, proxies):
     uri = f"sqlite:///{tmp_path}/test.db"
     assert _run_store_test_implicit(SQLStore, proxies, uri=uri)
 
-    from nomenklatura.db import get_metadata
-
-    get_metadata.cache_clear()
     assert _run_store_test(SQLStore, proxies, test_pop=False, uri=uri)  # FIXME
 
 
@@ -480,9 +474,6 @@ def test_store_duckdb(tmp_path, proxies):
     uri = f"duckdb://{tmp_path}/test.duckdb"
     assert _run_store_test_implicit(DuckDBStore, proxies, uri=uri)
 
-    from nomenklatura.db import get_metadata
-
-    get_metadata.cache_clear()
     assert _run_store_test(DuckDBStore, proxies, test_pop=False, uri=uri)  # FIXME
 
     # the store uri spells the path right after the scheme; sqlalchemy's own
@@ -497,10 +488,10 @@ def test_store_duckdb(tmp_path, proxies):
     assert duckdb_parse_uri("duckdb://") == "duckdb:///:memory:"
     assert duckdb_parse_uri("duckdb://:memory:") == "duckdb:///:memory:"
 
-    # regression: the in-memory engine patch (for the sqlite resolver / lake
-    # store) used to intercept *any* `:memory:` url and hand duckdb sqlite's
-    # `check_same_thread` connect arg, which its driver rejects
-    get_metadata.cache_clear()
+    # regression: the thread-safe in-memory engine (for the sqlite resolver /
+    # lake store, `ftmq.store.base.get_engine`) used to intercept *any*
+    # `:memory:` url and hand duckdb sqlite's `check_same_thread` connect arg,
+    # which its driver rejects
     store = DuckDBStore(linker=get_resolver(), uri="duckdb://")
     with store.writer() as bulk:
         bulk.add_entity(proxies[0])

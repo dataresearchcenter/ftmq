@@ -4,10 +4,11 @@
 Everything the SQL store does compiles unchanged: duckdb is reached through the
 `duckdb_engine` sqlalchemy dialect, so the statement table, the query
 compilation ([`ftmq.query.sql`][ftmq.query.sql]) and the store views are the
-ones from [`ftmq.store.sql`][ftmq.store.sql]. Only the two spots where
+ones from [`ftmq.store.sql`][ftmq.store.sql]. Only the spots where
 nomenklatura hardcodes the sqlite / postgres dialects need a duckdb spelling:
-the bulk upsert (see [`DuckDBWriter`][ftmq.store.duckdb.DuckDBWriter]) and the
-resolver, which stays on its own sqlite database (see
+the bulk upsert (see [`DuckDBWriter`][ftmq.store.duckdb.DuckDBWriter]), the
+index DDL (duckdb has no partial indexes, and `duckdb_engine` can't reflect
+indexes) and the resolver, which stays on its own sqlite database (see
 [`get_resolver`][ftmq.store.base.get_resolver]).
 
 Unlike the [lake store][ftmq.store.lake.LakeStore] - which also queries through
@@ -28,13 +29,41 @@ import duckdb_engine  # noqa: F401  # registers the `duckdb` sqlalchemy dialect
 from followthemoney import StatementEntity
 from followthemoney.dataset.dataset import Dataset
 from nomenklatura.store import sql as nk
+from sqlalchemy import Index, Table, event
 from sqlalchemy.dialects.postgresql import insert as duckdb_insert
+from sqlalchemy.engine import Dialect
+from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.schema import CreateIndex
+from sqlalchemy.sql.compiler import DDLCompiler
 
 from ftmq.store.base import Writer
 from ftmq.store.sql import SQLStore
 
 SCHEME = "duckdb://"
 MEMORY = ":memory:"
+
+
+@compiles(CreateIndex, "duckdb")
+def _create_index_if_not_exists(
+    create: CreateIndex, compiler: DDLCompiler, **kw: Any
+) -> str:
+    # `nk.SQLStore` creates every declared index with `checkfirst`, but
+    # `duckdb_engine` can't reflect indexes, so an existing one is never found
+    # and would be created again
+    create.if_not_exists = True
+    return compiler.visit_create_index(create, **kw)  # type: ignore[no-any-return,no-untyped-call]
+
+
+def _not_duckdb(*args: Any, dialect: Dialect, **kw: Any) -> bool:
+    return dialect.name != "duckdb"
+
+
+@event.listens_for(Index, "after_parent_attach")
+def _skip_partial_index(index: Index, table: Table) -> None:
+    # duckdb has no partial indexes (nomenklatura's `ix_<table>_value_entity`),
+    # and its dialect renders the postgres `WHERE`, so skip them on duckdb
+    if index.dialect_options["postgresql"]["where"] is not None:
+        index.ddl_if(callable_=_not_duckdb)
 
 
 def parse_uri(uri: str) -> str:

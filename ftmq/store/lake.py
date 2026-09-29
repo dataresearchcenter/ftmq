@@ -436,8 +436,10 @@ class LakeStore(SQLStore):
             nks.STATEMENT_TABLE: default_view_sql,
         }
         self._duckdb_config: dict[str, str] = kwargs.pop("duckdb_config", None) or {}
-        kwargs["uri"] = "sqlite:///:memory:"  # fake it till you make it
-        super().__init__(*args, **kwargs)  # clears the cached MetaData
+        # fake it till you make it: this only feeds the (unused) sqlite engine
+        # and the resolver, queries run against duckdb over the delta table
+        kwargs["uri"] = "sqlite:///:memory:"
+        super().__init__(*args, **kwargs)
         self.table = TABLE
         self.uri = self._backend.uri
         setup_duckdb_storage()

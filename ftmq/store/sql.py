@@ -1,22 +1,19 @@
 import os
 from collections import defaultdict
 from decimal import Decimal
-from typing import Any
 
 from anystore.util import clean_dict
-from followthemoney import Statement, model
+from followthemoney import model
 from followthemoney.dataset.dataset import Dataset
-from nomenklatura.db import get_metadata
 from nomenklatura.store import sql as nk
 from sqlalchemy import select
-from sqlalchemy.sql import Select
 
 from ftmq.model.stats import DatasetStats, compile_stats
 from ftmq.query import Query
 from ftmq.query.aggregations import AggregatorResult
 from ftmq.query.refs import GroupRef, SchemaRef
 from ftmq.query.sql import Sql, SqlSource
-from ftmq.store.base import Store, View
+from ftmq.store.base import Store, View, get_engine
 from ftmq.types import StatementEntities, Statements
 from ftmq.util import ensure_dataset, get_scope_dataset
 
@@ -103,44 +100,14 @@ class SQLQueryView(View, nk.SQLView):
 
 class SQLStore(Store, nk.SQLStore):
     def __init__(self, *args, **kwargs) -> None:
-        # nomenklatura caches a single global MetaData; clear it so
-        # `make_statement_table` re-defines a fresh `statement` table instead
-        # of raising on the already-registered one.
-        get_metadata.cache_clear()
+        # nomenklatura takes an engine, not a uri
+        kwargs["engine"] = get_engine(kwargs.get("uri"))
         super().__init__(*args, **kwargs)
 
     @property
     def source(self) -> SqlSource:
         """The SQL source (statement table) queries compile against."""
         return SqlSource(self.table)
-
-    def _iterate(self, q: Select[Any], stream: bool = True) -> StatementEntities:
-        """Assemble a statement row stream into entities, grouped by
-        `canonical_id`.
-
-        nomenklatura groups the stream by `entity_id` while every select
-        feeding it orders by (or filters on) `canonical_id` - `SQLView.entities`,
-        `SQLView.get_entity` and the compiled query above. A merged cluster
-        then breaks apart into one partial entity per referent, all carrying
-        the same canonical id, and `get_entity` returns whichever fragment
-        comes first. Group by the column the rows are actually ordered by.
-
-        Without merges the two keys are the same value, so this only changes
-        what a store holding resolved data reads back.
-        """
-        stmts: list[Statement] = []
-        current_id: str | None = None
-        for stmt in self._iterate_stmts(q, stream=stream):
-            if current_id is not None and stmt.canonical_id != current_id:
-                entity = self.assemble(stmts)
-                if entity is not None:
-                    yield entity
-                stmts = []
-            current_id = stmt.canonical_id
-            stmts.append(stmt)
-        entity = self.assemble(stmts)
-        if entity is not None:
-            yield entity
 
     def statements(self, dataset: str | Dataset | None = None) -> Statements:
         """The stored statement rows, streamed (see

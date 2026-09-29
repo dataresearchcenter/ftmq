@@ -1,4 +1,4 @@
-from functools import cache, wraps
+from functools import cache
 from typing import Any, Iterable, TypeAlias
 from urllib.parse import urlparse
 
@@ -8,8 +8,9 @@ from anystore.types import Uri
 from followthemoney import Statement
 from followthemoney.dataset.dataset import Dataset
 from nomenklatura import db as nk_db
+from nomenklatura import settings
 from nomenklatura import store as nk
-from nomenklatura.db import Session, get_engine
+from nomenklatura.db import Session
 from nomenklatura.judgement import Judgement
 from nomenklatura.resolver import Edge, Linker, Resolver
 from sqlalchemy import create_engine
@@ -43,39 +44,29 @@ def _memory_engine(url: str = "sqlite:///:memory:") -> Engine:
     )
 
 
-_PATCHED = False
+def get_engine(uri: str | None = None) -> Engine:
+    """The process-wide engine for a sql database uri.
 
+    nomenklatura's engine cache (one engine per url, `nomenklatura.db`),
+    except that an in-memory sqlite url gets a shared, thread-safe
+    `_memory_engine`: the resolver and the lake store's placeholder engine
+    run on one, so every store and resolver on that url sees the same
+    database, from any thread. Only sqlite `:memory:` urls: `check_same_thread`
+    is a sqlite connect arg, passing it to another driver (duckdb's in-memory
+    database) raises.
 
-def _patch_nomenklatura_sqlite_engines() -> None:
-    """Route nomenklatura's in-memory sqlite engines through :func:`_memory_engine`.
-
-    The resolver and every ``LakeStore`` (via ``SQLStore.__init__`` →
-    ``get_engine(uri)``) share one process-cached engine per URL. ``LakeStore``
-    fakes ``sqlite:///:memory:`` and exposes no seam to configure that engine,
-    so the factory is wrapped once at import. Only sqlite ``:memory:`` URLs are
-    intercepted; file, postgres and duckdb engines keep nomenklatura's
-    behaviour (``check_same_thread`` is a sqlite connect arg - passing it to
-    another driver raises).
+    Args:
+        uri: A sql database uri, defaults to `NOMENKLATURA_DB_URL`
     """
-    global _PATCHED
-    if _PATCHED:
-        return
-    _orig = nk_db._make_engine
-    _engines: dict[str, Engine] = {}
-
-    @wraps(_orig)
-    def _make_engine(url: str) -> Engine:
-        if url.startswith("sqlite") and url.endswith(":memory:"):
-            if url not in _engines:
-                _engines[url] = _memory_engine(url)
-            return _engines[url]
-        return _orig(url)
-
-    nk_db._make_engine = _make_engine
-    _PATCHED = True
+    uri = uri or settings.DB_URL
+    if uri.startswith("sqlite") and uri.endswith(":memory:"):
+        return _shared_memory_engine(uri)
+    return nk_db.get_engine(uri)
 
 
-_patch_nomenklatura_sqlite_engines()
+@cache
+def _shared_memory_engine(url: str) -> Engine:
+    return _memory_engine(url)
 
 
 def _is_sql_uri(uri: str) -> bool:
@@ -244,7 +235,10 @@ class Store(nk.Store[Dataset, StatementEntity]):
         # `scope`) so opening a store never queries the backend.
         self._implicit_scope = dataset is None
         self.cast_types = cast_types
-        linker = linker or get_resolver(kwargs.get("uri"))
+        # only the SQL family passes a `uri` (its engine is already built from
+        # it); nomenklatura's stores don't take one
+        uri = kwargs.pop("uri", None)
+        linker = linker or get_resolver(uri)
         super().__init__(dataset=ensure_dataset(dataset), linker=linker, **kwargs)
 
     def writer(self, *args: Any, **kwargs: Any) -> Writer:
