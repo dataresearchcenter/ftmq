@@ -220,6 +220,10 @@ class StorageSettings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("aws_endpoint_url", "fsspec_s3_endpoint_url"),
     )
+    region: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("aws_region", "aws_default_region"),
+    )
 
     @property
     def allow_http(self) -> bool:
@@ -251,18 +255,31 @@ def storage_options() -> SDict:
     )
 
 
-@cache
-def setup_duckdb_storage() -> None:
-    if storage_settings.secret:
-        duckdb.query(f"""CREATE OR REPLACE SECRET secret (
-            TYPE s3,
-            PROVIDER config,
-            KEY_ID '{storage_settings.key}',
-            SECRET '{storage_settings.secret}',
-            ENDPOINT '{storage_settings.duckdb_endpoint}',
-            URL_STYLE 'path',
-            USE_SSL '{not storage_settings.allow_http}'
-            );""")
+def setup_duckdb_storage(con: duckdb.DuckDBPyConnection | None = None) -> None:
+    """Create the s3 secret for the configured credentials on `con` (DuckDB's
+    default connection if omitted). Secrets are scoped to a database instance,
+    so this has to run on the connection that runs the queries. Without
+    credentials, DuckDB falls back to its default credential chain."""
+    settings = storage_settings
+    if not settings.secret:
+        return
+    options = {
+        "KEY_ID": settings.key,
+        "SECRET": settings.secret,
+        "REGION": settings.region,
+    }
+    if settings.duckdb_endpoint:
+        options["ENDPOINT"] = settings.duckdb_endpoint
+        options["URL_STYLE"] = "path"
+        options["USE_SSL"] = str(not settings.allow_http)
+    params = "".join(
+        ", {} '{}'".format(k, v.replace("'", "''"))
+        for k, v in options.items()
+        if v is not None
+    )
+    (con or duckdb.default_connection()).execute(
+        f"CREATE OR REPLACE SECRET secret (TYPE s3, PROVIDER config{params})"
+    )
 
 
 @cache
@@ -442,7 +459,6 @@ class LakeStore(SQLStore):
         super().__init__(*args, **kwargs)
         self.table = TABLE
         self.uri = self._backend.uri
-        setup_duckdb_storage()
 
     @property
     def deltatable(self) -> DeltaTable:
@@ -482,6 +498,8 @@ class LakeStore(SQLStore):
         con = duckdb.connect(":memory:", config=config)
         # icu ships bundled with the duckdb wheel, so this works offline
         con.execute("LOAD icu; SET GLOBAL TimeZone='UTC'")
+        # before the views, which already read through `delta_scan`
+        setup_duckdb_storage(con)
         dt = self.deltatable
         for name, builder in self._view_sqls.items():
             con.sql(f"CREATE OR REPLACE VIEW {name} AS {builder(dt)}")

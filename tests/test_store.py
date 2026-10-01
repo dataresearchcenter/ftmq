@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import duckdb
 import pytest
 from followthemoney import EntityProxy, Statement, StatementEntity
 from nomenklatura.db import Session, get_engine
@@ -18,7 +19,7 @@ from ftmq.store.base import (
 from ftmq.store.duckdb import DuckDBStore
 from ftmq.store.duckdb import parse_uri as duckdb_parse_uri
 from ftmq.store.fragments import get_fragments
-from ftmq.store.lake import LakeStore
+from ftmq.store.lake import LakeStore, StorageSettings, setup_duckdb_storage
 from ftmq.store.level import LevelDBStore
 from ftmq.store.sql import SQLStore
 from ftmq.util import get_scope_dataset, make_dataset, make_entity
@@ -612,6 +613,78 @@ def test_store_lake_origins(tmp_path):
     rows = df[df["value"] == "John Doe"]
     assert sorted(rows["origin"]) == ["crawl", "enrich"]
     assert len(set(rows["id"])) == 1  # same content, same statement id
+
+
+def test_store_lake_s3_secret(tmp_path, monkeypatch):
+    """The s3 secret lives on the store's own connection.
+
+    DuckDB secrets are scoped to a database instance, so one created on the
+    default connection is invisible to the store, and `delta_scan` on s3 falls
+    back to the default credential chain (an IMDS timeout outside of aws).
+    """
+    uri = tmp_path / "secret_lake"
+    # write before patching the settings, so the cached `storage_options()`
+    # never sees the fake credentials
+    with LakeStore(uri=uri, dataset="test").writer() as bulk:
+        bulk.add_entity(
+            make_entity(
+                {"id": "j", "schema": "Person", "properties": {"name": ["Jane"]}},
+                StatementEntity,
+                "test",
+            )
+        )
+
+    def secret_string(con: duckdb.DuckDBPyConnection) -> str:
+        sql = "SELECT secret_string FROM duckdb_secrets() WHERE type = 's3'"
+        ((secret,),) = con.sql(sql).fetchall()
+        return secret
+
+    def configure(**env: str) -> None:
+        for key in (
+            "AWS_ENDPOINT_URL",
+            "FSSPEC_S3_ENDPOINT_URL",
+            "AWS_REGION",
+            "AWS_DEFAULT_REGION",
+        ):
+            monkeypatch.delenv(key, raising=False)
+        for key, value in env.items():
+            monkeypatch.setenv(key, value)
+        monkeypatch.setattr(
+            "ftmq.store.lake.storage_settings", StorageSettings(_env_file=None)
+        )
+
+    configure(
+        AWS_ACCESS_KEY_ID="o'key",
+        AWS_SECRET_ACCESS_KEY="it's secret",
+        AWS_ENDPOINT_URL="http://localhost:9000",
+        AWS_REGION="eu-central-1",
+    )
+    store = LakeStore(uri=uri, dataset="test")
+    secret = secret_string(store._duckdb)
+    assert "key_id=o'key" in secret
+    assert "endpoint=localhost:9000" in secret
+    assert "url_style=path" in secret
+    assert "use_ssl=false" in secret
+    assert "region=eu-central-1" in secret
+    with store.cursor() as cur:
+        assert secret_string(cur) == secret
+    assert [e.id for e in store.iterate()] == ["j"]
+
+    # aws: no custom endpoint, so no endpoint, url style or ssl override
+    configure(AWS_ACCESS_KEY_ID="key", AWS_SECRET_ACCESS_KEY="secret")
+    secret = secret_string(LakeStore(uri=uri, dataset="test")._duckdb)
+    assert "endpoint" not in secret
+    assert "url_style" not in secret
+    assert "use_ssl" not in secret
+    assert "region" not in secret
+
+    # backwards compatible: without a connection, the default one
+    con = duckdb.default_connection()
+    setup_duckdb_storage()
+    try:
+        assert "key_id=key" in secret_string(con)
+    finally:
+        con.execute("DROP SECRET secret")
 
 
 def test_store_lake_statements_to_table():
