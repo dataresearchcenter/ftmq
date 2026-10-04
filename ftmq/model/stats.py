@@ -63,6 +63,7 @@ class DatasetStats(BaseModel):
 
 class Collector:
     def __init__(self):
+        self.entity_count = 0
         self.things = Counter()
         self.things_countries = Counter()
         self.intervals = Counter()
@@ -71,11 +72,15 @@ class Collector:
         self.end = set()
 
     def collect(self, proxy: Entity) -> None:
+        # the buckets of the sql store (`store/sql.py:THINGS` / `INTERVALS`):
+        # a schema that is both (`Event`, ...) counts in each, one that is
+        # neither (`Page`, `Mention`, ...) only in `entity_count`
+        self.entity_count += 1
         if proxy.schema.is_a("Thing"):
             self.things[proxy.schema.name] += 1
             for country in proxy.countries:
                 self.things_countries[country] += 1
-        else:
+        if proxy.schema.is_a("Interval"):
             self.intervals[proxy.schema.name] += 1
             for country in proxy.countries:
                 self.intervals_countries[country] += 1
@@ -110,7 +115,7 @@ class Collector:
             countries=countries,
             things=things,
             intervals=intervals,
-            entity_count=things.total + intervals.total,
+            entity_count=self.entity_count,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -156,8 +161,9 @@ def compile_stats(
         intervals_countries: ``(country, count)`` rows for Intervals.
         date_range: ``(start, end)`` coverage bounds, or ``None``.
         entity_count: Distinct entity count; falls back to
-            ``things.total + intervals.total`` (via ``Collector.export``) when
-            ``None``.
+            ``things.total + intervals.total`` when ``None``, which misses
+            the schemata in neither bucket (``Page``, ``Mention``, ...) and
+            counts the ones in both (``Event``, ...) twice.
 
     Returns:
         The compiled :class:`DatasetStats`.
@@ -173,6 +179,9 @@ def compile_stats(
     for country, count in intervals_countries:
         if country is not None:
             c.intervals_countries[country] = count
+    if entity_count is None:
+        entity_count = c.things.total() + c.intervals.total()
+    c.entity_count = entity_count
     stats = c.export()
     if date_range is not None:
         start, end = date_range
@@ -180,6 +189,4 @@ def compile_stats(
             stats.start = start
         if end:
             stats.end = end
-    if entity_count is not None:
-        stats.entity_count = entity_count
     return stats
