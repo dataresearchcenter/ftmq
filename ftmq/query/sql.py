@@ -458,8 +458,7 @@ class Sql:
 
     def _expr_clause(self, expr: Expr) -> Any:
         """Compile a boolean node by combining its children's entity-level
-        predicates - the general path for trees the flat collectors below
-        cannot represent (cross-field `OR`, negation).
+        predicates.
 
         In a conjunction, co-referring conditions share one sub-select
         (`group_conjunction` decides which). Under `OR` nothing joins, and a
@@ -529,9 +528,7 @@ class Sql:
     @cached_property
     def _is_flat_and(self) -> bool:
         """Whether the query tree is a plain conjunction with at most one leaf
-        per field - the shape the flat collectors below represent losslessly.
-        Anything else (OR, negation, repeated fields, whose leaves AND in the
-        language) compiles through `_expr_clause`."""
+        per field, the shape partition pruning can trust."""
 
         def walk(expr: Expr) -> bool:
             if expr.negated or (expr.connector == OR and len(expr.children) > 1):
@@ -583,11 +580,7 @@ class Sql:
         Callers who genuinely want the matching *statements* rather than the
         matching entities compile their own select against `self.table`.
         """
-        if self._is_flat_and:
-            clauses = self._flat_clauses()
-        else:
-            # a boolean tree compiles entirely to entity-level predicates
-            clauses = [self._expr_clause(self.q.q)]
+        clauses = [self._expr_clause(self.q.q)] if self.q.q is not None else []
         # the view scope selects *entities* (those with at least one statement
         # in a scoped dataset), matching the in-memory store views: filters and
         # assembly still see the full canonical entity. A row-level `dataset`
@@ -638,54 +631,6 @@ class Sql:
         clauses ride along: they restrict partitions, not entities.
         """
         return and_(true(), *self._prune_clauses, *self._clauses)
-
-    def _flat_clauses(self) -> list[Any]:
-        """Compile a flat conjunction from the query's leaf collectors: one
-        entity-level clause per field, AND-ed together (`_is_flat_and`
-        guarantees at most one leaf per field)."""
-        clauses: list[Any] = []
-        by_key: Callable[[Leaf], str] = lambda f: f.key  # noqa: E731
-        # the different id fields (`id` / `entity_id` / `canonical_id`) are
-        # separate fields and AND together like any other. A predicate on the
-        # source's own id column already holds for every row of a matching
-        # entity, so it needs no membership wrapper; the others do - on a
-        # resolved store an entity's rows can carry several `entity_id`s.
-        for f in sorted(self.q.ids, key=by_key):
-            column = self._id_column(f)
-            expression = self.get_expression(column, f)
-            if column is self.id_col:
-                clauses.append(expression)
-            else:
-                clauses.append(self._membership(expression))
-        # `dataset` and the context columns describe one statement row, so they
-        # share a single membership (`_is_flat_and` guarantees one leaf each).
-        # An absence test is the exception - it can only be an anti-join.
-        row_scoped: list[Leaf] = []
-        for ctx in sorted(self.q.context, key=by_key):
-            if self._is_null(ctx) and ctx.value:
-                clauses.append(self._absent(self._context_column(ctx).is_not(None)))
-            else:
-                row_scoped.append(ctx)
-        row_scoped.extend(self.q.datasets)
-        if row_scoped:
-            clauses.append(self._row_membership(row_scoped))
-        # exact-schema and is-a (`schemata`) filters
-        schema_leaves = list(self.q.schemata) + [
-            s for s in self.q._leaves if isinstance(s, SchemataLeaf)
-        ]
-        for f in schema_leaves:
-            clauses.append(self._schema_clause(f))
-        # properties and prop-type groups: one entity-level clause per field, so
-        # they AND across fields ("has a name AND a german country"). A single
-        # row predicate would instead force one statement row to satisfy every
-        # field at once, which no row can - a row holds exactly one prop.
-        for f in sorted(self.q.properties, key=by_key):
-            clauses.append(self._family_clause(f, self._prop_selector))
-        # the reverse lookup `G(entities=...)` is not special here, it is just
-        # the `entity` prop-type group
-        for f in sorted(self.q.groups, key=by_key):
-            clauses.append(self._family_clause(f, self._group_selector))
-        return clauses
 
     @property
     def _limit(self) -> int | None:

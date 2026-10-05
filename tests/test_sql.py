@@ -234,11 +234,11 @@ def test_sql():
         str(q.sql.statements.compile(compile_kwargs={"literal_binds": True})),
         f"""
         SELECT {fields} FROM test_table
-        WHERE test_table.canonical_id IN ({ids} WHERE test_table.schema = 'Event')
+        WHERE test_table.canonical_id IN
+            ({ids} WHERE test_table.prop_type = 'entity' AND test_table.value = 'my_id')
         AND test_table.canonical_id IN
             ({ids} WHERE test_table.prop = 'date' AND test_table.value = '2023')
-        AND test_table.canonical_id IN
-            ({ids} WHERE test_table.prop_type = 'entity' AND test_table.value = 'my_id')
+        AND test_table.canonical_id IN ({ids} WHERE test_table.schema = 'Event')
         ORDER BY test_table.canonical_id
         """,
     )
@@ -299,9 +299,9 @@ def test_sql_ids():
     # they used to be OR-ed into one clause
     q = Query().where(M(entity_id="a", canonical_id="b"))
     assert (
-        "WHERE test_table.canonical_id = :canonical_id_1"
-        " AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id"
+        "WHERE test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id"
         " FROM test_table WHERE test_table.entity_id = :entity_id_1)"
+        " AND test_table.canonical_id = :canonical_id_1"
         in " ".join(str(q.sql.canonical_ids).split())
     )
 
@@ -395,9 +395,9 @@ def test_sql_boolean_tree():
         where(Query().where(P(name="jane"), P(country="de"))),
         f"""
         {ids} WHERE test_table.canonical_id IN
-            ({ids} WHERE test_table.prop = 'country' AND test_table.value = 'de')
-        AND test_table.canonical_id IN
             ({ids} WHERE test_table.prop = 'name' AND test_table.value = 'jane')
+        AND test_table.canonical_id IN
+            ({ids} WHERE test_table.prop = 'country' AND test_table.value = 'de')
         """,
     )
 
