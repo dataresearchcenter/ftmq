@@ -473,82 +473,34 @@ _META_LEAVES: dict[str, type[Leaf]] = {
 }
 
 
-def make_meta_leaf(key: str, value: Any) -> Leaf:
-    """Build a meta leaf (the `M` family) from a lookup.
+def make_leaf(family: str, key: str, value: Any) -> Leaf:
+    """Build a leaf of a field family from a `field__comparator` lookup.
 
     Args:
-        key: A meta lookup key, e.g. `dataset__in`, `schema` or `id__startswith`.
+        family: `M` (meta), `P` (property), `G` (property-type group) or `C`
+            (context column; any identifier, checked at SQL compile time).
+        key: A lookup key, e.g. `name`, `amountEur__gte` or `schema__in`.
         value: The lookup value.
 
     Returns:
-        The resolved meta leaf.
+        The leaf.
 
     Raises:
-        QueryError: If the field is not a known meta field.
+        QueryError: For an unknown family, meta field, property or group.
     """
     field, comparator = parse_lookup(key)
-    cls = _META_LEAVES.get(field)
-    if cls is None:
-        raise QueryError(f"Unknown meta field: `{field}`")
-    return cls(value, comparator)
-
-
-def make_property_leaf(key: str, value: Any) -> Leaf:
-    """Build a property leaf (the `P` family) from a lookup.
-
-    Args:
-        key: A property lookup key, e.g. `name` or `amountEur__gte`.
-        value: The lookup value.
-
-    Returns:
-        The resolved property leaf.
-
-    Raises:
-        QueryError: If the property is not a valid FtM property.
-    """
-    prop, comparator = parse_lookup(key)
-    return PropertyLeaf(prop, value, comparator)
-
-
-def make_group_leaf(key: str, value: Any) -> Leaf:
-    """Build a property-type group leaf (the `G` family) from a lookup.
-
-    Args:
-        key: A group lookup key, e.g. `countries`, `dates__gte` or `entities`.
-        value: The lookup value.
-
-    Returns:
-        The resolved group leaf.
-
-    Raises:
-        QueryError: If the group is not a valid `registry.groups` name.
-    """
-    group, comparator = parse_lookup(key)
-    return GroupLeaf(group, value, comparator)
-
-
-def make_context_leaf(key: str, value: Any) -> Leaf:
-    """Build a context leaf (the `C` family) from a lookup.
-
-    Args:
-        key: A context / column key, e.g. `origin`, `fragment` or
-            `first_seen__gte`. Any identifier is accepted; validity of a SQL
-            column is checked at compile time.
-        value: The lookup value.
-
-    Returns:
-        The resolved context leaf.
-    """
-    field, comparator = parse_lookup(key)
-    return ContextLeaf(field, value, comparator)
-
-
-LEAF_FACTORIES = {
-    "M": make_meta_leaf,
-    "P": make_property_leaf,
-    "G": make_group_leaf,
-    "C": make_context_leaf,
-}
+    if family == "M":
+        cls = _META_LEAVES.get(field)
+        if cls is None:
+            raise QueryError(f"Unknown meta field: `{field}`")
+        return cls(value, comparator)
+    if family == "P":
+        return PropertyLeaf(field, value, comparator)
+    if family == "G":
+        return GroupLeaf(field, value, comparator)
+    if family == "C":
+        return ContextLeaf(field, value, comparator)
+    raise QueryError(f"Unknown field family: `{family}`")
 
 
 def leaf_from_dict(data: LeafDict) -> Leaf:
@@ -563,4 +515,4 @@ def leaf_from_dict(data: LeafDict) -> Leaf:
     """
     field, op, value = data["f"], data["op"], data["v"]
     key = field if op == "eq" else f"{field}__{op}"
-    return LEAF_FACTORIES[data["t"]](key, value)
+    return make_leaf(data["t"], key, value)

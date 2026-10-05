@@ -9,7 +9,7 @@ field name, build `Ref`s).
 
 from __future__ import annotations
 
-from typing import Any, Iterator, overload
+from typing import Any, Callable, Iterator, overload
 
 from banal import hash_data
 from followthemoney.proxy import EntityProxy
@@ -19,10 +19,7 @@ from ftmq.query.leaves import (
     Leaf,
     group_conjunction,
     leaf_from_dict,
-    make_context_leaf,
-    make_group_leaf,
-    make_meta_leaf,
-    make_property_leaf,
+    make_leaf,
     row_scoped_groups,
 )
 from ftmq.query.refs import ContextRef, GroupRef, PropRef, Ref, make_meta_ref
@@ -277,13 +274,7 @@ class _FamilyExpr(Expr):
     ```
     """
 
-    @staticmethod
-    def _make(key: str, value: Any) -> Leaf:
-        raise NotImplementedError
-
-    @staticmethod
-    def _ref(field: str) -> Ref:
-        raise NotImplementedError
+    family: str = ""
 
     # a field name yields a `Ref`, not an instance of this class - which is
     # the point, and something mypy has no way to spell for `__new__`
@@ -303,65 +294,51 @@ class _FamilyExpr(Expr):
                     "or `field=value` lookups (a condition), not both"
                 )
             # returning a foreign type from `__new__` skips `__init__`
-            return cls._ref(args[0])
+            return _REFS[cls.family](args[0])
         return super().__new__(cls)
 
     def __init__(self, **lookups: Any) -> None:
         # built through `super().__init__`, not appended to, so the children go
         # through the same canonicalization as any other node
-        super().__init__(*(self._make(k, v) for k, v in lookups.items()), connector=AND)
+        leaves = (make_leaf(self.family, k, v) for k, v in lookups.items())
+        super().__init__(*leaves, connector=AND)
 
 
 class M(_FamilyExpr):
     """Meta fields: `dataset`, `schema`, `schemata`, `id`, ... - `M(schema="Person")`
     as a condition, `M("dataset")` as a reference."""
 
-    @staticmethod
-    def _make(key: str, value: Any) -> Leaf:
-        return make_meta_leaf(key, value)
-
-    @staticmethod
-    def _ref(field: str) -> Ref:
-        return make_meta_ref(field)
+    family = "M"
 
 
 class P(_FamilyExpr):
     """A specific FtM property: `P(name="Jane", amountEur__gte=1000)` as a
     condition, `P("amountEur")` as a reference."""
 
-    @staticmethod
-    def _make(key: str, value: Any) -> Leaf:
-        return make_property_leaf(key, value)
-
-    @staticmethod
-    def _ref(field: str) -> Ref:
-        return PropRef(field)
+    family = "P"
 
 
 class G(_FamilyExpr):
     """A property-type group: `G(countries="de")` as a condition,
     `G("countries")` as a reference."""
 
-    @staticmethod
-    def _make(key: str, value: Any) -> Leaf:
-        return make_group_leaf(key, value)
-
-    @staticmethod
-    def _ref(field: str) -> Ref:
-        return GroupRef(field)
+    family = "G"
 
 
 class C(_FamilyExpr):
     """A context / storage column: `C(origin="crawl")` as a condition,
     `C("origin")` as a reference."""
 
-    @staticmethod
-    def _make(key: str, value: Any) -> Leaf:
-        return make_context_leaf(key, value)
+    family = "C"
 
-    @staticmethod
-    def _ref(field: str) -> Ref:
-        return ContextRef(field)
+
+# the ref each family builds from a bare field name
+_REFS: dict[str, Callable[[str], Ref]] = {
+    "M": make_meta_ref,
+    "P": PropRef,
+    "G": GroupRef,
+    "C": ContextRef,
+}
 
 
 def combine(*nodes: Expr, connector: str = AND) -> Expr | None:
