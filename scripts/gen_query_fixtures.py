@@ -41,7 +41,11 @@ def surface(fn) -> Any:
 CASES: dict[str, Query] = {
     "flat_and": Query().where(M(schema="Person"), P(name="Jane")),
     "dataset_in": Query().where(M(dataset__in=["d1", "d2"])),
-    "exclude_multi": Query().where(M(dataset__not_in=["a", "b"])),
+    # `exclude:` is `~`; `not` / `not_in` are rql only
+    "exclude": Query().where(~P(country="ru")),
+    "exclude_multi": Query().where(~M(dataset__in=["a", "b"])),
+    "exclude_range": Query().where(~P(date__gte="2020")),
+    "not_in": Query().where(M(dataset__not_in=["a", "b"])),
     "nested_or": Query().where(
         M(schema="Person") & (G(countries="de") | G(countries="at"))
     ),
@@ -52,8 +56,12 @@ CASES: dict[str, Query] = {
     "context": Query().where(C(origin="crawl")),
     "schemata": Query().where(M(schemata="LegalEntity")),
     "empty": Query().where(P(deathDate__null=True)),
-    "sort_slice": Query().where(M(schema="Payment")).order_by("-date")[10:20],
-    "sort_asc": Query().where(M(schema="Person")).order_by("name")[:25],
+    "sort_slice": Query()
+    .where(M(schema="Payment"))
+    .order_by(P("date"), ascending=False)[10:20],
+    "sort_asc": Query().where(M(schema="Person")).order_by(P("name"))[:25],
+    # the `sort` param spells a property as the filters do
+    "sort_wire": Query.from_string("sort=properties.name:desc"),
     "agg_ungrouped": Query()
     .where(M(schema="Payment"))
     .aggregate(A(min=P("date"), max=P("date"), sum=P("amountEur"))),
@@ -62,7 +70,7 @@ CASES: dict[str, Query] = {
     .aggregate(A(sum=P("amountEur"), by=P("beneficiary")), A(count=M("id"))),
     "combined": Query()
     .where(M(dataset="donations"), M(schema="Payment"), P(date__gte="2010"))
-    .order_by("-amountEur")[0:50]
+    .order_by(P("amountEur"), ascending=False)[0:50]
     .aggregate(A(sum=P("amountEur"), by=Year())),
     # every family is addressable as an aggregation field, spelled as in the
     # filter grammar (`topics` the group vs `properties.topics` the property)
@@ -76,10 +84,18 @@ CASES: dict[str, Query] = {
     .where(M(schemata="Document"))
     .select(P("title"), P("fileName")),
     "select_group": Query().where(P(name="Jane")).select(G("countries")),
+    # `facet_sort` has no rql operator
+    "facet_sort": Query()
+    .where(M(schema="Payment"))
+    .aggregate(A(sum=P("amountEur"), by=P("beneficiary")))
+    .order_facets(sum=P("amountEur")),
+    "facet_sort_asc": Query()
+    .aggregate(A(count=M("id"), by=Year()))
+    .order_facets(count=M("id"), ascending=True),
     "select_with_agg_and_slice": Query()
     .where(M(schema="Payment"))
     .aggregate(A(sum=P("amountEur"), by=P("beneficiary")))
-    .order_by("-date")[0:25]
+    .order_by(P("date"), ascending=False)[0:25]
     .select(P("amountEur"), G("dates")),
 }
 

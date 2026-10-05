@@ -180,10 +180,10 @@ def test_serialization_dict_roundtrip():
         Query()
         .where(M(schemata="LegalEntity"), P(name__ilike="jane"))
         .where(G(countries="de") | G(countries="at"))
-        .order_by("name", ascending=False)[10:20]
+        .order_by(P("name"), ascending=False)[10:20]
     )
     data = q.to_dict()
-    assert "q" in data and data["order_by"] == "-name"
+    assert "q" in data and data["order_by"] == "-properties.name"
     assert data["limit"] == 10 and data["offset"] == 10
     assert Query.from_dict(data).to_dict() == data
 
@@ -207,7 +207,7 @@ def test_params_bridge():
     )
     leaves = {(x.family, x.key, str(x.comparator)) for x in q2.q.iter_leaves()}
     assert ("P", "name", "eq") in leaves
-    assert ("P", "country", "not") in leaves
+    assert ("P", "country", "eq") in leaves  # negated, see below
     assert ("P", "date", "gte") in leaves
     assert ("P", "birthDate", "null") in leaves
 
@@ -249,17 +249,36 @@ def test_params_prefix_ops():
     assert params["filter:endswith:id"] == ["-x"]
 
 
-def test_params_exclude_multi():
-    # `not_in` accepts a list (like `in`); multi-value exclude round-trips
-    q = Query().where(M(dataset__not_in=["a", "b"]))
-    (leaf,) = list(q.q.iter_leaves())
-    assert str(leaf.comparator) == "not_in"
-    assert leaf.value == {"a", "b"}
+def test_params_exclude():
+    # `exclude:` is the negated match
+    q = Query().where(~M(dataset__in=["a", "b"]))
     assert q.to_string() == "exclude:dataset=a&exclude:dataset=b"
+    assert Query.from_string(q.to_string()) == q
     q2 = Query.from_string("exclude:schema=Person&exclude:schema=Company")
-    (leaf2,) = list(q2.q.iter_leaves())
-    assert str(leaf2.comparator) == "not_in"
-    assert leaf2.value == {"Person", "Company"}
+    assert q2 == Query().where(~M(schema__in=["Company", "Person"]))
+    assert Query.from_string("exclude:properties.country=ru") == Query().where(
+        ~P(country="ru")
+    )
+    # an infixed comparator stays under the negation
+    q3 = Query.from_string("exclude:gte:properties.date=2020")
+    assert q3 == Query().where(~P(date__gte="2020"))
+    assert Query.from_string(q3.to_string()) == q3
+
+    # keeps an entity without the field, drops one holding the value
+    def person(id_: str, *countries: str) -> Any:
+        props = {"name": [id_], "country": list(countries)}
+        return make_entity({"id": id_, "schema": "Person", "properties": props})
+
+    entities = [person("none"), person("ru", "ru"), person("ru-de", "ru", "de")]
+    entities.append(person("de", "de"))
+    q = Query.from_string("exclude:properties.country=ru")
+    assert [e.id for e in q.apply_iter(entities)] == ["none", "de"]
+
+    # `not` / `not_in` have no param spelling
+    with pytest.raises(QueryError):
+        Query().where(M(dataset__not_in=["a", "b"])).to_params()
+    with pytest.raises(QueryError):
+        Query().where(P(country__not="ru")).to_params()
 
 
 def test_collectors():
@@ -293,17 +312,38 @@ def test_collectors():
 
 
 def test_order_and_slice():
-    q = Query().order_by("date")
-    assert q.to_dict() == {"order_by": "date"}
-    q = Query().order_by("date", ascending=False)
-    assert q.to_dict() == {"order_by": "-date"}
+    # a sort field is a reference
+    q = Query().order_by(P("date"))
+    assert q.to_dict() == {"order_by": "properties.date"}
+    q = Query().order_by(P("date"), ascending=False)
+    assert q.to_dict() == {"order_by": "-properties.date"}
+    assert Query.from_dict(q.to_dict()) == q
     # sorting is single-field (the SQL adapter never supported more)
     with pytest.raises(TypeError):
-        Query().order_by("date", "name")
+        Query().order_by(P("date"), P("name"))
     # a builder never mutates the receiver
-    q1 = Query().order_by("date")
-    q2 = q1.order_by("name")
-    assert q1.sort.value == "date" and q2.sort.value == "name"
+    q1 = Query().order_by(P("date"))
+    q2 = q1.order_by(P("name"))
+    assert q1.sort.ref == P("date") and q2.sort.ref == P("name")
+    # only a property is sortable, and only by reference
+    with pytest.raises(QueryError):
+        Query().order_by(P("nosuchprop"))
+    for ref in (M("id"), G("dates"), C("origin"), Year()):
+        with pytest.raises(QueryError):
+            Query().order_by(ref)
+    with pytest.raises(QueryError):
+        Query().order_by("name")
+    with pytest.raises(QueryError):
+        Query.from_dict({"order_by": "-date"})
+
+    # the `sort` param takes the wire spelling
+    q = Query.from_params({"sort": ["properties.name:desc"]})
+    assert q == Query().order_by(P("name"), ascending=False)
+    assert q.to_params() == {"sort": ["properties.name:desc"]}
+    assert Query.from_string(q.to_string()) == q
+    for sort in ("name:desc", "id", "properties.nosuchprop:desc"):
+        with pytest.raises(QueryError):
+            Query.from_params({"sort": [sort]})
 
     assert Query()[10].slice == slice(10, 11, None)
     assert Query()[:10].slice == slice(None, 10, None)
@@ -394,6 +434,43 @@ def test_aggregate_params():
     )
     assert q.aggregations == set(A(count=P("topics"), by=G("topics")).aggs)
     assert Query.from_string(q.to_string()).aggregations == q.aggregations
+
+
+def test_facet_sort():
+    # `facet_sort=<func>:<field>[:asc]`, descending by default
+    q = (
+        Query()
+        .aggregate(A(sum=P("amountEur"), by=P("beneficiary")))
+        .order_facets(sum=P("amountEur"))
+    )
+    assert q.to_params()["facet_sort"] == ["sum:properties.amountEur"]
+    assert q.to_dict()["facet_sort"] == "sum:properties.amountEur"
+    assert Query.from_string(q.to_string()) == q
+    assert Query.from_dict(q.to_dict()) == q
+    asc = q.order_facets(sum=P("amountEur"), ascending=True)
+    assert asc.to_params()["facet_sort"] == ["sum:properties.amountEur:asc"]
+    assert Query.from_string(asc.to_string()) == asc
+    # an explicit `:desc` is the default
+    params = {**q.to_params(), "facet_sort": ["sum:properties.amountEur:desc"]}
+    assert Query.from_params(params) == q
+    # chaining keeps it
+    assert q.where(M(schema="Payment"))[:10].facet_sort == q.facet_sort
+
+    # the metric has to be a grouped aggregation
+    with pytest.raises(QueryError):
+        Query().order_facets(sum=P("amountEur"))
+    with pytest.raises(QueryError):
+        Query().aggregate(A(sum=P("amountEur"))).order_facets(sum=P("amountEur"))
+    with pytest.raises(QueryError):
+        q.order_facets(avg=P("amountEur"))
+    with pytest.raises(QueryError):
+        q.order_facets(sum=P("amountEur"), max=P("date"))
+    with pytest.raises(QueryError):
+        Query.from_params({**params, "facet_sort": ["sum:properties.amountEur:up"]})
+    with pytest.raises(QueryError):
+        Query.from_params({**params, "facet_sort": ["sum:properties.foo"]})
+    with pytest.raises(QueryError):
+        Query.from_params({**params, "facet_sort": ["sum:x", "count:id"]})
 
 
 def test_rql():
@@ -557,7 +634,7 @@ def test_select_projection():
     q = (
         q.where(P(country="de"))
         .aggregate(A(count=M("id"), by=G("countries")))
-        .order_by("-title")[10:20]
+        .order_by(P("title"), ascending=False)[10:20]
     )
     for other in (
         Query.from_dict(q.to_dict()),

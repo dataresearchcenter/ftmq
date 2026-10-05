@@ -8,6 +8,7 @@ from nomenklatura.judgement import Judgement
 from nomenklatura.resolver import Resolver
 
 from ftmq.query import A, C, G, M, P, Query, Year
+from ftmq.query.refs import PropRef
 from ftmq.store import MemoryStore, Store, get_store
 from ftmq.store.aleph import AlephStore, parse_uri
 from ftmq.store.base import (
@@ -143,24 +144,38 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
 
     # ordering
     q = Query().where(M(schema="Payment"), P(date__gte=2011))
-    q = q.order_by("amountEur")
+    q = q.order_by(P("amountEur"))
     res = [e for e in view.query(q)]
     assert len(res) == 21
     assert res[0].get("amountEur") == ["50001"]
-    q = q.order_by("amountEur", ascending=False)
+    q = q.order_by(P("amountEur"), ascending=False)
     res = [e for e in view.query(q)]
     assert len(res) == 21
     assert res[0].get("amountEur") == ["320000"]
 
     # slice
     q = Query().where(M(schema="Payment"), P(date__gte=2011))
-    q = q.order_by("amountEur")
+    q = q.order_by(P("amountEur"))
     q = q[:10]
     res = [e for e in view.query(q)]
     assert len(res) == 10
     assert res[0].get("payer") == ["efccc434cdf141c7ba6f6e539bb6b42ecd97c368"]
 
-    q = Query().where(M(schema="Person")).order_by("name")[0]
+    # entities without the sort prop are kept, last either way
+    q = Query().where(M(schema="PublicBody")).order_by(P("weakAlias"))
+    for sort in (q, q.order_by(P("weakAlias"), ascending=False)):
+        res = [e for e in view.query(sort)]
+        assert len(res) == 151
+        assert res[0].get("weakAlias") and not res[-1].get("weakAlias")
+    asc = [e.first("weakAlias") for e in view.query(q) if e.get("weakAlias")]
+    assert asc == sorted(asc)
+
+    # paging returns every entity exactly once, sorted or not
+    for paged in (Query().where(M(schema="PublicBody")), q):
+        ids = [e.id for i in range(0, 151, 50) for e in view.query(paged[i : i + 50])]
+        assert len(ids) == len(set(ids)) == 151
+
+    q = Query().where(M(schema="Person")).order_by(P("name"))[0]
     res = [e for e in view.query(q)]
     assert len(res) == 1
     assert res[0].caption == "Dr.-Ing. E. h. Martin Herrenknecht"
@@ -366,6 +381,43 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
     assert len(res) == 0
 
     return True
+
+
+@pytest.mark.parametrize("uri", ["sqlite:///{}/facets.db", "duckdb://{}/facets.duckdb"])
+def test_store_facet_sort(tmp_path, donations, uri):
+    # the SQL cap keeps the top buckets by entity count or by `facet_sort`
+    store = get_store(uri.format(tmp_path), dataset="donations")
+    with store.writer() as bulk:
+        for proxy in donations:
+            bulk.add_entity(proxy)
+    view = store.default_view()
+
+    def top(q: Query) -> set[str]:
+        stmt = view._sql(q).grouped_aggregations(PropRef("beneficiary"), limit=3)
+        return {row[2] for row in store._execute(stmt, stream=False)}
+
+    q = Query().aggregate(A(sum=P("amountEur"), by=P("beneficiary")))
+    assert top(q) == {  # 126, 53 and 39 payments
+        "c326dd8021ee75fe9608f31ecb4e2e7388144102",
+        "783d918df9f9178400d6b3386439ab3b3679979c",
+        "7202347006660188aab5c1e264c4bee948478fd6",
+    }
+    assert top(q.order_facets(sum=P("amountEur"))) == {  # the largest sums
+        "c326dd8021ee75fe9608f31ecb4e2e7388144102",
+        "6d8377d3938b85fa1bfd1985486f0f913c42e224",
+        "783d918df9f9178400d6b3386439ab3b3679979c",
+    }
+    assert top(q.order_facets(sum=P("amountEur"), ascending=True)) == {
+        "4b308dc2b128377e63a4bf2e4c1b9fcd59614eee",
+        "9e292c150c617eec85e5479c5f039f8441569441",
+        "9fbaa5733790781e56eec4998aeacf5093dccbf5",
+    }
+    # a facet without the metric keeps the count ranking
+    by_year = q.aggregate(A(count=M("id"), by=Year()))
+    stmt = view._sql(by_year.order_facets(sum=P("amountEur"))).grouped_aggregations(
+        Year(), limit=2
+    )
+    assert {row[2] for row in store._execute(stmt, stream=False)} == {"2008", "2009"}
 
 
 def test_store_scoped_views(tmp_path):

@@ -83,27 +83,30 @@ def test_sql():
 
     # order by creates a join
     q = Query().where(M(dataset__in=["other", "test"]), M(schema="Event"))
-    q = q.where(P(date__gte=2023)).order_by("name", ascending=False)
-    # same three memberships, but the sort binds `prop` as :prop_1 first
-    whereclause2 = whereclause.replace(":prop_1", ":prop_2")
+    q = q.where(P(date__gte=2023)).order_by(P("name"), ascending=False)
+    # same three memberships, but the sort binds `prop` as :prop_1 / :prop_2 first
+    # (it reads the `id` rows too, to keep entities without the sort prop)
+    whereclause2 = whereclause.replace(":prop_1", ":prop_3")
     assert isinstance(q.sql.statements, Select)
     assert _compare_str(
         q.sql.statements,
         f"""
         SELECT {fields}, anon_1.canonical_id AS canonical_id_1, anon_1.sortable_value
-        FROM test_table JOIN (SELECT test_table.canonical_id AS canonical_id, max(test_table.value) AS sortable_value
+        FROM test_table JOIN (SELECT test_table.canonical_id AS canonical_id,
+            max(CASE WHEN (test_table.prop = :prop_1) THEN test_table.value END) AS sortable_value
             FROM test_table
-            WHERE test_table.prop = :prop_1 AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
+            WHERE test_table.prop IN (__[POSTCOMPILE_prop_2])
+            AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
                 FROM test_table {whereclause2})
             GROUP BY test_table.canonical_id
-            ORDER BY sortable_value DESC, test_table.canonical_id)
+            ORDER BY sortable_value DESC NULLS LAST, test_table.canonical_id)
         AS anon_1 ON test_table.canonical_id = anon_1.canonical_id
-        ORDER BY anon_1.sortable_value DESC, test_table.canonical_id
+        ORDER BY anon_1.sortable_value DESC NULLS LAST, test_table.canonical_id
         """,
     )
 
     # cast order by
-    q = Query().order_by("amount")
+    q = Query().order_by(P("amount"))
     assert NUMERIC in _literal(q.sql.statements)
 
     # slice
@@ -113,12 +116,17 @@ def test_sql():
         .where(M(dataset="other"), M(schema="Event"))
         .where(P(date__gte=2023))
     )
-    assert str(q[:10].sql.canonical_ids).endswith("LIMIT :param_1")
+    # a page needs a total order
+    assert _compare_str(
+        str(q[:10].sql.canonical_ids).split("ORDER BY")[1],
+        "test_table.canonical_id LIMIT :param_1",
+    )
     assert str(q[1:10].sql.canonical_ids).endswith("LIMIT :param_1 OFFSET :param_2")
+    assert "ORDER BY" not in str(q.sql.canonical_ids)
 
     # ordered slice
     q = Query().where(M(dataset__in=["other", "test"]), M(schema="Event"))
-    q = q.where(P(date__gte=2023)).order_by("name")
+    q = q.where(P(date__gte=2023)).order_by(P("name"))
     assert not str(q[:10].sql.canonical_ids).endswith("LIMIT :param_1")
     assert not str(q[1:10].sql.canonical_ids).endswith("LIMIT :param_1 OFFSET :param_2")
     q = q[1:10]
@@ -126,15 +134,17 @@ def test_sql():
         q.sql.statements,
         f"""
         SELECT {fields}, anon_1.canonical_id AS canonical_id_1, anon_1.sortable_value
-        FROM test_table JOIN (SELECT test_table.canonical_id AS canonical_id, min(test_table.value) AS sortable_value
+        FROM test_table JOIN (SELECT test_table.canonical_id AS canonical_id,
+            min(CASE WHEN (test_table.prop = :prop_1) THEN test_table.value END) AS sortable_value
             FROM test_table
-            WHERE test_table.prop = :prop_1 AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
+            WHERE test_table.prop IN (__[POSTCOMPILE_prop_2])
+            AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
                 FROM test_table {whereclause2})
             GROUP BY test_table.canonical_id
-            ORDER BY sortable_value, test_table.canonical_id
+            ORDER BY sortable_value ASC NULLS LAST, test_table.canonical_id
             LIMIT :param_1 OFFSET :param_2)
         AS anon_1 ON test_table.canonical_id = anon_1.canonical_id
-        ORDER BY anon_1.sortable_value, test_table.canonical_id
+        ORDER BY anon_1.sortable_value ASC NULLS LAST, test_table.canonical_id
         """,
     )
 
@@ -898,7 +908,9 @@ def test_sql_select_projection():
 
     # a sort reads the sortable value from the unprojected table, so ordering
     # by a property that was projected away still works
-    sorted_sql = _literal(Sql(q.order_by("-birthDate"), SqlSource(COREF)).statements)
+    sorted_sql = _literal(
+        Sql(q.order_by(P("birthDate"), ascending=False), SqlSource(COREF)).statements
+    )
     assert "coref.prop = 'birthDate'" in sorted_sql
     assert "coref.prop = 'id'" in sorted_sql
 

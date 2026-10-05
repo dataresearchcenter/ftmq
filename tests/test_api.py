@@ -60,10 +60,16 @@ def test_api_entities(api_client):
     # invalid property -> 400
     res = api_client.get("/entities?filter:properties.foo=bar")
     assert res.status_code == 400
+    # a sort field is spelled `properties.<name>`, as a filter field is
+    res = api_client.get("/entities?sort=name:desc")
+    assert res.status_code == 400
 
 
 def test_api_entities_filtered(api_client):
-    url = "/entities?filter:properties.jurisdiction=eu&sort=name:desc&dehydrate=true"
+    url = (
+        "/entities?filter:properties.jurisdiction=eu"
+        "&sort=properties.name:desc&dehydrate=true"
+    )
     res = api_client.get(url)
     data = res.json()
     assert data["total"] == 151
@@ -74,11 +80,18 @@ def test_api_entities_filtered(api_client):
     # wire format: no `dataset` key
     assert "dataset" not in entity
 
-    # `exclude:` matches entities that carry the property with another value
+    # `exclude:` keeps entities without the property
     res = api_client.get(
         "/entities?filter:dataset=eu_authorities&exclude:properties.jurisdiction=eu"
     )
     assert res.json()["total"] == 0
+    # 56 companies, 52 of them in `de` and one without any country
+    res = api_client.get("/entities?filter:schema=Company")
+    assert res.json()["total"] == 56
+    res = api_client.get(
+        "/entities?filter:schema=Company&exclude:properties.country=de"
+    )
+    assert res.json()["total"] == 4
 
     res = api_client.get(
         "/entities?filter:schema=Payment&filter:gte:properties.date=2010"
@@ -187,6 +200,43 @@ def test_api_aggregation(api_client):
     assert year["total"] == len(year["values"])
     bucket_2011 = next(v for v in year["values"] if v["value"] == "2011")
     assert bucket_2011["count"] > 0
+
+    # a bucket's `count` is its entity count, apart from its `metrics`
+    res = api_client.get(
+        "/entities?filter:dataset=donations&filter:schema=Payment"
+        "&metric:count=properties.beneficiary&metric:sum=properties.amountEur"
+        "&facet=year&limit=0"
+    )
+    data = res.json()
+    bucket_2008 = next(
+        v for v in data["facets"]["year"]["values"] if v["value"] == "2008"
+    )
+    assert bucket_2008["count"] == 49
+    assert bucket_2008["metrics"] == {
+        "properties.beneficiary": {"count": 7},
+        "properties.amountEur": {"sum": 6002766},
+    }
+    # the bucket count is not a requested metric
+    assert "id" not in data["metrics"]
+    # buckets rank by entity count ...
+    counts = [v["count"] for v in data["facets"]["year"]["values"]]
+    assert counts == sorted(counts, reverse=True)
+
+    # ... or by a metric via `facet_sort`
+    url = (
+        "/entities?filter:dataset=donations&filter:schema=Payment"
+        "&metric:sum=properties.amountEur&facet=properties.beneficiary&limit=0"
+    )
+    for sort, reverse in (("", True), (":asc", False)):
+        res = api_client.get(f"{url}&facet_sort=sum:properties.amountEur{sort}")
+        data = res.json()
+        assert data["query"]["facet_sort"] == f"sum:properties.amountEur{sort}"
+        values = data["facets"]["properties.beneficiary"]["values"]
+        sums = [v["metrics"]["properties.amountEur"]["sum"] for v in values]
+        assert sums == sorted(sums, reverse=reverse)
+    # ... a grouped one
+    res = api_client.get(f"{url}&facet_sort=avg:properties.amountEur")
+    assert res.status_code == 400
 
     # aggregations returned alongside entities when limit > 0
     res = api_client.get(
