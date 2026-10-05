@@ -36,11 +36,7 @@ def _leaf_term(leaf: Leaf) -> FilterTerm | None:
     elif isinstance(leaf, SchemataLeaf):
         # an is-a filter matches every non-abstract schema below it - the
         # index holds the entity's exact schema
-        field = SCHEMA
-        values = set()
-        for schema in leaf.schemata:
-            values.add(schema.name)
-            values.update(d.name for d in schema.descendants if not d.abstract)
+        field, values = SCHEMA, leaf.names
     elif isinstance(leaf, SchemaLeaf):
         field, values = SCHEMA, set(ensure_list(leaf.value))
     elif isinstance(leaf, GroupLeaf) and leaf.key == COUNTRIES:

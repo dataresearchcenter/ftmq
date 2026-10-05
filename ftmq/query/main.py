@@ -27,16 +27,7 @@ from ftmq.query.aleph import (
     string_to_params,
 )
 from ftmq.query.exceptions import QueryError
-from ftmq.query.leaves import (
-    ContextLeaf,
-    DatasetLeaf,
-    GroupLeaf,
-    IdLeaf,
-    Leaf,
-    PropertyLeaf,
-    SchemaLeaf,
-    SchemataLeaf,
-)
+from ftmq.query.leaves import DatasetLeaf, Leaf, SchemaLeaf, SchemataLeaf
 from ftmq.query.nodes import Expr, combine
 from ftmq.query.refs import GroupRef, PropRef, Ref, ref_from_wire
 from ftmq.query.rql import parse_rql
@@ -138,7 +129,6 @@ class Query:
         *nodes: Expr,
         q: Expr | None = None,
         aggregations: Iterable[Agg] | None = None,
-        aggregator: Aggregator | None = None,
         sort: Sort | None = None,
         slice: slice | None = None,
         selection: Iterable[Ref] | None = None,
@@ -147,7 +137,7 @@ class Query:
     ):
         self.q: Expr | None = q if q is not None else combine(*nodes)
         self.aggregations: set[Agg] = set(aggregations or [])
-        self.aggregator = aggregator
+        self.aggregator: Aggregator | None = None
         self.sort = sort
         self.slice = slice
         self.selection: tuple[Ref, ...] = tuple(sorted(set(selection or ())))
@@ -220,7 +210,6 @@ class Query:
         data: dict[str, Any] = dict(
             q=self.q,
             aggregations=self.aggregations,
-            aggregator=self.aggregator,
             sort=self.sort,
             slice=self.slice,
             selection=self.selection,
@@ -285,35 +274,15 @@ class Query:
         return Sql(self, source).statements
 
     @property
-    def ids(self) -> set[IdLeaf]:
-        """
-        The current id filters
-        """
-        return {f for f in self._leaves if isinstance(f, IdLeaf)}
-
-    @property
-    def datasets(self) -> set[DatasetLeaf]:
-        """
-        The current dataset filters
-        """
-        return {f for f in self._leaves if isinstance(f, DatasetLeaf)}
-
-    @property
     def dataset_names(self) -> set[str]:
         """
         The names of the current filtered datasets
         """
         names: set[str] = set()
-        for f in self.datasets:
-            names.update(ensure_list(f.value))
+        for f in self._leaves:
+            if isinstance(f, DatasetLeaf):
+                names.update(ensure_list(f.value))
         return names
-
-    @property
-    def schemata(self) -> set[SchemaLeaf]:
-        """
-        The current schema filters
-        """
-        return {f for f in self._leaves if isinstance(f, SchemaLeaf)}
 
     @property
     def schemata_names(self) -> set[str]:
@@ -326,44 +295,10 @@ class Query:
         names: set[str] = set()
         for f in self._leaves:
             if isinstance(f, SchemataLeaf):
-                for schema in f.schemata:
-                    names.add(schema.name)
-                    names.update(d.name for d in schema.descendants if not d.abstract)
+                names.update(f.names)
             elif isinstance(f, SchemaLeaf):
                 names.update(ensure_list(f.value))
         return names
-
-    @property
-    def context(self) -> set[ContextLeaf]:
-        """
-        The current context filters (the `C` family, e.g. `origin`)
-        """
-        return {f for f in self._leaves if isinstance(f, ContextLeaf)}
-
-    @property
-    def countries(self) -> set[str]:
-        """
-        The current filtered countries
-        """
-        names: set[str] = set()
-        for f in self._leaves:
-            if isinstance(f, GroupLeaf) and f.key == "countries":
-                names.update(ensure_list(f.value))
-        return names
-
-    @property
-    def groups(self) -> set[GroupLeaf]:
-        """
-        The current property groups lookup filters
-        """
-        return {f for f in self._leaves if isinstance(f, GroupLeaf)}
-
-    @property
-    def properties(self) -> set[PropertyLeaf]:
-        """
-        The current property lookup filters
-        """
-        return {f for f in self._leaves if isinstance(f, PropertyLeaf)}
 
     # --- serialization -----------------------------------------------------
 

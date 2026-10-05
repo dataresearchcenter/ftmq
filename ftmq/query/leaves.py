@@ -356,6 +356,16 @@ class SchemataLeaf(Leaf):
         if self.comparator not in ("eq", "in", "not", "not_in"):
             raise QueryError(f"Invalid comparator for `schemata`: `{self.comparator}`")
 
+    @property
+    def names(self) -> set[str]:
+        """The concrete schemata matched: each one plus its non-abstract
+        descendants."""
+        names: set[str] = set()
+        for schema in self.schemata:
+            names.add(schema.name)
+            names.update(d.name for d in schema.descendants if not d.abstract)
+        return names
+
     def apply(self, entity: EntityProxy) -> bool:
         hit = bool(self.schemata & entity.schema.schemata)
         if self.comparator in ("not", "not_in"):

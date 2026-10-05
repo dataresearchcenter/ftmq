@@ -86,7 +86,7 @@ def test_sql():
     q = q.where(P(date__gte=2023)).order_by(P("name"), ascending=False)
     # same three memberships, but the sort binds `prop` as :prop_1 / :prop_2 first
     # (it reads the `id` rows too, to keep entities without the sort prop)
-    whereclause2 = whereclause.replace(":prop_1", ":prop_3")
+    memberships = whereclause.replace(":prop_1", ":prop_3").removeprefix("WHERE ")
     assert isinstance(q.sql.statements, Select)
     assert _compare_str(
         q.sql.statements,
@@ -96,8 +96,7 @@ def test_sql():
             max(CASE WHEN (test_table.prop = :prop_1) THEN test_table.value END) AS sortable_value
             FROM test_table
             WHERE test_table.prop IN (__[POSTCOMPILE_prop_2])
-            AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
-                FROM test_table {whereclause2})
+            AND {memberships}
             GROUP BY test_table.canonical_id
             ORDER BY sortable_value DESC NULLS LAST, test_table.canonical_id)
         AS anon_1 ON test_table.canonical_id = anon_1.canonical_id
@@ -138,8 +137,7 @@ def test_sql():
             min(CASE WHEN (test_table.prop = :prop_1) THEN test_table.value END) AS sortable_value
             FROM test_table
             WHERE test_table.prop IN (__[POSTCOMPILE_prop_2])
-            AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
-                FROM test_table {whereclause2})
+            AND {memberships}
             GROUP BY test_table.canonical_id
             ORDER BY sortable_value ASC NULLS LAST, test_table.canonical_id
             LIMIT :param_1 OFFSET :param_2)
@@ -262,18 +260,6 @@ def test_sql():
         ORDER BY test_table.canonical_id
         """,
     )
-    # the row-level escape hatch keeps the same predicates un-lifted, for
-    # callers that want the matching statements rather than the matching
-    # entities' statements
-    assert _compare_str(
-        q.sql.row_statements,
-        f"""
-        SELECT {fields} FROM test_table
-        WHERE test_table.dataset = :dataset_1 AND test_table.schema = :schema_1
-        ORDER BY test_table.canonical_id
-        """,
-    )
-
     # but we need complex query if we want a limit:
     assert "canonical_id IN" in str(q[:10].sql.statements)
 
@@ -917,9 +903,6 @@ def test_sql_select_projection():
     # a slice routes through the canonical_ids sub-select, which stays unprojected
     sliced = _literal(Sql(q[:10], SqlSource(COREF)).statements)
     assert "coref.prop = 'id'" in sliced
-
-    # the row-level escape hatch is projected too
-    assert "coref.prop = 'id'" in _literal(Sql(q, SqlSource(COREF)).row_statements)
 
     # without a selection nothing changes
     plain = Query().where(M(schema="Person"))

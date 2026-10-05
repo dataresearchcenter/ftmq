@@ -53,11 +53,12 @@ def test_api_query_filters():
 
     # reverse lookup via the `entities` group
     q = _build("filter:group.entities=some-id")
-    assert {g.key for g in q.groups} == {"entities"}
+    assert {(f.family, f.key) for f in q._leaves} == {("G", "entities")}
 
     # countries group (feeds the search stores)
     q = _build("filter:group.countries=de&filter:group.countries=lu")
-    assert q.countries == {"de", "lu"}
+    (leaf,) = q._leaves
+    assert (leaf.family, leaf.key, leaf.value) == ("G", "countries", {"de", "lu"})
 
 
 def test_api_query_sort_paging():

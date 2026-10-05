@@ -239,8 +239,6 @@ class Sql:
         self.table = source.table
         self.id_col = self.table.c[source.id_column]
         self.scope: set[str] | None = set(scope) if scope else None
-        self._row_level = False
-        """Set on the :attr:`_rows` twin – see :meth:`_membership`."""
 
     @cached_property
     def _base_clauses(self) -> list[Any]:
@@ -305,19 +303,11 @@ class Sql:
         `null=True` asks whether an entity has *no* such row at all, which no
         single statement row can answer - it becomes a `canonical_id` anti-join.
         """
-        if self._row_level:
-            return not_(present)
         return self.id_col.not_in(self._entity_ids(present))
 
     def _membership(self, pred: Any) -> Any:
         """Lift a row predicate to an entity-level membership clause: the
-        entity has at least one row matching it.
-
-        The two lifting points of the compiler – :attr:`row_statements`
-        switches both off to expose the un-lifted predicate.
-        """
-        if self._row_level:
-            return pred
+        entity has at least one row matching it."""
         return self.id_col.in_(self._entity_ids(pred))
 
     def _family_clause(self, leaf: Leaf, lookup: Lookup) -> Any:
@@ -347,11 +337,7 @@ class Sql:
         """
         negated = f.comparator in ("not", "not_in")
         if isinstance(f, SchemataLeaf):
-            names: set[str] = set()
-            for schema in f.schemata:
-                names.add(schema.name)
-                names.update(d.name for d in schema.descendants if not d.abstract)
-            positive = self.table.c.schema.in_(names)
+            positive = self.table.c.schema.in_(f.names)
         elif negated:
             values = f.value if isinstance(f.value, (set, frozenset)) else {f.value}
             positive = self.table.c.schema.in_(sorted(values))
@@ -371,8 +357,7 @@ class Sql:
         seen since d" - one membership per leaf answers the second question.
 
         The matching entity is still assembled from *all* of its statements -
-        this narrows which entities match, never which rows come back (see
-        [`row_statements`][ftmq.query.sql.Sql.row_statements] for that).
+        this narrows which entities match, never which rows come back.
         """
         rows = [
             self.get_expression(self.lookup(f.ref).value, f)
@@ -562,28 +547,19 @@ class Sql:
         return and_(true(), *self._base_clauses, *self._prune_clauses, *self._clauses)
 
     @cached_property
-    def _selection_clause(self) -> Any | None:
-        """The row predicate of a [`select`][ftmq.Query.select] projection:
-        the statement rows to actually read back, `None` without one.
+    def _projection_clauses(self) -> list[Any]:
+        """The row predicate of a [`select`][ftmq.Query.select] projection, as
+        a clause list (empty without one): the statement rows to read back.
 
         Folded into the statement selects only - never into the membership
         sub-selects, `count` or the aggregations, which have to see the whole
         entity. The entity's `id` statement always comes back, so an entity
-        holding none of the selected properties is still returned (empty)
-        rather than silently dropped from the result.
+        holding none of the selected properties is still returned (empty).
         """
         if not self.q.selection:
-            return None
-        # every selectable ref has a row predicate (`Query.select` rejects the
-        # families that read a column instead of selecting rows)
-        rows = [self.lookup(ref).where for ref in self.q.selection]
-        return or_(*[row for row in rows if row is not None], self.table.c.prop == "id")
-
-    @cached_property
-    def _projection_clauses(self) -> list[Any]:
-        """The projection as a clause list (empty without a selection)."""
-        clause = self._selection_clause
-        return [] if clause is None else [clause]
+            return []
+        rows = [w for r in self.q.selection if (w := self.lookup(r).where) is not None]
+        return [or_(*rows, self.table.c.prop == "id")]
 
     @property
     def _limit(self) -> int | None:
@@ -592,45 +568,6 @@ class Sql:
         if self.q.limit is None and self.q.offset:
             return 2**63 - 1
         return self.q.limit
-
-    @cached_property
-    def _rows(self) -> "Sql":
-        """A twin compiler that leaves every predicate at row level.
-
-        Same query, same source, same scope - only :meth:`_membership` /
-        :meth:`_absent` stop lifting, so each leaf stays the predicate that
-        would otherwise sit *inside* the `IN (SELECT DISTINCT ...)` wrapper.
-        """
-        twin = Sql(self.q, self.source, self.scope)
-        twin._row_level = True
-        return twin
-
-    @cached_property
-    def row_clause(self) -> BooleanClauseList:
-        """The query's predicates as *row* filters, un-lifted.
-
-        The inner half of :attr:`clause`: what each leaf tests about a single
-        statement row, before the entity membership wrapper. Absence leaves
-        (`null=True`) negate rather than anti-join, since no single row can
-        answer "this entity has no name".
-        """
-        return self._rows.clause
-
-    @cached_property
-    def row_statements(self) -> Select:
-        """The matching statement *rows*, not the statements of matching
-        entities.
-
-        The escape hatch out of the entity semantics every other select has:
-        `C(origin="x")` here means the x-origin rows, where
-        :attr:`statements` means all statements of entities having one. Use it
-        to read a subset of an entity's statements - a per-origin export, a
-        provenance slice - and compose your own select on top; ordering,
-        sorting and slicing are the caller's to add, because a limit over rows
-        does not mean a limit over entities.
-        """
-        where = and_(true(), self.row_clause, *self._projection_clauses)
-        return select(self.table).where(where).order_by(self.id_col)
 
     @cached_property
     def canonical_ids(self) -> Select:
@@ -642,10 +579,6 @@ class Sql:
             # offset 0 (a start-less slice) is redundant; omit it from the SQL
             q = q.limit(self._limit).offset(self.q.offset or None)
         return q
-
-    @cached_property
-    def all_canonical_ids(self) -> Select:
-        return self.canonical_ids.limit(None).offset(None)
 
     @cached_property
     def _unsorted_statements(self) -> Select:
@@ -680,14 +613,7 @@ class Sql:
         sortable_value = group_func(case((self.table.c.prop == prop, value)))
         inner = (
             select(self.id_col, sortable_value.label("sortable_value"))
-            .where(
-                and_(
-                    true(),
-                    *self._base_clauses,
-                    self.table.c.prop.in_([prop, "id"]),
-                    self.id_col.in_(self.canonical_ids),
-                )
-            )
+            .where(and_(self.table.c.prop.in_([prop, "id"]), self.clause))
             .group_by(self.id_col)
             .limit(self._limit)
             .offset(self.q.offset or None)

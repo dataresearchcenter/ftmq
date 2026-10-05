@@ -285,7 +285,6 @@ def test_collectors():
     q = Query().where(M(dataset="foo"), M(schema="Person"), G(countries="fr"))
     assert q.dataset_names == {"foo"}
     assert q.schemata_names == {"Person"}
-    assert q.countries == {"fr"}
 
     q = Query().where(
         M(dataset__in=["foo", "bar"]),
@@ -294,7 +293,6 @@ def test_collectors():
     )
     assert q.dataset_names == {"foo", "bar"}
     assert q.schemata_names == {"Company", "Person"}
-    assert q.countries == {"de", "fr"}
 
     # schemata expands to the is-a set (self + non-abstract descendants)
     q = Query().where(M(schemata="LegalEntity"))
@@ -306,9 +304,9 @@ def test_collectors():
         "PublicBody",
     }
 
-    # the `groups` collector includes the `entities` (reverse) group
+    # the reverse lookup is the `entities` group
     q = Query().where(G(entities="x-1"))
-    assert len(q.groups) == 1
+    assert [(f.family, f.key) for f in q._leaves] == [("G", "entities")]
 
 
 def test_order_and_slice():
@@ -621,7 +619,7 @@ def test_context_node():
     assert not Query().where(C(fragment="x")).apply(entity)
 
     q = Query().where(C(origin="crawl"), M(schema="Person"))
-    assert len(q.context) == 1
+    assert {(f.family, f.key) for f in q._leaves} == {("C", "origin"), ("M", "schema")}
     # serialization round-trips
     assert Query.from_dict(q.to_dict()).to_dict() == q.to_dict()
     # every context field is expressible: the family is in the spelling
