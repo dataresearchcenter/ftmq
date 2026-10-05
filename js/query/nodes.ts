@@ -70,15 +70,11 @@ export class Expr {
     return this.children.length === 0 && !this.negated;
   }
 
-  private copy(): Expr {
-    // already normalized, so the constructor is a no-op over these children
-    return new Expr([...this.children], this.connector, this.negated);
-  }
-
   private combineWith(other: Expr, connector: Connector): Expr {
-    if (this.isEmpty) return other.copy();
-    if (other.isEmpty) return this.copy();
-    return new Expr([this.copy(), other.copy()], connector);
+    // nodes are never modified after construction, so they can be shared
+    if (this.isEmpty) return other;
+    if (other.isEmpty) return this;
+    return new Expr([this, other], connector);
   }
 
   and(other: Expr): Expr {
@@ -90,9 +86,7 @@ export class Expr {
   }
 
   not(): Expr {
-    const clone = this.copy();
-    clone.negated = !this.negated;
-    return clone;
+    return new Expr([...this.children], this.connector, !this.negated);
   }
 
   *iterLeaves(): Generator<Leaf> {

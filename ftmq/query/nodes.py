@@ -84,17 +84,13 @@ class Expr:
     def __bool__(self) -> bool:
         return bool(self.children) or self.negated
 
-    def _copy(self) -> "Expr":
-        clone = Expr(connector=self.connector, negated=self.negated)
-        clone.children = list(self.children)  # already normalized
-        return clone
-
     def _combine(self, other: "Expr", connector: str) -> "Expr":
+        # nodes are never modified after construction, so they can be shared
         if not self:
-            return other._copy()
+            return other
         if not other:
-            return self._copy()
-        return Expr(self._copy(), other._copy(), connector=connector)
+            return self
+        return Expr(self, other, connector=connector)
 
     def __and__(self, other: Any) -> "Expr":
         if not isinstance(other, Expr):
@@ -107,9 +103,7 @@ class Expr:
         return self._combine(other, OR)
 
     def __invert__(self) -> "Expr":
-        clone = self._copy()
-        clone.negated = not self.negated
-        return clone
+        return Expr(*self.children, connector=self.connector, negated=not self.negated)
 
     def apply(self, entity: EntityProxy) -> bool:
         """Evaluate the boolean expression against an entity.

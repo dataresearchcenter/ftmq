@@ -47,7 +47,7 @@ def _leaf_term(leaf: Leaf) -> FilterTerm | None:
         field, values = COUNTRIES, set(ensure_list(leaf.value))
     else:
         return None
-    comparator = str(leaf.comparator)
+    comparator = leaf.comparator
     if comparator in ("eq", "in"):
         return FilterTerm(field, frozenset(values))
     if comparator in ("not", "not_in"):

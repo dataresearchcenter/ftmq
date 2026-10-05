@@ -59,18 +59,7 @@ RQL_COMPARATORS = {
 
 # ftmq comparator -> RQL operator (the expressible subset; `null`, `startswith`,
 # `endswith`, `notlike`, `notilike` have no RQL equivalent)
-TO_RQL_OPERATORS = {
-    "eq": "eq",
-    "not": "ne",
-    "lt": "lt",
-    "lte": "le",
-    "gt": "gt",
-    "gte": "ge",
-    "in": "in",
-    "not_in": "out",
-    "like": "like",
-    "ilike": "ilike",
-}
+TO_RQL_OPERATORS = {v: k for k, v in RQL_COMPARATORS.items() if k != "contains"}
 
 # RQL aggregate operator -> ftmq function (RQL calls the average `mean`)
 RQL_FUNCTIONS = {
@@ -104,9 +93,7 @@ def _rql_leaf(op: str, args: list[Any]) -> Expr:
         raise QueryError(f"Unsupported RQL operator: `{op}`")
     field, value = args[0], args[1]
     family, key = _resolve_rql_field(field)
-    if comparator in ("in", "not_in"):
-        value = list(value)
-    elif comparator in ("like", "ilike") and isinstance(value, str):
+    if comparator in ("like", "ilike") and isinstance(value, str):
         # RQL uses `*` as the wildcard; ftmq `like`/`ilike` is substring-based
         value = value.replace("*", "")
     lookup = key if comparator == "eq" else f"{key}__{comparator}"
@@ -178,29 +165,21 @@ def parse_rql(value: str) -> tuple[Expr | None, set[Agg], tuple[Ref, ...]]:
         return None, set(), ()
     aggs: set[Agg] = set()
     selection: tuple[Ref, ...] = ()
-    if data["name"] == SELECT_OPERATOR:
-        return None, aggs, _node_selection(data)
-    if data["name"] in AGG_OPERATORS:
-        aggs.update(_node_aggs(data))
-        return None, aggs, selection
-    if data["name"] == "and":
-        filters: list[dict[str, Any]] = []
-        for child in data["args"]:
-            if not isinstance(child, dict):
-                filters.append(child)
-            elif child.get("name") == SELECT_OPERATOR:
-                selection = _node_selection(child)
-            elif child.get("name") in AGG_OPERATORS:
-                aggs.update(_node_aggs(child))
-            else:
-                filters.append(child)
-        expr = combine(*(rql_to_expr(f) for f in filters), connector=AND)
-        return expr, aggs, selection
-    return rql_to_expr(data), aggs, selection
+    filters: list[Any] = []
+    for node in data["args"] if data["name"] == "and" else [data]:
+        name = node.get("name") if isinstance(node, dict) else None
+        if name == SELECT_OPERATOR:
+            selection = _node_selection(node)
+        elif name in AGG_OPERATORS:
+            aggs.update(_node_aggs(node))
+        else:
+            filters.append(node)
+    expr = combine(*(rql_to_expr(f) for f in filters), connector=AND)
+    return expr, aggs, selection
 
 
 def _leaf_to_rql(leaf: Leaf) -> dict[str, Any]:
-    op = TO_RQL_OPERATORS.get(str(leaf.comparator))
+    op = TO_RQL_OPERATORS.get(leaf.comparator)
     if op is None:
         raise QueryError(f"Comparator `{leaf.comparator}` is not expressible as RQL")
     value = leaf.value
@@ -268,15 +247,15 @@ def to_rql(
             (`null`, `startswith`, `endswith`, ...).
     """
     nodes: list[dict[str, Any]] = []
-    if expr is not None and expr:
+    if expr:
         filter_ast = expr_to_rql(expr)
         # flatten a top-level `and` filter so aggregations join as siblings
-        if not expr.negated and filter_ast.get("name") == "and":
+        if filter_ast.get("name") == "and":
             nodes.extend(filter_ast["args"])
         else:
             nodes.append(filter_ast)
     nodes.extend(_aggs_to_rql(aggs))
-    fields = sorted(ref.wire for ref in selection)
+    fields = [ref.wire for ref in selection]
     if fields:
         nodes.append({"name": SELECT_OPERATOR, "args": fields})
     if not nodes:

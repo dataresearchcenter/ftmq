@@ -23,9 +23,7 @@ from ftmq.query.aleph import (
     normalize_multidict,
     params_to_aggregations,
     params_to_expr,
-    params_to_selection,
     params_to_string,
-    selection_to_params,
     string_to_params,
 )
 from ftmq.query.exceptions import QueryError
@@ -48,6 +46,16 @@ from ftmq.types import EntityProxies
 
 if TYPE_CHECKING:
     from sqlalchemy import Select
+
+
+def _single(items: dict[str, list[str]], key: str) -> str | None:
+    """The one value of a param, `None` if absent."""
+    values = items.get(key)
+    if not values:
+        return None
+    if len(values) > 1:
+        raise QueryError(f"`{key}` takes a single value: `{values}`")
+    return values[0]
 
 
 def _make_slice(limit: int | None, offset: int | None) -> slice | None:
@@ -426,14 +434,15 @@ class Query:
         Raises `QueryError` for queries outside the flat Aleph-expressible
         subset (cross-field OR, negated groups).
         """
-        params = {k: list(v) for k, v in expr_to_params(self.q).items()}
+        params = expr_to_params(self.q)
         if self.aggregations:
             params.update(aggregations_to_params(self.aggregations))
         if self.facet_sort:
             params["facet_sort"] = [self.facet_sort.wire]
         for ref, size in self.facet_sizes.items():
             params[f"facet_size:{ref.wire}"] = [str(size)]
-        params.update(selection_to_params(self.selection))
+        if self.selection:
+            params["select"] = [ref.wire for ref in self.selection]
         if self.sort:
             direction = "asc" if self.sort.ascending else "desc"
             params["sort"] = [f"{self.sort.ref.wire}:{direction}"]
@@ -451,35 +460,28 @@ class Query:
         q = params_to_expr(items)
         aggregations = params_to_aggregations(items) or None
         sort = None
-        if items.get("sort"):
-            if len(items["sort"]) > 1:
-                raise QueryError("Multi-field sort is not supported")
-            field, _, direction = items["sort"][0].partition(":")
+        if value := _single(items, "sort"):
+            field, _, direction = value.partition(":")
             sort = Sort(ref_from_wire(field), ascending=direction != "desc")
         facet_sort = None
-        if items.get("facet_sort"):
-            if len(items["facet_sort"]) > 1:
-                raise QueryError("Multi-field facet sort is not supported")
-            facet_sort = FacetOrder.from_wire(items["facet_sort"][0])
+        if value := _single(items, "facet_sort"):
+            facet_sort = FacetOrder.from_wire(value)
         facet_sizes: dict[Ref, int] = {}
-        for key, values in items.items():
+        for key in items:
             if key.startswith("facet_size:"):
-                field = key[len("facet_size:") :]
-                if len(values) > 1 or not values[0].isdigit():
-                    raise QueryError(f"Invalid facet size for `{field}`: `{values}`")
-                facet_sizes[ref_from_wire(field)] = int(values[0])
-        slice_ = None
-        if "limit" in items or "offset" in items:
-            offset = int((items.get("offset") or ["0"])[0] or 0)
-            _limit = items.get("limit")
-            limit = int(_limit[0]) if _limit else None
-            slice_ = _make_slice(limit, offset)
+                size = _single(items, key) or ""
+                if not size.isdigit():
+                    raise QueryError(f"Invalid facet size for `{key}`: `{size}`")
+                facet_sizes[ref_from_wire(key[len("facet_size:") :])] = int(size)
+        offset = int(_single(items, "offset") or 0)
+        limit = _single(items, "limit")
+        slice_ = _make_slice(int(limit) if limit else None, offset)
         return cls(
             q=q,
             sort=sort,
             slice=slice_,
             aggregations=aggregations,
-            selection=params_to_selection(items),
+            selection=[ref_from_wire(f) for f in items.get("select", [])],
             facet_sort=facet_sort,
             facet_sizes=facet_sizes,
         )
