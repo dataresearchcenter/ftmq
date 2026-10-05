@@ -125,26 +125,34 @@ def test_cli(fixtures_path: Path):
     assert len(_get_lines(result.output)) == 22 + 89
 
     # a query string is a whole query: sort and slice ride along with it
-    result = runner.invoke(cli, ["-i", in_uri, "-q", "filter:schema=Person&sort=name"])
+    result = runner.invoke(
+        cli, ["-i", in_uri, "-q", "filter:schema=Person&sort=properties.name"]
+    )
     assert result.exit_code == 0
     lines = _get_lines(result.output)
     assert orjson.loads(lines[0])["caption"] == "Dr.-Ing. E. h. Martin Herrenknecht"
 
     result = runner.invoke(
-        cli, ["-i", in_uri, "-q", "filter:schema=Person&sort=name:desc"]
+        cli, ["-i", in_uri, "-q", "filter:schema=Person&sort=properties.name:desc"]
     )
     assert result.exit_code == 0
     lines = _get_lines(result.output)
     assert orjson.loads(lines[0])["caption"] == "Johanna Quandt"
 
     result = runner.invoke(
-        cli, ["-i", in_uri, "-q", "filter:schema=Person&sort=name&limit=3"]
+        cli, ["-i", in_uri, "-q", "filter:schema=Person&sort=properties.name&limit=3"]
     )
     assert result.exit_code == 0
     assert len(_get_lines(result.output)) == 3
 
     result = runner.invoke(
-        cli, ["-i", in_uri, "-q", "filter:schema=Person&sort=name&limit=3&offset=1"]
+        cli,
+        [
+            "-i",
+            in_uri,
+            "-q",
+            "filter:schema=Person&sort=properties.name&limit=3&offset=1",
+        ],
     )
     assert result.exit_code == 0
     lines = _get_lines(result.output)

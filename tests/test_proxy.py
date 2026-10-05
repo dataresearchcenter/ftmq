@@ -137,13 +137,13 @@ def test_proxy_filters_combined(proxies):
 
 def test_proxy_sort(proxies):
     tested = False
-    q = Query().where(M(schema="Person")).order_by("name")
+    q = Query().where(M(schema="Person")).order_by(P("name"))
     for proxy in q.apply_iter(proxies):
         assert proxy.caption == "Dr.-Ing. E. h. Martin Herrenknecht"
         tested = True
         break
     assert tested
-    q = Query().where(M(schema="Person")).order_by("name", ascending=False)
+    q = Query().where(M(schema="Person")).order_by(P("name"), ascending=False)
     for proxy in q.apply_iter(proxies):
         assert proxy.caption == "Johanna Quandt"
         tested = True
@@ -152,13 +152,13 @@ def test_proxy_sort(proxies):
 
     # numeric sort
     tested = False
-    q = Query().where(M(schema="Payment")).order_by("amountEur")
+    q = Query().where(M(schema="Payment")).order_by(P("amountEur"))
     for proxy in q.apply_iter(proxies):
         assert proxy.get("amountEur") == ["50000"]
         tested = True
         break
     tested = False
-    q = Query().where(M(schema="Payment")).order_by("amountEur", ascending=False)
+    q = Query().where(M(schema="Payment")).order_by(P("amountEur"), ascending=False)
     for proxy in q.apply_iter(proxies):
         assert proxy.get("amountEur") == ["2334526"]
         tested = True
@@ -172,7 +172,7 @@ def test_proxy_slice(proxies):
     q = Query()[10:20]
     res = [p for p in q.apply_iter(proxies)]
     assert len(res) == 10
-    q = Query().where(M(schema="Person")).order_by("name")[0]
+    q = Query().where(M(schema="Person")).order_by(P("name"))[0]
     res = [p for p in q.apply_iter(proxies)]
     assert len(res) == 1
     assert res[0].caption == "Dr.-Ing. E. h. Martin Herrenknecht"

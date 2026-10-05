@@ -150,17 +150,18 @@ P(director="entity-id")     # a specific edge property pointing at this id
 
 ### Sorting and slicing
 
-Sorting takes a single field:
+Sorting takes a single property, addressed by reference as everywhere else in a query:
 
 ```python
-q = Query().order_by("name")                 # ascending
-q = Query().order_by("date", ascending=False)
-q = Query().order_by("-date")                # leading `-` = descending
+q = Query().order_by(P("name"))                     # ascending
+q = Query().order_by(P("date"), ascending=False)    # descending
 
 q = Query()[:100]     # first 100
 q = q[10:20]          # next 10
 q = q[1]              # the 2nd result (0-indexed)
 ```
+
+Only a property is sortable for now: any other reference (`M("id")`, `G("dates")`, ...), a bare string or an unknown property raises a `QueryError`. On the wire the field takes the same spelling as filters and facets: `sort=properties.name:desc` in URL params, `"order_by": "-properties.name"` in [`to_dict`][ftmq.Query.to_dict]. An entity without the sort property is still returned, last in either direction. Ties, and an unsorted slice, are ordered by entity id, so paging with `limit` / `offset` is predictable.
 
 ### Selecting properties
 
@@ -277,9 +278,11 @@ The bridge maps `ftmq` nodes onto the Aleph `filter:` / `exclude:` / `empty:` co
 | `filter:properties.firstName=Jane` | `P(firstName="Jane")` |
 | `filter:group.countries=de` (any group) | `G(countries="de")` |
 | `filter:gte:properties.date=2018` | `P(date__gte=2018)` |
-| `exclude:properties.country=ru` | `P(country__not="ru")` |
+| `exclude:properties.country=ru` | `~P(country="ru")` |
 | `empty:properties.birthDate` | `P(birthDate__null=True)` |
 | `select=properties.title` | `.select(P("title"))` (a [projection](#selecting-properties), not a filter) |
+
+`exclude:` is the negation of the matching `filter:` (Aleph's `must_not`): `exclude:properties.country=ru` keeps every entity that does not hold `ru`, including those without a `country`, and a repeated key negates the `in` list. It is not `P(country__not="ru")`, which reads "holds a country other than `ru`" and so drops the entities without one; `not` / `not_in` have no param spelling (they are `ne(...)` / `out(...)` in RQL).
 
 The param grammar is flat, so [`to_params`][ftmq.Query.to_params] / [`to_string`][ftmq.Query.to_string] raise [`QueryError`][ftmq.QueryError] for a query that cannot be expressed as flat Aleph params (a cross-field `OR` or a negated group). [`from_params`][ftmq.Query.from_params] / [`from_string`][ftmq.Query.from_string] are total.
 

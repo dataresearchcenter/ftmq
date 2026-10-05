@@ -13,6 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Set up QEMU
+        if: startsWith(github.ref, 'refs/tags/')
         uses: docker/setup-qemu-action@v4
       - name: Docker meta
         id: meta
@@ -38,9 +39,36 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          # arm64 only for release tags
+          platforms: ${{ startsWith(github.ref, 'refs/tags/') && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Docker meta (full)
+        id: meta-full
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/dataresearchcenter/ftmq
+          flavor: |
+            latest=false
+          tags: |
+            type=ref,event=branch,prefix=full-
+            type=semver,pattern={{version}},prefix=full-
+            type=sha,prefix=full-sha-
+            type=raw,value=full,enable=${{ startsWith(github.ref, 'refs/tags') }}
+      - name: Build and push full release
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: full
+          # arm64 only for release tags
+          platforms: ${{ startsWith(github.ref, 'refs/tags/') && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
+          push: true
+          tags: ${{ steps.meta-full.outputs.tags }}
+          labels: ${{ steps.meta-full.outputs.labels }}
+          cache-from: |
+            type=gha
+            type=gha,scope=full
+          cache-to: type=gha,mode=max,scope=full

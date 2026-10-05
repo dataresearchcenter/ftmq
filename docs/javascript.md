@@ -21,7 +21,7 @@ const api = new Api("https://api.example.org");
 
 const query = new Query()
   .where(M({ schema: "Person" }), P({ name__ilike: "jane" }))
-  .orderBy("-name")
+  .orderBy(P("name"), { ascending: false })
   .slice(0, 25);
 
 const result = await api.getEntities(query);
@@ -54,11 +54,11 @@ const query = new Query()
   .where(M({ schema: "Person" }))
   .where(or(G({ countries: "de" }), G({ countries: "at" }))) // nested OR
   .where(not(P({ status__ilike: "%dissolved%" })))
-  .orderBy("-incorporationDate") // leading `-` = descending
+  .orderBy(P("incorporationDate"), { ascending: false })
   .slice(0, 25); // offset, offset + limit
 ```
 
-`.where()` AND-combines its nodes (chained `.where()` also ANDs); `.slice(start, stop)` sets offset / limit; `.orderBy(field)` sorts by a single field (leading `-` = descending).
+`.where()` AND-combines its nodes (chained `.where()` also ANDs); `.slice(start, stop)` sets offset / limit; `.orderBy(P(name), { ascending })` sorts by a single property, addressed by reference like an aggregation field (only properties are sortable; the server rejects anything else); the request spells it `sort=properties.<name>`.
 
 ### Comparators
 
@@ -90,7 +90,10 @@ const query = new Query()
 // alongside a page of entities
 const page = await api.getEntities(query.slice(0, 25));
 page.metrics; // ungrouped: { "properties.amountEur": { sum: ... } }
-page.facets; // grouped: { year: { values: [{ value, label, count }], total } }
+page.facets; // grouped: { year: { values: [{ value, label, count, metrics }], total } }
+
+// rank the buckets by a metric instead of by entity count
+query.orderFacets({ count: M("id"), ascending: true });
 
 // aggregations only: slice to limit 0 (no entities)
 const { facets, metrics } = await api.getEntities(query.slice(0, 0));

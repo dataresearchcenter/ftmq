@@ -68,12 +68,14 @@ Possible comparators:
 - `gt` / `lt` / `gte` / `lte` - greater / lower (than or equal)
 - `like` / `ilike` - substring / case-insensitive substring
 - `startswith` / `endswith` - prefix / suffix
-- a repeated key is an `in` list (repeated under `exclude:`, a `not_in` one)
+- a repeated key is an `in` list (repeated under `exclude:`, its negation)
 
-Sorting and slicing are part of the string as well (`sort=<field>[:asc|:desc]`, `limit=`, `offset=`):
+`exclude:` negates the match: `exclude:properties.country=ru` keeps the entities without a `country` too.
+
+Sorting and slicing are part of the string as well (`sort=properties.<name>[:asc|:desc]`, `limit=`, `offset=`):
 
 ```bash
-cat entities.ftm.json | ftmq -q 'filter:schema=Company&sort=name:desc&limit=10'
+cat entities.ftm.json | ftmq -q 'filter:schema=Company&sort=properties.name:desc&limit=10'
 ```
 
 ### RQL

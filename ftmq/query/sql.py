@@ -14,9 +14,11 @@ from sqlalchemy import (
     MetaData,
     Select,
     and_,
+    case,
     desc,
     distinct,
     func,
+    literal_column,
     not_,
     or_,
     select,
@@ -43,7 +45,6 @@ from ftmq.query.leaves import (
 )
 from ftmq.query.nodes import OR, Expr
 from ftmq.query.refs import (
-    NUMERIC_PROPS,
     ContextRef,
     DatasetRef,
     EntityIdRef,
@@ -736,6 +737,9 @@ class Sql:
     def canonical_ids(self) -> Select:
         q = select(self.id_col).distinct().where(self.clause)
         if self.q.sort is None:
+            if self.q.slice is not None:
+                # pages need a total order, or they repeat and skip entities
+                q = q.order_by(self.id_col)
             # offset 0 (a start-less slice) is redundant; omit it from the SQL
             q = q.limit(self._limit).offset(self.q.offset or None)
         return q
@@ -763,21 +767,25 @@ class Sql:
 
     @cached_property
     def _sorted_statements(self) -> Select:
-        prop = self.q.sort.value
+        prop = self.q.sort.ref.key
         value = self.table.c.value
-        if prop in NUMERIC_PROPS:
+        if self.q.sort.ref.is_numeric:
             value = numeric_value(self.table.c.value)
         group_func = func.min if self.q.sort.ascending else func.max
+
+        def order(col: Any) -> Any:
+            # a missing value sorts last either way, as in memory
+            return (col.asc() if self.q.sort.ascending else col.desc()).nulls_last()
+
+        # the `id` rows keep entities without the sort prop (NULL value)
+        sortable_value = group_func(case((self.table.c.prop == prop, value)))
         inner = (
-            select(
-                self.id_col,
-                group_func(value).label("sortable_value"),
-            )
+            select(self.id_col, sortable_value.label("sortable_value"))
             .where(
                 and_(
                     true(),
                     *self._base_clauses,
-                    self.table.c.prop == prop,
+                    self.table.c.prop.in_([prop, "id"]),
                     self.id_col.in_(self.canonical_ids),
                 )
             )
@@ -785,12 +793,10 @@ class Sql:
             .limit(self._limit)
             .offset(self.q.offset or None)
         )
-        inner_order = (
-            "sortable_value" if self.q.sort.ascending else desc("sortable_value")
-        )
         # an explicit subquery: reading `.c` off a `Select` builds one
         # implicitly, which sqlalchemy deprecates
-        sub = inner.order_by(inner_order, self.id_col).subquery()
+        sub = inner.order_by(order(literal_column("sortable_value")), self.id_col)
+        sub = sub.subquery()
         sortable = sub.c["sortable_value"]
         outer = select(
             self.table.join(sub, self.id_col == sub.c[self.source.id_column])
@@ -800,9 +806,7 @@ class Sql:
         read = [*self._base_clauses, *self._projection_clauses]
         if read:
             outer = outer.where(*read)
-        return outer.order_by(
-            sortable if self.q.sort.ascending else desc(sortable), self.id_col
-        )
+        return outer.order_by(order(sortable), self.id_col)
 
     @cached_property
     def statements(self) -> Select:
@@ -946,8 +950,11 @@ class Sql:
 
         Args:
             grouper: The field reference to group by.
-            limit: Only the `limit` most frequent group values (by entity
-                count, matching `get_group_counts`).
+            limit: Keep the top `limit` group values, by entity count or by
+                the query's `facet_sort` metric.
+
+        Returns:
+            The unioned select.
         """
         g = self.lookup(grouper)
         pairs = (
@@ -956,26 +963,53 @@ class Sql:
             .distinct()
         )
         if limit is not None:
-            top = self.get_group_counts(grouper, limit=limit).subquery()
+            order = self.q.facet_sort
+            ranking = next(
+                (
+                    a
+                    for a in self.q.aggregations
+                    if order is not None and order.orders(a) and grouper in a.groups
+                ),
+                None,
+            )
+            if order is not None and ranking is not None:
+                ranked = self._grouped_value(ranking, pairs.subquery())
+                value = ranked.selected_columns[1]
+                top = (
+                    ranked.order_by(
+                        (value.asc() if order.ascending else value.desc()).nulls_last(),
+                        ranked.selected_columns[0],
+                    )
+                    .limit(limit)
+                    .subquery()
+                )
+            else:
+                top = self.get_group_counts(grouper, limit=limit).subquery()
             pairs = pairs.where(g.value.in_(select(top.c[0])))
         sub = pairs.subquery()
         qs = []
         for agg in sorted(self.q.aggregations, key=lambda a: (a.func, a.key)):
             if grouper not in agg.groups:
                 continue
-            lookup = self.lookup(agg.ref)
+            grouped = self._grouped_value(agg, sub)
             qs.append(
-                select(
+                grouped.with_only_columns(
                     text(f"'{agg.key}'"),
                     text(f"'{agg.func}'"),
-                    sub.c.gval,
-                    self._aggregator(agg),
+                    *grouped.selected_columns,
                 )
-                .select_from(self.table.join(sub, self.id_col == sub.c.cid))
-                .where(and_(true(), *self._base_clauses, *lookup.clauses))
-                .group_by(sub.c.gval)
             )
         return union_all(*qs)
+
+    def _grouped_value(self, agg: Agg, pairs: Any) -> Select:
+        """`(gval, value)` rows of `agg` per group value of `pairs`."""
+        lookup = self.lookup(agg.ref)
+        return (
+            select(pairs.c.gval, self._aggregator(agg))
+            .select_from(self.table.join(pairs, self.id_col == pairs.c.cid))
+            .where(and_(true(), *self._base_clauses, *lookup.clauses))
+            .group_by(pairs.c.gval)
+        )
 
     @cached_property
     def group_props(self) -> set[Ref]:

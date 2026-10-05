@@ -60,7 +60,7 @@ Search results are `EntitySearchResult` objects carrying a shallow `EntityModel`
 
 A search document holds three filterable fields: `datasets`, `schema` and `countries`. A [`Query`](./query.md) passed to `search()` is compiled into that subset by `ftmq.search.store.base.get_filters`, which drops filters on any other field (a property, an id) and keeps the rest as a flat list of ANDed terms.
 
-Negation is honoured: `M(dataset__not="x")` (Aleph `exclude:dataset=x`) or `~M(dataset="x")` excludes the dataset instead of selecting it, and a same-field `OR` folds into a single term. A filter shape the index cannot express raises a `QueryError` rather than filtering on something else: a cross-field `OR`, a negated group of several conditions, or a comparator other than `eq` / `in` / `not` / `not_in` on one of the three fields.
+Negation is honoured: `M(dataset__not="x")` or `~M(dataset="x")` (Aleph `exclude:dataset=x`) excludes Entities of that dataset, and a same-field `OR` folds into a single term. A filter shape the index cannot express raises a `QueryError`.
 
 Note that a negated filter on a multi-valued field means "holds none of these values" here (as `exclude:` does in the [Aleph param grammar](./query.md)), while the in-memory and SQL evaluators read `not` as "holds a value other than this one". For the single-valued `schema` field both readings agree.
 

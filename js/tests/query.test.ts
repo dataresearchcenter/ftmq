@@ -111,7 +111,7 @@ test("builder composes a nested tree", () => {
     .where(M({ schema: "Person" }))
     .where(G({ countries: "de" }).or(G({ countries: "at" })))
     .where(not(P({ name__ilike: "jane" })))
-    .orderBy("-name")
+    .orderBy(P("name"), { ascending: false })
     .slice(0, 25);
   assert.equal(q.limit, 25);
   assert.equal(q.offset, 0);
@@ -141,6 +141,15 @@ test("toRequestParams uses flat aleph params for a flat tree", () => {
   assert.equal(params.get("filter:ilike:properties.name"), "jane");
   assert.equal(params.get("limit"), "10");
   assert.equal(params.get("rql"), null);
+});
+
+test("sort addresses a property by reference", () => {
+  const q = new Query().orderBy(P("name"), { ascending: false });
+  assert.equal(q.toDict().order_by, "-properties.name");
+  assert.deepEqual(q.toParams().sort, ["properties.name:desc"]);
+  assert.equal(q.toRequestParams().get("sort"), "properties.name:desc");
+  assert.equal(Query.fromDict(q.toDict()).toString(), q.toString());
+  assert.throws(() => Query.fromParams({ sort: ["name:desc"] }), QueryError);
 });
 
 test("aggregate node builds specs and round-trips via dict", () => {
@@ -274,4 +283,26 @@ test("select builds a projection alongside the filter tree", () => {
   );
   // no projection serializes nothing
   assert.equal("select" in new Query().where(P({ name: "x" })).toDict(), false);
+});
+
+test("orderFacets ranks facet buckets by a metric", () => {
+  const q = new Query()
+    .aggregate(A({ sum: P("amountEur"), by: P("beneficiary") }))
+    .orderFacets({ sum: P("amountEur") });
+  assert.deepEqual(q.toParams().facet_sort, ["sum:properties.amountEur"]);
+  assert.equal(
+    q.toRequestParams().get("facet_sort"),
+    "sum:properties.amountEur",
+  );
+  const asc = q.orderFacets({ sum: P("amountEur"), ascending: true });
+  assert.equal(asc.toDict().facet_sort, "sum:properties.amountEur:asc");
+  assert.equal(
+    Query.fromString(asc.toString()).facetSort?.wire,
+    asc.facetSort?.wire,
+  );
+  assert.throws(() => q.orderFacets({}), QueryError);
+  assert.throws(
+    () => Query.fromParams({ facet_sort: ["sum:properties.amountEur:up"] }),
+    QueryError,
+  );
 });

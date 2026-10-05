@@ -61,8 +61,8 @@ def test_api_query_filters():
 
 
 def test_api_query_sort_paging():
-    q = _build("sort=name:desc&limit=10&offset=20")
-    assert q.sort.serialize() == "-name"
+    q = _build("sort=properties.name:desc&limit=10&offset=20")
+    assert q.sort.serialize() == "-properties.name"
     assert q.limit == 10 and q.offset == 20
 
     # limit is capped for unauthenticated requests

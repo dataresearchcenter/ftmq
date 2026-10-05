@@ -106,6 +106,18 @@ q.to_string()   # "facet=properties.beneficiary&metric:sum=properties.amountEur"
 
 `facet` groups apply across all metrics: a query whose metrics carry *different* groups collapses to their union on the way out, and every metric is grouped by every facet on the way back in. A `facet` without any `metric:` groups an entity count: `?facet=group.countries` parses as `A(count=M("id"), by=G("countries"))`.
 
+### Ranking facet buckets
+
+Buckets are ranked by entity count. [`order_facets`][ftmq.Query.order_facets] ranks them by one of the query's grouped metrics instead (descending unless `ascending=True`), spelled `facet_sort=<func>:<field>[:asc]` in URL params and in `to_dict`. The SQL backends cap each facet to its top `MAX_SQL_AGG_GROUPS` buckets.
+
+```python
+q = Query().aggregate(A(sum=P("amountEur"), by=P("beneficiary")))
+q = q.order_facets(sum=P("amountEur"))
+q.to_string()   # "facet=properties.beneficiary&facet_sort=sum%3Aproperties.amountEur&metric:sum=properties.amountEur"
+```
+
+The metric has to be a grouped aggregation of the query, otherwise a [`QueryError`][ftmq.QueryError] is raised. Like sort and slice, the facet sort has no RQL operator.
+
 ## Reference
 
 See the [aggregations reference][ftmq.query.aggregations] and the [field references][ftmq.query.refs].

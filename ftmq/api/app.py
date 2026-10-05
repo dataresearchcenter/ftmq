@@ -145,7 +145,7 @@ async def entities(
 
     ## sorting
 
-    `?sort={prop}` or `?sort={prop}:desc`
+    `?sort=properties.{prop}` or `?sort=properties.{prop}:desc`
 
     [Numeric](https://followthemoney.tech/explorer/types/number/)
     property types are read as numbers before sorting; the first value of a
@@ -171,9 +171,15 @@ async def entities(
         ?facet=group.countries
         ?metric:count=id&facet=group.countries
 
-    Grouped metrics come back as `facets` (Aleph value/count buckets),
-    ungrouped ones as `metrics`. Set `limit=0` to return only the aggregations
-    (plus `total` / `stats`), no entities:
+    Grouped metrics come back as `facets` (buckets of `value`, `label`,
+    entity `count` and their `metrics`), ungrouped ones as `metrics`. Buckets
+    rank by entity count, or by a metric via `facet_sort` (`:asc` optional):
+
+        ?metric:sum=properties.amountEur&facet=properties.beneficiary
+        &facet_sort=sum:properties.amountEur
+
+    Set `limit=0` to return only the aggregations (plus `total` / `stats`), no
+    entities:
 
         ?filter:schema=Payment&metric:sum=properties.amountEur&limit=0
 
