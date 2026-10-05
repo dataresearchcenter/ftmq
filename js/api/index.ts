@@ -58,7 +58,7 @@ export default class Api {
     query: Query = new Query(),
     retrieve: IRetrieveParams = {},
   ): Promise<IEntityDatum[]> {
-    // chain requests via `offset` to paginate through all results
+    // chain requests via `offset` to paginate through all results.
     const limit = query.limit ?? 100;
     let offset = query.offset ?? 0;
     let entities: IEntityDatum[] = [];
@@ -69,7 +69,7 @@ export default class Api {
       );
       entities = [...entities, ...res.results];
       if (!res.next || res.results.length === 0) return entities;
-      offset += limit;
+      offset += res.results.length;
     }
   }
 
