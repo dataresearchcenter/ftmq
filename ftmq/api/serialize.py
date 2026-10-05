@@ -14,7 +14,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ftmq.model import DatasetStats, EntityModel
 from ftmq.query import Query, QueryError
-from ftmq.query.aggregations import AggregatorResult
+from ftmq.query.aggregations import AggregatorResult, make_agg
+from ftmq.query.refs import IdRef
 from ftmq.search.model import AutocompleteResult
 from ftmq.types import Entities, Entity
 
@@ -39,33 +40,80 @@ class EntityResponse(EntityModel):
 EntityResponse.model_rebuild()
 
 
-def build_metrics(aggregations: AggregatorResult) -> dict[str, Any]:
-    """Ungrouped aggregations as Aleph-style `metrics`: `{prop: {func: value}}`."""
+def with_bucket_counts(query: Query) -> Query:
+    """Add an entity count per facet, so every bucket has its `count`.
+
+    Args:
+        query: The request query.
+
+    Returns:
+        The query to compute the aggregations with.
+    """
+    groups = {g for agg in query.aggregations for g in agg.groups}
+    if not groups:
+        return query
+    return query._chain(
+        aggregations={*query.aggregations, make_agg("count", IdRef(), groups)}
+    )
+
+
+def build_metrics(aggregations: AggregatorResult, query: Query) -> dict[str, Any]:
+    """The query's ungrouped aggregations as `{field: {func: value}}`.
+
+    Args:
+        aggregations: The computed aggregations.
+        query: The request query; only its aggregations are reported.
+
+    Returns:
+        The Aleph-style `metrics`.
+    """
     metrics: dict[str, Any] = defaultdict(dict)
-    for func, props in aggregations.items():
-        if func == "groups":
-            continue
-        for prop, value in props.items():
-            metrics[prop][func] = value
+    for agg in query.aggregations:
+        value = aggregations.get(agg.func, {}).get(agg.key)
+        if value is not None:
+            metrics[agg.key][agg.func] = value
     return dict(metrics)
 
 
-def build_facets(aggregations: AggregatorResult) -> dict[str, Any]:
-    """Grouped aggregations as Aleph-style `facets`:
-    `{field: {"values": [{"value", "label", <func>: value}], "total": n}}`.
+def _bucket(value: str, count: int) -> dict[str, Any]:
+    return {"value": value, "label": value, "count": count, "metrics": {}}
 
-    A `count` grouping yields the idiomatic Aleph `{value, label, count}`; other
-    functions ride under their function name in each value bucket.
+
+def build_facets(aggregations: AggregatorResult, query: Query) -> dict[str, Any]:
+    """Grouped aggregations as Aleph `facets` with buckets of
+    `{value, label, count, metrics: {field: {func: value}}}`, ranked by the
+    query's `facet_sort` metric, else by entity count.
+
+    Args:
+        aggregations: The computed aggregations, with bucket counts.
+        query: The request query.
+
+    Returns:
+        The Aleph-style `facets`.
     """
     facets: dict[str, Any] = {}
-    for field, funcs in aggregations.get("groups", {}).items():
-        buckets: dict[str, dict[str, Any]] = defaultdict(dict)
-        for func, props in funcs.items():
-            for _prop, gvals in props.items():
-                for gval, value in gvals.items():
-                    buckets[gval][func] = value
-        values = [{"value": g, "label": g, **m} for g, m in buckets.items()]
-        values.sort(key=lambda v: (-(v.get("count") or 0), v["value"]))
+    order = query.facet_sort
+    for field, results in aggregations.get("groups", {}).items():
+        counts = results.get("count", {}).get("id", {})
+        buckets = {gval: _bucket(gval, count) for gval, count in counts.items()}
+        ranked = False
+        for agg in query.aggregations:
+            if field not in {g.wire for g in agg.groups}:
+                continue
+            ranked = ranked or bool(order and order.orders(agg))
+            for gval, value in results.get(agg.func, {}).get(agg.key, {}).items():
+                bucket = buckets.setdefault(gval, _bucket(gval, 0))
+                bucket["metrics"].setdefault(agg.key, {})[agg.func] = value
+        values = sorted(buckets.values(), key=lambda v: (-v["count"], v["value"]))
+        if order is not None and ranked:
+            keyed = [
+                (v["metrics"].get(order.ref.wire, {}).get(order.func), v)
+                for v in values
+            ]
+            # stable: ties keep the count order
+            present = [(m, v) for m, v in keyed if m is not None]
+            present.sort(key=lambda x: x[0], reverse=not order.ascending)
+            values = [v for _, v in present] + [v for m, v in keyed if m is None]
         facets[field] = {"values": values, "total": len(values)}
     return facets
 
@@ -132,8 +180,8 @@ class EntitiesResponse(BaseModel):
             query_q=query_q,
             stats=stats,
             filters=build_filters(query),
-            facets=build_facets(aggregations) if aggregations else {},
-            metrics=build_metrics(aggregations) if aggregations else {},
+            facets=build_facets(aggregations, query) if aggregations else {},
+            metrics=build_metrics(aggregations, query) if aggregations else {},
         )
         if limit:
             if offset > 0:

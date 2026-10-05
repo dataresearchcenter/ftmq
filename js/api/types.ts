@@ -23,12 +23,12 @@ export type IMetrics = {
   readonly [prop: string]: { readonly [func: string]: number };
 };
 
-// a grouped-aggregation bucket, e.g. `{value: "2011", label: "2011", count: 3}`
+// a facet bucket: its entity `count` plus the requested `metrics` within it
 export interface IFacetValue {
   readonly value: string;
   readonly label: string;
-  readonly count?: number;
-  readonly [func: string]: string | number | undefined;
+  readonly count: number;
+  readonly metrics: IMetrics;
 }
 
 // grouped aggregations, Aleph `facets`: `{field: {values: [...], total}}`

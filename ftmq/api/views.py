@@ -13,7 +13,12 @@ from followthemoney import EntityProxy
 from furl import furl
 
 from ftmq.api.query import RetrieveParams, build_query
-from ftmq.api.serialize import AutocompleteResponse, EntitiesResponse, EntityResponse
+from ftmq.api.serialize import (
+    AutocompleteResponse,
+    EntitiesResponse,
+    EntityResponse,
+    with_bucket_counts,
+)
 from ftmq.api.settings import Settings
 from ftmq.api.store import get_catalog, get_dataset, get_view
 from ftmq.model import Catalog, Dataset
@@ -115,7 +120,9 @@ def entity_list(
                 adjacents = view.get_adjacents(entities)
                 if retrieve_params.dehydrate_nested:
                     adjacents = [get_dehydrated_entity(e) for e in adjacents]
-        aggregations = view.aggregations(query) if query.aggregations else None
+        aggregations = None
+        if query.aggregations:
+            aggregations = view.aggregations(with_bucket_counts(query))
         return EntitiesResponse.from_view(
             request=request,
             entities=entities,
