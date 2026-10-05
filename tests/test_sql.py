@@ -927,3 +927,14 @@ def test_sql_select_projection():
         "coref.prop"
         not in _literal(Sql(plain, SqlSource(COREF)).statements).split("WHERE", 1)[1]
     )
+
+
+def test_sql_entity_id_source():
+    # a source keyed by `entity_id` (as ftm-lakehouse's) reads `canonical_id`
+    # from its own column, as a filter and as an aggregation field
+    q = Query().where(M(canonical_id="c1"))
+    q = q.aggregate(A(count=M("id"), by=M("canonical_id")))
+    sql = Sql(q, SqlSource(COREF, id_column="entity_id"))
+    assert "coref.canonical_id = 'c1'" in _literal(sql.canonical_ids)
+    grouped = _literal(sql.grouped_aggregations(M("canonical_id")))
+    assert "coref.canonical_id AS gval" in grouped

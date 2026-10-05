@@ -32,10 +32,7 @@ from sqlalchemy.sql.functions import FunctionElement
 from ftmq.query.aggregations import Agg
 from ftmq.query.exceptions import QueryError
 from ftmq.query.leaves import (
-    ContextLeaf,
-    DatasetLeaf,
     GroupLeaf,
-    IdLeaf,
     Leaf,
     PropertyLeaf,
     SchemaLeaf,
@@ -45,6 +42,7 @@ from ftmq.query.leaves import (
 )
 from ftmq.query.nodes import OR, Expr
 from ftmq.query.refs import (
+    CanonicalIdRef,
     ContextRef,
     DatasetRef,
     EntityIdRef,
@@ -322,27 +320,19 @@ class Sql:
             return pred
         return self.id_col.in_(self._entity_ids(pred))
 
-    def _family_clause(self, leaf: Leaf, selector: Callable[[Any], Any]) -> Any:
+    def _family_clause(self, leaf: Leaf, lookup: Lookup) -> Any:
         """One entity-level clause for a property / group leaf.
 
-        `selector` builds the family predicate (e.g. `prop = "name"`). `null`
-        tests presence of such a row, not the value: `null=False` is any row
-        for the family, `null=True` the absence of one.
+        `null` tests presence of a row of the family, not the value:
+        `null=False` is any such row, `null=True` the absence of one.
         """
-        family = selector(leaf)
         if self._is_null(leaf):
             if leaf.value:
-                return self._absent(family)
-            return self._membership(family)
+                return self._absent(lookup.where)
+            return self._membership(lookup.where)
         return self._membership(
-            and_(family, self.get_expression(self.table.c.value, leaf))
+            and_(lookup.where, self.get_expression(lookup.value, leaf))
         )
-
-    def _prop_selector(self, f: Any) -> Any:
-        return self.table.c.prop == f.key
-
-    def _group_selector(self, f: Any) -> Any:
-        return self.table.c.prop_type == str(f.prop_type)
 
     def _schema_clause(self, f: Leaf) -> Any:
         """An entity-level clause for exact-schema / is-a (`schemata`) filters.
@@ -371,23 +361,6 @@ class Sql:
             return self._absent(positive)
         return self._membership(positive)
 
-    def _context_column(self, f: ContextLeaf) -> Any:
-        if f.key not in self.table.c:
-            raise QueryError(f"Unknown context column: `{f.key}`")
-        return self.table.c[f.key]
-
-    def _id_column(self, f: IdLeaf) -> Any:
-        # `M(id=...)` addresses the entity: in a statement table that is the
-        # resolved id column, not `statement.id` (the statement's own id)
-        if f.key == "id":
-            return self.id_col
-        return self.table.c[f.key]
-
-    def _row_scoped_column(self, leaf: Leaf) -> Any:
-        if isinstance(leaf, ContextLeaf):
-            return self._context_column(leaf)
-        return self.table.c.dataset
-
     def _row_membership(self, leaves: Iterable[Leaf]) -> Any:
         """One entity-level clause for co-referring row-scoped conditions: the
         entity has a *single* statement row satisfying all of them.
@@ -402,12 +375,12 @@ class Sql:
         [`row_statements`][ftmq.query.sql.Sql.row_statements] for that).
         """
         rows = [
-            self.get_expression(self._row_scoped_column(f), f)
+            self.get_expression(self.lookup(f.ref).value, f)
             for f in sorted(leaves, key=lambda f: (f.key, f.comparator))
         ]
         return self._membership(and_(true(), *rows))
 
-    def _bound_clause(self, leaves: list[Leaf], selector: Callable[[Any], Any]) -> Any:
+    def _bound_clause(self, leaves: list[Leaf]) -> Any:
         """One entity-level clause for several bounds on the same property or
         group: a single row of that family whose `value` satisfies all of them.
 
@@ -415,11 +388,12 @@ class Sql:
         membership per bound would match an entity holding one date below the
         window and another above it.
         """
+        lookup = self.lookup(leaves[0].ref)
         return self._membership(
             and_(
-                selector(leaves[0]),
+                lookup.where,
                 *(
-                    self.get_expression(self.table.c.value, f)
+                    self.get_expression(lookup.value, f)
                     for f in sorted(leaves, key=lambda f: f.comparator)
                 ),
             )
@@ -433,27 +407,19 @@ class Sql:
         predicates would ask a single statement row a question about the whole
         entity ("this entity has no name" is not a property of any one row).
         """
-        if isinstance(leaf, PropertyLeaf):
-            return self._family_clause(leaf, self._prop_selector)
-        if isinstance(leaf, GroupLeaf):
-            return self._family_clause(leaf, self._group_selector)
         if isinstance(leaf, (SchemaLeaf, SchemataLeaf)):
             # already entity-level, membership or anti-join
             return self._schema_clause(leaf)
-        if isinstance(leaf, ContextLeaf):
-            if self._is_null(leaf) and leaf.value:
-                return self._absent(self._context_column(leaf).is_not(None))
-            row = self.get_expression(self._context_column(leaf), leaf)
-        elif isinstance(leaf, IdLeaf):
-            column = self._id_column(leaf)
-            row = self.get_expression(column, leaf)
-            if column is self.id_col:
-                # already true for every row of a matching entity
-                return row
-        elif isinstance(leaf, DatasetLeaf):
-            row = self.get_expression(self.table.c.dataset, leaf)
-        else:
-            raise QueryError(f"Cannot compile filter to sql: `{leaf.key}`")
+        lookup = self.lookup(leaf.ref)
+        if lookup.where is not None:  # a property / group family
+            return self._family_clause(leaf, lookup)
+        column = lookup.value
+        if self._is_null(leaf) and leaf.value:
+            return self._absent(column.is_not(None))
+        row = self.get_expression(column, leaf)
+        if column is self.id_col:
+            # already true for every row of a matching entity
+            return row
         return self._membership(row)
 
     def _expr_clause(self, expr: Expr) -> Any:
@@ -513,10 +479,8 @@ class Sql:
                     row_scoped = []
             elif len(group) == 1:
                 clauses[group[0]] = self._leaf_clause(group[0])
-            elif isinstance(group[0], PropertyLeaf):
-                clauses[group[0]] = self._bound_clause(group, self._prop_selector)
-            elif isinstance(group[0], GroupLeaf):
-                clauses[group[0]] = self._bound_clause(group, self._group_selector)
+            elif isinstance(group[0], (PropertyLeaf, GroupLeaf)):
+                clauses[group[0]] = self._bound_clause(group)
             else:
                 # bounds on an entity-scoped field (`schema`, an id column):
                 # every row of a matching entity carries the same value, so
@@ -620,17 +584,6 @@ class Sql:
         """The projection as a clause list (empty without a selection)."""
         clause = self._selection_clause
         return [] if clause is None else [clause]
-
-    @cached_property
-    def _all_entities(self) -> Any:
-        """A predicate matching every row of the entities this query selects,
-        ignoring any slice.
-
-        Every compiled clause is entity-level, so the conjunction already says
-        exactly that - no `canonical_id IN (...)` indirection needed. The prune
-        clauses ride along: they restrict partitions, not entities.
-        """
-        return and_(true(), *self._prune_clauses, *self._clauses)
 
     @property
     def _limit(self) -> int | None:
@@ -788,6 +741,10 @@ class Sql:
         return Lookup(self.id_col)
 
     @lookup.register
+    def _(self, ref: CanonicalIdRef) -> Lookup:
+        return Lookup(self.table.c.canonical_id)
+
+    @lookup.register
     def _(self, ref: EntityIdRef) -> Lookup:
         return Lookup(self.table.c.entity_id)
 
@@ -832,7 +789,7 @@ class Sql:
         # group over the rows of matching entities (entity-level) so flat and
         # tree queries facet identically
         lookup = self.lookup(group)
-        where = and_(true(), *self._base_clauses, *lookup.clauses, self._all_entities)
+        where = and_(true(), *lookup.clauses, self.clause)
         if extra_where is not None:
             where = and_(where, extra_where)
         return (
@@ -848,11 +805,7 @@ class Sql:
         return select(
             func.min(self.table.c.value),
             func.max(self.table.c.value),
-        ).where(
-            *self._base_clauses,
-            self.table.c.prop_type == "date",
-            self._all_entities,
-        )
+        ).where(self.table.c.prop_type == "date", self.clause)
 
     def _aggregator(self, agg: Agg) -> Any:
         """The aggregate expression for one spec, over its ref's value."""
@@ -877,11 +830,7 @@ class Sql:
                     text(f"'{agg.key}'"),
                     text(f"'{agg.func}'"),
                     self._aggregator(agg),
-                ).where(
-                    *self._base_clauses,
-                    *self.lookup(agg.ref).clauses,
-                    self._all_entities,
-                )
+                ).where(*self.lookup(agg.ref).clauses, self.clause)
             )
         return union_all(*qs)
 
@@ -905,7 +854,7 @@ class Sql:
         g = self.lookup(grouper)
         pairs = (
             select(self.id_col.label("cid"), g.value.label("gval"))
-            .where(and_(true(), *self._base_clauses, *g.clauses, self._all_entities))
+            .where(and_(true(), *g.clauses, self.clause))
             .distinct()
         )
         if limit is not None:
