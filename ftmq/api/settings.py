@@ -97,6 +97,7 @@ class Settings(BaseSettings):
     """Allowed origins"""
 
     default_limit: int = 100
+    max_facet_size: int = 50
     """Default public pagination limit"""
 
     info: ApiInfo = ApiInfo()

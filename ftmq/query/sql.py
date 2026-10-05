@@ -780,10 +780,7 @@ class Sql:
         return Lookup(self.table.c[ref.key])
 
     def get_group_counts(
-        self,
-        group: Ref,
-        limit: int | None = None,
-        extra_where: BooleanClauseList | None = None,
+        self, group: Ref, extra_where: BooleanClauseList | None = None
     ) -> Select:
         count = func.count(self.id_col.distinct()).label("count")
         # group over the rows of matching entities (entity-level) so flat and
@@ -796,8 +793,7 @@ class Sql:
             select(lookup.value, count)
             .where(where)
             .group_by(lookup.value)
-            .order_by(desc(count))
-            .limit(limit)
+            .order_by(desc(count), lookup.value)
         )
 
     @cached_property
@@ -846,7 +842,7 @@ class Sql:
         Args:
             grouper: The field reference to group by.
             limit: Keep the top `limit` group values, by entity count or by
-                the query's `facet_sort` metric.
+                the query's `facet_sort` metric, ties by value.
 
         Returns:
             The unioned select.
@@ -858,28 +854,7 @@ class Sql:
             .distinct()
         )
         if limit is not None:
-            order = self.q.facet_sort
-            ranking = next(
-                (
-                    a
-                    for a in self.q.aggregations
-                    if order is not None and order.orders(a) and grouper in a.groups
-                ),
-                None,
-            )
-            if order is not None and ranking is not None:
-                ranked = self._grouped_value(ranking, pairs.subquery())
-                value = ranked.selected_columns[1]
-                top = (
-                    ranked.order_by(
-                        (value.asc() if order.ascending else value.desc()).nulls_last(),
-                        ranked.selected_columns[0],
-                    )
-                    .limit(limit)
-                    .subquery()
-                )
-            else:
-                top = self.get_group_counts(grouper, limit=limit).subquery()
+            top = self._top_groups(grouper, pairs.subquery(), limit)
             pairs = pairs.where(g.value.in_(select(top.c[0])))
         sub = pairs.subquery()
         qs = []
@@ -895,6 +870,29 @@ class Sql:
                 )
             )
         return union_all(*qs)
+
+    def _top_groups(self, grouper: Ref, pairs: Any, limit: int) -> Any:
+        """The top `limit` values of `grouper` over the `(cid, gval)` pairs: by
+        the facet sort metric where it groups by `grouper`, else by entity
+        count; ties by value."""
+        order = self.q.facet_sort
+        ranking = next(
+            (
+                a
+                for a in self.q.aggregations
+                if order is not None and order.orders(a) and grouper in a.groups
+            ),
+            None,
+        )
+        if order is not None and ranking is not None:
+            ranked = self._grouped_value(ranking, pairs)
+            value = ranked.selected_columns[1]
+            rank = (value.asc() if order.ascending else value.desc()).nulls_last()
+        else:
+            count = func.count().label("count")
+            ranked = select(pairs.c.gval, count).group_by(pairs.c.gval)
+            rank = desc(ranked.selected_columns[1])
+        return ranked.order_by(rank, pairs.c.gval).limit(limit).subquery()
 
     def _grouped_value(self, agg: Agg, pairs: Any) -> Select:
         """`(gval, value)` rows of `agg` per group value of `pairs`."""

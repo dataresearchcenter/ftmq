@@ -31,7 +31,7 @@ export interface IFacetValue {
   readonly metrics: IMetrics;
 }
 
-// grouped aggregations, Aleph `facets`: `{field: {values: [...], total}}`
+// grouped aggregations, Aleph `facets`: the top buckets, `total` distinct values
 export type IFacets = {
   readonly [field: string]: {
     readonly values: IFacetValue[];

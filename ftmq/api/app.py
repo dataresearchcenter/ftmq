@@ -173,10 +173,12 @@ async def entities(
 
     Grouped metrics come back as `facets` (buckets of `value`, `label`,
     entity `count` and their `metrics`), ungrouped ones as `metrics`. Buckets
-    rank by entity count, or by a metric via `facet_sort` (`:asc` optional):
+    rank by entity count, or by a metric via `facet_sort` (`:asc` optional); a
+    facet returns its top 20, or `facet_size:<field>=N` (at most 50), and its
+    `total` counts all its distinct values:
 
         ?metric:sum=properties.amountEur&facet=properties.beneficiary
-        &facet_sort=sum:properties.amountEur
+        &facet_sort=sum:properties.amountEur&facet_size:properties.beneficiary=5
 
     Set `limit=0` to return only the aggregations (plus `total` / `stats`), no
     entities:

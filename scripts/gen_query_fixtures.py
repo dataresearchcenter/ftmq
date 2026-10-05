@@ -89,6 +89,10 @@ CASES: dict[str, Query] = {
     .where(M(schema="Payment"))
     .aggregate(A(sum=P("amountEur"), by=P("beneficiary")))
     .order_facets(sum=P("amountEur")),
+    "facet_size": Query()
+    .aggregate(A(sum=P("amountEur"), by=P("beneficiary")), A(count=M("id"), by=Year()))
+    .facet_size(P("beneficiary"), 50)
+    .facet_size(Year(), 5),
     "facet_sort_asc": Query()
     .aggregate(A(count=M("id"), by=Year()))
     .order_facets(count=M("id"), ascending=True),

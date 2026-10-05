@@ -94,6 +94,7 @@ def cli_q(
             facet_sort=next(
                 (sub.facet_sort for sub in reversed(parsed) if sub.facet_sort), None
             ),
+            facet_sizes={r: n for sub in parsed for r, n in sub.facet_sizes.items()},
         )
         # several query strings AND together, as chained `.where()` does
         for sub in parsed:

@@ -20,7 +20,7 @@ from __future__ import annotations
 import statistics
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any, Iterable, Iterator, TypeAlias, cast
+from typing import Any, Iterable, Iterator, Mapping, TypeAlias, cast
 
 from anystore.util import clean_dict
 from banal import ensure_list
@@ -37,6 +37,8 @@ AggregatorResult: TypeAlias = dict[str, Any]
 
 # the aggregation functions this module implements (see `reduce_values`)
 FUNCTIONS: frozenset[str] = frozenset({"min", "max", "sum", "avg", "count"})
+# buckets per facet unless the query says otherwise (Aleph's default)
+DEFAULT_FACET_SIZE = 20
 
 
 @dataclass(frozen=True)
@@ -206,15 +208,30 @@ class Aggregator:
     query twice never double-counts (the specs themselves are immutable).
     """
 
-    def __init__(self, aggs: Iterable[Agg]) -> None:
+    def __init__(
+        self,
+        aggs: Iterable[Agg],
+        sizes: Mapping[Ref, int] | None = None,
+        order: FacetOrder | None = None,
+    ) -> None:
         self.aggs: list[Agg] = list(aggs)
+        self.sizes: dict[Ref, int] = dict(sizes or {})
+        self.order = order
+        self._groupers: set[Ref] = {g for agg in self.aggs for g in agg.groups}
         self._values: dict[Agg, Values] = defaultdict(list)
         self._grouped: dict[Agg, dict[Ref, dict[str, Values]]] = defaultdict(
             lambda: defaultdict(lambda: defaultdict(list))
         )
+        # the entities per group value, to rank the buckets by
+        self._entities: dict[Ref, dict[str, set[str | None]]] = defaultdict(
+            lambda: defaultdict(set)
+        )
 
     def collect(self, proxy: Entity) -> None:
         """Accumulate one entity's values into every spec."""
+        for group in self._groupers:
+            for g in group.values(proxy):
+                self._entities[group][g].add(proxy.id)
         for agg in self.aggs:
             for raw in agg.ref.values(proxy):
                 value: Any = (
@@ -233,19 +250,42 @@ class Aggregator:
             self.collect(proxy)
             yield proxy
 
+    def _top(self, group: Ref) -> list[str]:
+        """The kept values of `group`: its top buckets by entity count, or by
+        the facet sort metric, ties by value (as the SQL backends rank)."""
+        order = self.order
+        ranking = next(
+            (a for a in self.aggs if order and order.orders(a) and group in a.groups),
+            None,
+        )
+        if order is None or ranking is None:
+            entities = self._entities[group]
+            ranked = sorted(entities, key=lambda g: (-len(entities[g]), g))
+        else:
+            values = {
+                g: reduce_values(ranking.func, v)
+                for g, v in self._grouped[ranking][group].items()
+            }
+            ranked = sorted(g for g, v in values.items() if v is not None)
+            ranked.sort(key=lambda g: cast(Any, values[g]), reverse=not order.ascending)
+        return ranked[: self.sizes.get(group, DEFAULT_FACET_SIZE)]
+
     @property
     def result(self) -> AggregatorResult:
         """The reduced result, keyed by the wire spelling of each field:
         `{func: {field: value}, "groups": {group: {func: {field: {group_value:
-        value}}}}}` (empties removed)."""
+        value}}}}}` (empties removed), each group capped to its top buckets."""
         res: Any = defaultdict(dict)
         groups: Any = defaultdict(lambda: defaultdict(dict))
+        top = {group: self._top(group) for group in self._groupers}
         for agg in self.aggs:
             res[agg.func][agg.key] = reduce_values(agg.func, self._values[agg])
             for group in agg.groups:
+                grouped = self._grouped[agg][group]
                 groups[group.wire][agg.func][agg.key] = {
-                    g: reduce_values(agg.func, values)
-                    for g, values in self._grouped[agg][group].items()
+                    g: reduce_values(agg.func, grouped[g])
+                    for g in top[group]
+                    if g in grouped
                 }
         res["groups"] = groups
         return clean_dict(res)

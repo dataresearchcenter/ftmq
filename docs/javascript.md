@@ -94,6 +94,8 @@ page.facets; // grouped: { year: { values: [{ value, label, count, metrics }], t
 
 // rank the buckets by a metric instead of by entity count
 query.orderFacets({ count: M("id"), ascending: true });
+// and set how many buckets a facet returns (default 20)
+query.facetSize(Year(), 5);
 
 // aggregations only: slice to limit 0 (no entities)
 const { facets, metrics } = await api.getEntities(query.slice(0, 0));

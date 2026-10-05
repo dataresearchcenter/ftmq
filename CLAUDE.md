@@ -93,7 +93,7 @@ A ref is "a leaf without a value", shared by both halves of the grammar: a `Ref`
 - `to_params()` / `from_params()` - Aleph `filter:`/`exclude:`/`empty:` MultiDict (the flat subset; raises `QueryError` for cross-field OR / negated groups); also carries aggregations (`metric:<func>` / `facet`) and `sort` / `limit` / `offset`.
 - `to_string()` / `from_string()` - Aleph URL query string.
 
-The param bridge maps `M`→`filter:schema|schemata|dataset|...`, `P`→`filter:properties.<name>`, `G`→`filter:group.<name>`, `C`→`filter:context.<name>`, `~`→`exclude:`, `__null`→`empty:`, aggregations→`metric:<func>=<field>` + `facet=<field>` (+ `facet_sort=<func>:<field>[:asc]`, `Query.order_facets`), the projection→`select=<field>` (fields spelled exactly as the filter keys are). The grammar is bidirectional: params can query ftmq stores, and a `Query` can drive an OpenAleph-style API.
+The param bridge maps `M`→`filter:schema|schemata|dataset|...`, `P`→`filter:properties.<name>`, `G`→`filter:group.<name>`, `C`→`filter:context.<name>`, `~`→`exclude:`, `__null`→`empty:`, aggregations→`metric:<func>=<field>` + `facet=<field>` (+ `facet_sort=<func>:<field>[:asc]` / `Query.order_facets` and `facet_size:<field>=N` / `Query.facet_size`; every facet keeps its top `DEFAULT_FACET_SIZE` = 20 buckets, ties by value, in both evaluators), the projection→`select=<field>` (fields spelled exactly as the filter keys are). The grammar is bidirectional: params can query ftmq stores, and a `Query` can drive an OpenAleph-style API.
 
 This query IR and all four surfaces are mirrored in TypeScript in `js/query/`; a change here MUST be mirrored there (see the parity requirement under [JavaScript client](#javascript-client-js)).
 

@@ -45,7 +45,8 @@ EntityResponse.model_rebuild()
 
 
 def with_bucket_counts(query: Query) -> Query:
-    """Add an entity count per facet, so every bucket has its `count`.
+    """Add an entity count per facet, so every bucket has its `count`, and the
+    facet's distinct values, its `total`.
 
     Args:
         query: The request query.
@@ -56,8 +57,9 @@ def with_bucket_counts(query: Query) -> Query:
     groups = {g for agg in query.aggregations for g in agg.groups}
     if not groups:
         return query
+    totals = {make_agg("count", g) for g in groups}
     return query._chain(
-        aggregations={*query.aggregations, make_agg("count", IdRef(), groups)}
+        aggregations={*query.aggregations, *totals, make_agg("count", IdRef(), groups)}
     )
 
 
@@ -118,7 +120,8 @@ def build_facets(aggregations: AggregatorResult, query: Query) -> dict[str, Any]
             present = [(m, v) for m, v in keyed if m is not None]
             present.sort(key=lambda x: x[0], reverse=not order.ascending)
             values = [v for _, v in present] + [v for m, v in keyed if m is None]
-        facets[field] = {"values": values, "total": len(values)}
+        total = aggregations.get("count", {}).get(field, len(values))
+        facets[field] = {"values": values, "total": total}
     return facets
 
 

@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from itertools import islice
-from typing import TYPE_CHECKING, Any, Iterable, Self, cast
+from typing import TYPE_CHECKING, Any, Iterable, Mapping, Self, cast
 
 from banal import ensure_list, hash_data
 from followthemoney.proxy import EntityProxy
 from followthemoney.types import registry
 
 from ftmq.query.aggregations import (
+    DEFAULT_FACET_SIZE,
     A,
     Agg,
     Aggregator,
@@ -134,6 +135,7 @@ class Query:
         slice: slice | None = None,
         selection: Iterable[Ref] | None = None,
         facet_sort: FacetOrder | None = None,
+        facet_sizes: Mapping[Ref, int] | None = None,
     ):
         self.q: Expr | None = q if q is not None else combine(*nodes)
         self.aggregations: set[Agg] = set(aggregations or [])
@@ -149,6 +151,15 @@ class Query:
                 "aggregation of the query"
             )
         self.facet_sort = facet_sort
+        groupers = {g for agg in self.aggregations for g in agg.groups}
+        for ref, size in (facet_sizes or {}).items():
+            if ref not in groupers:
+                raise QueryError(
+                    f"Invalid facet size: `{ref.wire}` - not a facet of the query"
+                )
+            if not isinstance(size, int) or size < 1:
+                raise QueryError(f"Invalid facet size for `{ref.wire}`: `{size}`")
+        self.facet_sizes: dict[Ref, int] = dict(sorted((facet_sizes or {}).items()))
 
     def __getitem__(self, value: Any) -> Self:
         """
@@ -206,6 +217,7 @@ class Query:
             slice=self.slice,
             selection=self.selection,
             facet_sort=self.facet_sort,
+            facet_sizes=self.facet_sizes,
         )
         data.update(kwargs)
         return self.__class__(**data)
@@ -371,6 +383,8 @@ class Query:
             data["aggregations"] = aggregations_to_dict(self.aggregations)
         if self.facet_sort:
             data["facet_sort"] = self.facet_sort.wire
+        if self.facet_sizes:
+            data["facet_size"] = {r.wire: n for r, n in self.facet_sizes.items()}
         if self.selection:
             data["select"] = [ref.wire for ref in self.selection]
         return data
@@ -390,6 +404,9 @@ class Query:
         facet_sort = None
         if data.get("facet_sort"):
             facet_sort = FacetOrder.from_wire(str(data["facet_sort"]))
+        facet_sizes = {
+            ref_from_wire(k): v for k, v in (data.get("facet_size") or {}).items()
+        }
         return cls(
             q=q,
             sort=sort,
@@ -397,13 +414,14 @@ class Query:
             aggregations=aggregations,
             selection=selection,
             facet_sort=facet_sort,
+            facet_sizes=facet_sizes,
         )
 
     def to_params(self) -> dict[str, list[str]]:
         """
         Project to an Aleph-style filter param dict (`filter:` / `exclude:` /
-        `empty:` keys, `metric:` / `facet` / `facet_sort` aggregation keys,
-        plus `sort` / `limit` / `offset`).
+        `empty:` keys, `metric:` / `facet` / `facet_sort` / `facet_size:`
+        aggregation keys, plus `sort` / `limit` / `offset`).
 
         Raises `QueryError` for queries outside the flat Aleph-expressible
         subset (cross-field OR, negated groups).
@@ -413,6 +431,8 @@ class Query:
             params.update(aggregations_to_params(self.aggregations))
         if self.facet_sort:
             params["facet_sort"] = [self.facet_sort.wire]
+        for ref, size in self.facet_sizes.items():
+            params[f"facet_size:{ref.wire}"] = [str(size)]
         params.update(selection_to_params(self.selection))
         if self.sort:
             direction = "asc" if self.sort.ascending else "desc"
@@ -441,6 +461,13 @@ class Query:
             if len(items["facet_sort"]) > 1:
                 raise QueryError("Multi-field facet sort is not supported")
             facet_sort = FacetOrder.from_wire(items["facet_sort"][0])
+        facet_sizes: dict[Ref, int] = {}
+        for key, values in items.items():
+            if key.startswith("facet_size:"):
+                field = key[len("facet_size:") :]
+                if len(values) > 1 or not values[0].isdigit():
+                    raise QueryError(f"Invalid facet size for `{field}`: `{values}`")
+                facet_sizes[ref_from_wire(field)] = int(values[0])
         slice_ = None
         if "limit" in items or "offset" in items:
             offset = int((items.get("offset") or ["0"])[0] or 0)
@@ -454,6 +481,7 @@ class Query:
             aggregations=aggregations,
             selection=params_to_selection(items),
             facet_sort=facet_sort,
+            facet_sizes=facet_sizes,
         )
 
     def to_string(self) -> str:
@@ -571,6 +599,23 @@ class Query:
         [(name, ref)] = func.items()
         return self._chain(facet_sort=make_facet_order(name, ref, ascending))
 
+    def facet_size(self, ref: Ref, size: int) -> Self:
+        """Set how many buckets a facet returns (the top ones, see
+        [`order_facets`][ftmq.Query.order_facets]).
+
+        Args:
+            ref: A facet of the query, e.g. `P("beneficiary")`.
+            size: The number of buckets (default 20).
+
+        Returns:
+            The updated `Query` instance.
+        """
+        return self._chain(facet_sizes={**self.facet_sizes, ref: size})
+
+    def get_facet_size(self, ref: Ref) -> int:
+        """The number of buckets the facet `ref` returns."""
+        return self.facet_sizes.get(ref, DEFAULT_FACET_SIZE)
+
     def select(self, *refs: Ref) -> Self:
         """Restrict the properties the matching entities are read with.
 
@@ -637,7 +682,7 @@ class Query:
         Returns:
             A fresh accumulator over this query's aggregations.
         """
-        return Aggregator(self.aggregations)
+        return Aggregator(self.aggregations, self.facet_sizes, self.facet_sort)
 
     # --- execution ---------------------------------------------------------
 

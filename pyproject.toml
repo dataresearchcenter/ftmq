@@ -94,7 +94,6 @@ filterwarnings = [
 NOMENKLATURA_STATEMENT_TABLE = "test_table"
 NOMENKLATURA_DB_URL = "sqlite:///:memory:"
 DEBUG = 1
-MAX_SQL_AGG_GROUPS = 11
 FTMQ_API_USE_CACHE = 1
 FTMQ_API_BUILD_API_KEY = "secret-key-for-build"
 FTMQ_API_CACHE_URI = "memory:///ftmq-api-cache"

@@ -265,6 +265,15 @@ def test_api_aggregation(api_client):
     res = api_client.get(f"{url}&facet_sort=avg:properties.amountEur")
     assert res.status_code == 400
 
+    # `facet_size:<field>` keeps the top buckets; `total` counts all values
+    facet_url = f"{url}&facet_size:properties.beneficiary=3"
+    facet = api_client.get(facet_url).json()["facets"]["properties.beneficiary"]
+    assert len(facet["values"]) == 3
+    assert facet["total"] == 11
+    # unauthenticated, it is capped
+    data = api_client.get(f"{url}&facet_size:properties.beneficiary=500").json()
+    assert data["query"]["facet_size"] == {"properties.beneficiary": 50}
+
     # aggregations returned alongside entities when limit > 0
     res = api_client.get(
         "/entities?filter:dataset=donations&filter:schema=Payment"

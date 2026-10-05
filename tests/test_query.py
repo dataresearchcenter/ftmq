@@ -473,6 +473,25 @@ def test_facet_sort():
         Query.from_params({**params, "facet_sort": ["sum:x", "count:id"]})
 
 
+def test_facet_size():
+    q = Query().aggregate(A(sum=P("amountEur"), by=P("beneficiary")))
+    assert q.get_facet_size(P("beneficiary")) == 20
+    q = q.facet_size(P("beneficiary"), 5)
+    assert q.get_facet_size(P("beneficiary")) == 5
+    assert q.to_params()["facet_size:properties.beneficiary"] == ["5"]
+    assert q.to_dict()["facet_size"] == {"properties.beneficiary": 5}
+    assert Query.from_string(q.to_string()) == q
+    assert Query.from_dict(q.to_dict()) == q
+    # only a facet of the query, and a positive int
+    with pytest.raises(QueryError):
+        q.facet_size(P("date"), 5)
+    with pytest.raises(QueryError):
+        q.facet_size(P("beneficiary"), 0)
+    for values in (["x"], ["1", "2"]):
+        with pytest.raises(QueryError):
+            Query.from_params({"facet": ["year"], "facet_size:year": values})
+
+
 def test_rql():
     # nested cross-field OR: M(schema=Person) & (P(name=jane) | G(countries=de))
     q = Query.from_rql(

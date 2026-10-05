@@ -1,4 +1,3 @@
-import os
 from collections import defaultdict
 from decimal import Decimal
 
@@ -16,8 +15,6 @@ from ftmq.query.sql import Sql, SqlSource
 from ftmq.store.base import Store, View, get_engine
 from ftmq.types import StatementEntities, Statements
 from ftmq.util import ensure_dataset, get_scope_dataset
-
-MAX_SQL_AGG_GROUPS = int(os.environ.get("MAX_SQL_AGG_GROUPS", 10))
 
 # schema-name partitions of the model, for the dataset coverage stats
 THINGS = sorted(k for k, s in model.schemata.items() if s.is_a("Thing"))
@@ -87,9 +84,9 @@ class SQLQueryView(View, nk.SQLView):
         if sql.group_props:
             res["groups"] = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
             for ref in sorted(sql.group_props):
-                # one round trip per grouper: the select carries the group
-                # value per row, capped to the most frequent group values
-                grouped = sql.grouped_aggregations(ref, limit=MAX_SQL_AGG_GROUPS)
+                # one round trip per grouper, capped to its top buckets
+                limit = query.get_facet_size(ref)
+                grouped = sql.grouped_aggregations(ref, limit=limit)
                 for field, func, group, value in self.store._execute(
                     grouped, stream=False
                 ):

@@ -39,8 +39,9 @@ def build_query(request: Request, authenticated: bool | None = False) -> Query:
     plain params.
 
     Non-query params (`q`, `api_key`, retrieve flags) are ignored by the
-    parser. The limit is capped to `settings.default_limit` unless the request
-    is authenticated; datasets are validated against the catalog.
+    parser. The limit is capped to `settings.default_limit` and each facet
+    size to `settings.max_facet_size`, unless the request is authenticated;
+    datasets are validated against the catalog.
 
     Raises:
         HTTPException: 422 for a dataset not in the catalog.
@@ -60,6 +61,10 @@ def build_query(request: Request, authenticated: bool | None = False) -> Query:
     limit = q.limit if q.limit is not None else settings.default_limit
     if not authenticated:
         limit = min(limit, settings.default_limit)
+        sizes = {r: q.get_facet_size(r) for r in q.facet_sizes}
+        q = q._chain(
+            facet_sizes={r: min(n, settings.max_facet_size) for r, n in sizes.items()}
+        )
     offset = q.offset or 0
     q = q[offset : offset + limit]
     names = get_catalog().names
