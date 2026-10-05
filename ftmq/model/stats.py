@@ -33,9 +33,7 @@ class Country(BaseModel):
     def clean_label(cls, data: Any) -> Any:
         if isinstance(data, dict):
             if "label" not in data:
-                data["label"] = (
-                    get_country_name(data["code"]) or data["code"].uppercase()
-                )
+                data["label"] = get_country_name(data["code"]) or data["code"].upper()
         return data
 
 

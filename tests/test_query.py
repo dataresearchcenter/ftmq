@@ -521,6 +521,11 @@ def test_rql():
         Query().where(P(deathDate__null=True)).to_rql()
 
 
+def test_rql_invalid():
+    with pytest.raises(QueryError):
+        Query.from_rql("and(foo,eq(name,x))")
+
+
 def test_rql_aggregations():
     # ungrouped metrics are bare `func(prop)` calls (avg <-> mean)
     assert (

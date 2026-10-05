@@ -83,7 +83,7 @@ def smart_read_proxies(
             print(proxy.schema)
 
         # nomenklatura store
-        for proxy in smart_read_proxies("redis://localhost", dataset="default"):
+        for proxy in smart_read_proxies("leveldb:///data.db", dataset="default"):
             print(proxy.schema)
 
         # apply a query to sql storage
@@ -103,7 +103,7 @@ def smart_read_proxies(
     entity_type = entity_type or ValueEntity
     if is_listish(uri):
         for u in uri:
-            yield from smart_read_proxies(u, query, entity_type)
+            yield from smart_read_proxies(u, query, entity_type, **store_kwargs)
         return
 
     store = smart_get_store(uri, **store_kwargs)
@@ -141,8 +141,8 @@ def smart_write_proxies(
         # to a remote cloud storage
         smart_write_proxies("s3://data/entities.ftm.json", proxies)
 
-        # to a redis statement store
-        smart_write_proxies("redis://localhost", proxies, dataset="my_dataset")
+        # to a leveldb statement store
+        smart_write_proxies("leveldb:///data.db", proxies, dataset="my_dataset")
         ```
 
     Args:

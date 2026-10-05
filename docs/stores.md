@@ -7,7 +7,6 @@
 ### Supported backends
 
 - in memory: `get_store("memory://")`
-- Redis (or kvrocks): `get_store("redis://localhost")`
 - LevelDB: `get_store("leveldb://data")`
 - Sql:
     - sqlite: `get_store("sqlite:///data.db")`

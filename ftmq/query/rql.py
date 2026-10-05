@@ -115,6 +115,8 @@ def _rql_leaf(op: str, args: list[Any]) -> Expr:
 
 def rql_to_expr(data: dict[str, Any]) -> Expr:
     """Convert a parsed RQL AST (`{"name": ..., "args": [...]}`) to an `Expr`."""
+    if not isinstance(data, dict):
+        raise QueryError(f"Invalid RQL expression: `{data}`")
     op, args = data["name"], data["args"]
     if op == "and":
         result = combine(*(rql_to_expr(a) for a in args), connector=AND)

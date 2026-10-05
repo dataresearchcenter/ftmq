@@ -69,10 +69,10 @@ class SQLQueryView(View, nk.SQLView):
         return stats
 
     def count(self, query: Query | None = None) -> int:
-        if query is not None:
-            for res in self.store._execute(self._sql(query).count, stream=False):
-                for count in res:
-                    return count
+        query = query or Query()
+        for res in self.store._execute(self._sql(query).count, stream=False):
+            for count in res:
+                return count
         return 0
 
     def aggregations(self, query: Query) -> AggregatorResult | None:

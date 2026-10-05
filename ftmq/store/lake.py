@@ -533,7 +533,7 @@ class LakeStore(SQLStore):
         if not self.exists:
             return
         q = self._apply_filters(q)
-        if self._view_filter is not None:
+        if self._view_filter is not None and isinstance(q, Select):
             q = q.where(self._view_filter)
         sql = str(q.compile(compile_kwargs={"literal_binds": True}))
         with self.cursor() as cur:
@@ -708,6 +708,7 @@ class LakeWriter(nk.Writer):
                     BUCKET_INTERVAL,
                     BUCKET_MENTION,
                     BUCKET_DOCUMENT,
+                    BUCKET_PAGE,
                 ]
                 for b in all_buckets:
                     filters = list(base_filters) + [("bucket", "=", b)]

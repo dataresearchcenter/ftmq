@@ -220,6 +220,7 @@ class Sql:
         "eq": "__eq__",
         "not": "__ne__",
         "in": "in_",
+        "not_in": "not_in",
         "gt": "__gt__",
         "gte": "__ge__",
         "lt": "__lt__",

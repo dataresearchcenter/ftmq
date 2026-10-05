@@ -26,7 +26,7 @@ flowchart TD
     Q -->|to_params / to_string| PARAMS
 
     subgraph run [Run against entities]
-        MEM["in-memory<br/>memory · level · redis stores<br/>smart_read_proxies (files, streams)"]
+        MEM["in-memory<br/>memory · level stores<br/>smart_read_proxies (files, streams)"]
         SQLB["SQL · Lake stores<br/>(statement tables)"]
     end
 

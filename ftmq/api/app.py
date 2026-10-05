@@ -88,7 +88,7 @@ def get_authenticated(
         ),
     ] = None,
 ) -> bool:
-    if not api_key:
+    if not api_key or not settings.build_api_key:
         return False
     return secrets.compare_digest(api_key, settings.build_api_key)
 

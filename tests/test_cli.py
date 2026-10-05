@@ -352,6 +352,10 @@ def test_cli_aggregation(fixtures_path: Path, tmp_path: Path):
     result = runner.invoke(cli, ["-i", in_uri, "-q", "metric:sum=properties.amountEur"])
     assert result.exit_code == 0
     assert orjson.loads(result.output) == {"sum": {"properties.amountEur": 40589689.15}}
+    # a projection doesn't hide the aggregated property
+    q = "metric:sum=properties.amountEur&select=properties.name"
+    result = runner.invoke(cli, ["-i", in_uri, "-q", q])
+    assert orjson.loads(result.output) == {"sum": {"properties.amountEur": 40589689.15}}
 
     # the same as rql
     result = runner.invoke(cli, ["-i", in_uri, "--rql", "sum(properties.amountEur)"])

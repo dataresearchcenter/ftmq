@@ -420,6 +420,34 @@ def test_store_facet_sort(tmp_path, donations, uri):
     assert {row[2] for row in store._execute(stmt, stream=False)} == {"2008", "2009"}
 
 
+@pytest.mark.parametrize("uri", ["sqlite:///{}/s.db", "duckdb://{}/s.duckdb"])
+def test_store_sql_count_not_in(tmp_path, proxies, uri):
+    store = get_store(uri.format(tmp_path))
+    with store.writer() as bulk:
+        for proxy in proxies:
+            bulk.add_entity(proxy)
+    view = store.default_view()
+    assert view.count() == len(proxies)
+    # `not_in` compiles as it applies in memory
+    q = Query().where(M(dataset__not_in=["donations"]))
+    expected = {e.id for e in q.apply_iter(proxies)}
+    assert len(expected) == 151
+    assert {e.id for e in view.query(q)} == expected
+
+
+def test_store_lake_view_filter(tmp_path, donations):
+    # the view filter applies to (unioned) aggregations too
+    from ftmq.store.lake import TABLE
+
+    with LakeStore(uri=tmp_path).writer() as bulk:
+        for proxy in donations:
+            bulk.add_entity(proxy)
+    lake = LakeStore(uri=tmp_path, view_filter=TABLE.c.schema == "Payment")
+    q = Query().aggregate(A(count=M("id"), by=M("schema")))
+    res = lake.default_view().aggregations(q)
+    assert res["groups"]["schema"]["count"]["id"] == {"Payment": 290}
+
+
 def test_store_scoped_views(tmp_path):
     # a canonical entity spanning two datasets: the scope selects which
     # *entities* a view surfaces (those with a statement in a scoped dataset),

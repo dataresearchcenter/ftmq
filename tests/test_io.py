@@ -103,6 +103,13 @@ def test_io_store_without_dataset(tmp_path, eu_authorities):
     assert {ds for p in res for ds in p.datasets} == {"eu_authorities"}
 
 
+def test_io_store_list(tmp_path, proxies):
+    # a list of uris keeps the store options
+    uri = f"sqlite:///{tmp_path}/store.db"
+    smart_write_proxies(uri, proxies)
+    assert len(list(smart_read_proxies([uri], dataset="eu_authorities"))) == 151
+
+
 def _statements(canonical_id: str | None = None) -> list[Statement]:
     return [
         Statement(

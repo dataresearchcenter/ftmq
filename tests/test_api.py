@@ -149,6 +149,24 @@ def test_api_entities_nested(api_client):
     assert "id" in nested[0] and "schema" in nested[0]
 
 
+def test_api_build_key(api_client, monkeypatch):
+    from ftmq.api import app
+
+    url = "/entities?limit=500&dehydrate=true&api_key=secret-key-for-build"
+    assert len(api_client.get(url).json()["results"]) == 500
+    # unset, no key raises the cap
+    monkeypatch.setattr(app.settings, "build_api_key", None)
+    url = "/entities?limit=500&featured=true&api_key=secret-key-for-build"
+    assert len(api_client.get(url).json()["results"]) == 100
+
+
+def test_api_settings(monkeypatch):
+    from ftmq.api.settings import Settings
+
+    monkeypatch.setenv("FTMQ_API_INFO_DESCRIPTION_URI", "./README.md")
+    assert Settings().info.description_uri == "./README.md"
+
+
 def test_api_entity_detail(api_client):
     res = api_client.get(f"/entities/{ADDRESS_ID}")
     assert res.status_code == 200
