@@ -162,6 +162,15 @@ def test_api_entity_detail(api_client):
     res = api_client.get("/entities/not_existent")
     assert res.status_code == 404
 
+    # nested adjacents have no `dataset` either, and survive the json cache
+    url = f"/entities/{METALL_ID}?nested=true"
+    first, cached = api_client.get(url).json(), api_client.get(url).json()
+    assert first == cached
+    nested = [
+        v for vs in first["properties"].values() for v in vs if isinstance(v, dict)
+    ]
+    assert nested and not any("dataset" in v for v in nested)
+
 
 def test_api_entities_reverse(api_client):
     res = api_client.get(f"/entities?filter:group.entities={ADDRESS_ID}")
@@ -358,6 +367,13 @@ def test_api_resolver_uri(api_client, tmp_path, monkeypatch):
         cached.cache_clear()
     try:
         assert api_store.get_store().linker.get_canonical(A29WP_ID) == canonical
+
+        # a referent redirects to the canonical
+        res = api_client.get(f"/entities/{A29WP_ID}", follow_redirects=False)
+        assert res.status_code == 307
+        assert res.headers["location"].endswith(f"/entities/{canonical}")
+        assert res.headers["x-entity-id"] == canonical
+        assert res.headers["x-entity-schema"] == "PublicBody"
 
         # either referent, or the canonical itself, serves the merged entity
         for entity_id in (A29WP_ID, ACER_ID, canonical):

@@ -136,12 +136,12 @@ def entity_list(
         raise HTTPException(400, detail=[str(e)])
 
 
-@anycache(store=get_cache(), key_func=get_cache_key, serialization_mode="pickle")
-def entity_detail(
+@anycache(store=get_cache(), key_func=get_cache_key, model=EntityResponse)
+def entity_response(
     request: Request,
     entity_id: str,
     retrieve_params: RetrieveParams,
-) -> EntityResponse | RedirectResponse:
+) -> EntityResponse:
     view = get_view()
     entity = view.get_entity(entity_id, retrieve_params)
     adjacents: Iterable[EntityProxy] = []
@@ -149,14 +149,23 @@ def entity_detail(
         adjacents = [e[1] for e in view.get_adjacent(entity)]
         if retrieve_params.dehydrate_nested:
             adjacents = [get_dehydrated_entity(e) for e in adjacents]
-    if entity.id != entity_id:  # we have a redirect to a merged entity
+    return EntityResponse.from_entity(entity, adjacents)
+
+
+def entity_detail(
+    request: Request,
+    entity_id: str,
+    retrieve_params: RetrieveParams,
+) -> EntityResponse | RedirectResponse:
+    entity = entity_response(request, entity_id, retrieve_params)
+    if entity.id != entity_id:  # merged into another entity
         url = furl(request.url)
         url.path.segments[-1] = entity.id
         response = RedirectResponse(url)
         response.headers["X-Entity-ID"] = entity.id
-        response.headers["X-Entity-Schema"] = entity.schema.name
+        response.headers["X-Entity-Schema"] = entity.schema_
         return response
-    return EntityResponse.from_entity(entity, adjacents)
+    return entity
 
 
 @anycache(store=get_cache(), key_func=get_cache_key, model=AutocompleteResponse)

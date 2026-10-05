@@ -31,6 +31,8 @@ class EntityResponse(EntityModel):
 
     # not part of the public wire format (inherited from `EntityModel`)
     dataset: str | None = Field(None, exclude=True)
+    # nested adjacents serialize as responses too (no `dataset`)
+    properties: EntityProperties = Field(default_factory=dict)
 
     @classmethod
     def from_entity(cls, entity: Entity, adjacents: Entities | None = None) -> Self:
