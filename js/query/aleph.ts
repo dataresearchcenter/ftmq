@@ -72,17 +72,19 @@ function leafToParam(
   const op = leaf.comparator;
   const field = leaf.wire;
   const value = leaf.value;
+  const prefix = inverted ? "exclude:" : "filter:";
+  if (op === "eq") return [prefix, field, [String(value)]];
+  if (op === "in") return [prefix, field, sortedStrings(value)];
+  if (PREFIX_OPS.includes(op))
+    return [prefix, `${op}:${field}`, [String(value)]];
   if (inverted) {
-    if (op === "eq") return ["exclude:", field, [String(value)]];
-    if (op === "in") return ["exclude:", field, sortedStrings(value)];
     throw new QueryError(`Cannot invert comparator \`${op}\` for Aleph params`);
   }
-  if (op === "eq") return ["filter:", field, [String(value)]];
-  if (op === "in") return ["filter:", field, sortedStrings(value)];
-  if (PREFIX_OPS.includes(op))
-    return ["filter:", `${op}:${field}`, [String(value)]];
-  if (op === "not") return ["exclude:", field, [String(value)]];
-  if (op === "not_in") return ["exclude:", field, sortedStrings(value)];
+  if (op === "not" || op === "not_in") {
+    throw new QueryError(
+      `Comparator \`${op}\` is not expressible as Aleph params - \`exclude:\` negates the match instead (\`~\`)`,
+    );
+  }
   if (op === "null") {
     if (value) return ["empty:", field, [""]];
     throw new QueryError("null=False is not expressible as Aleph params");
@@ -120,14 +122,6 @@ function paramToNode(prefix: string, restIn: string, values: string[]): Expr {
   if (prefix === "empty:") {
     key = `${field}__null`;
     value = true;
-  } else if (prefix === "exclude:") {
-    if (values.length > 1) {
-      key = `${field}__not_in`;
-      value = values;
-    } else {
-      key = `${field}__not`;
-      value = values[0];
-    }
   } else if (op !== null) {
     key = `${field}__${op}`;
     value = values[0];
@@ -138,7 +132,9 @@ function paramToNode(prefix: string, restIn: string, values: string[]): Expr {
     key = field;
     value = values[0];
   }
-  return FAMILIES[family]({ [key]: value });
+  const node = FAMILIES[family]({ [key]: value });
+  // Aleph `must_not`: also keeps entities without the field
+  return prefix === "exclude:" ? node.not() : node;
 }
 
 /** Build a filter tree from Aleph params (non-filter keys are ignored). */

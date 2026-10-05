@@ -12,6 +12,8 @@ lives here, plus the *aggregation* half (`metric:<func>=<prop>` and
 The param model is flat (AND across keys, OR within a key, `exclude:` and
 `empty:` for negation / absence), so:
 
+- `exclude:` is the negated match (`~`, Aleph's `must_not`); `not` /
+  `not_in` have no param spelling.
 - `params_to_expr` is total and always yields a flat AND-of-leaves.
 - `expr_to_params` is defined on that flat subset and raises `QueryError` for a
   cross-field OR or a negated group.
@@ -97,22 +99,20 @@ def _leaf_to_param(leaf: Leaf, inverted: bool) -> tuple[str, str, list[str]]:
     op = str(leaf.comparator)
     field = leaf.wire
     value = leaf.value
-    if inverted:
-        if op == "eq":
-            return "exclude:", field, [str(value)]
-        if op == "in":
-            return "exclude:", field, sorted(str(v) for v in value)
-        raise QueryError(f"Cannot invert comparator `{op}` for Aleph params")
+    prefix = "exclude:" if inverted else "filter:"
     if op == "eq":
-        return "filter:", field, [str(value)]
+        return prefix, field, [str(value)]
     if op == "in":
-        return "filter:", field, sorted(str(v) for v in value)
+        return prefix, field, sorted(str(v) for v in value)
     if op in PREFIX_OPS:
-        return "filter:", f"{op}:{field}", [str(value)]
-    if op == "not":
-        return "exclude:", field, [str(value)]
-    if op == "not_in":
-        return "exclude:", field, sorted(str(v) for v in value)
+        return prefix, f"{op}:{field}", [str(value)]
+    if inverted:
+        raise QueryError(f"Cannot invert comparator `{op}` for Aleph params")
+    if op in ("not", "not_in"):
+        raise QueryError(
+            f"Comparator `{op}` is not expressible as Aleph params - "
+            "`exclude:` negates the match instead (`~`)"
+        )
     if op == "null":
         if leaf.value:
             return "empty:", field, [""]
@@ -145,18 +145,15 @@ def _param_to_node(prefix: str, rest: str, values: list[str]) -> Expr:
     value: Any
     if prefix == "empty:":
         key, value = f"{field}__null", True
-    elif prefix == "exclude:":
-        if len(values) > 1:
-            key, value = f"{field}__not_in", list(values)
-        else:
-            key, value = f"{field}__not", values[0]
     elif op is not None:
         key, value = f"{field}__{op}", values[0]
     elif len(values) > 1:
         key, value = f"{field}__in", list(values)
     else:
         key, value = field, values[0]
-    return _FAMILIES[family](**{key: value})
+    node = _FAMILIES[family](**{key: value})
+    # Aleph `must_not`: also keeps entities without the field
+    return ~node if prefix == "exclude:" else node
 
 
 def expr_to_params(expr: Expr | None) -> dict[str, list[str]]:
