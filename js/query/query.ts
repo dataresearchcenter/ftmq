@@ -1,7 +1,10 @@
 import {
   Agg,
+  type AggFunc,
   aggregationsFromDict,
   aggregationsToDict,
+  FacetOrder,
+  type FacetSortSpec,
   uniqueAggs,
   type ANode,
 } from "./aggregations.js";
@@ -33,23 +36,24 @@ function makeSlice(limit: number | null, offset: number | null): Slice | null {
   return { start, stop: limit !== null ? start + limit : null };
 }
 
-/** An ordering over a single entity property (mirroring the Python `Sort`). */
+/** A single-property ordering: `new Sort(P("date"))`. */
 export class Sort {
-  readonly value: string;
+  readonly ref: Ref;
   readonly ascending: boolean;
 
-  constructor(value: string, ascending = true) {
-    this.value = value;
+  constructor(ref: Ref, ascending = true) {
+    this.ref = ref;
     this.ascending = ascending;
   }
 
+  /** The field's wire spelling, prefixed `-` when descending. */
   serialize(): string {
-    return this.ascending ? this.value : `-${this.value}`;
+    return this.ascending ? this.ref.wire : `-${this.ref.wire}`;
   }
 
   static deserialize(value: string): Sort {
     const ascending = !value.startsWith("-");
-    return new Sort(ascending ? value : value.slice(1), ascending);
+    return new Sort(refFromWire(ascending ? value : value.slice(1)), ascending);
   }
 }
 
@@ -76,6 +80,7 @@ interface QueryInit {
   sort?: Sort | null;
   slice?: Slice | null;
   selection?: Ref[];
+  facetSort?: FacetOrder | null;
 }
 
 /** Dedupe and order refs by their wire spelling, as the Python side does. */
@@ -92,6 +97,7 @@ export class Query {
   sort: Sort | null;
   sliceRange: Slice | null;
   selection: Ref[];
+  facetSort: FacetOrder | null;
 
   constructor(init: QueryInit = {}) {
     this.q = init.q ?? null;
@@ -99,6 +105,7 @@ export class Query {
     this.sort = init.sort ?? null;
     this.sliceRange = init.slice ?? null;
     this.selection = uniqueRefs(init.selection ?? []);
+    this.facetSort = init.facetSort ?? null;
   }
 
   private chain(patch: QueryInit): Query {
@@ -112,6 +119,8 @@ export class Query {
       slice: patch.slice !== undefined ? patch.slice : this.sliceRange,
       selection:
         patch.selection !== undefined ? patch.selection : this.selection,
+      facetSort:
+        patch.facetSort !== undefined ? patch.facetSort : this.facetSort,
     });
   }
 
@@ -125,9 +134,9 @@ export class Query {
     return this.chain({ q });
   }
 
-  /** Order by a single field; a leading `-` marks descending. */
-  orderBy(value: string): Query {
-    return this.chain({ sort: Sort.deserialize(value) });
+  /** Sort by a single property: `q.orderBy(P("date"), { ascending: false })`. */
+  orderBy(ref: Ref, { ascending = true }: { ascending?: boolean } = {}): Query {
+    return this.chain({ sort: new Sort(ref, ascending) });
   }
 
   /** Slice the result set (`q.slice(offset, offset + limit)`). */
@@ -140,6 +149,19 @@ export class Query {
     const aggs = [...this.aggregations];
     for (const node of nodes) aggs.push(...node.aggs);
     return this.chain({ aggregations: uniqueAggs(aggs) });
+  }
+
+  /** Rank facet buckets by a grouped metric: `q.orderFacets({ sum: P("amountEur") })`. */
+  orderFacets(spec: FacetSortSpec): Query {
+    const funcs = (Object.keys(spec) as (AggFunc | "ascending")[]).filter(
+      (key) => key !== "ascending" && spec[key] !== undefined,
+    ) as AggFunc[];
+    if (funcs.length !== 1) {
+      throw new QueryError("Facet sort takes exactly one `func: ref` pair");
+    }
+    const [func] = funcs;
+    const facetSort = new FacetOrder(func, spec[func] as Ref, !!spec.ascending);
+    return this.chain({ facetSort });
   }
 
   /**
@@ -214,6 +236,7 @@ export class Query {
     if (this.aggregations.length) {
       data.aggregations = aggregationsToDict(this.aggregations);
     }
+    if (this.facetSort) data.facet_sort = this.facetSort.wire;
     if (this.selection.length) {
       data.select = this.selection.map((ref) => ref.wire);
     }
@@ -233,7 +256,10 @@ export class Query {
     const selection = (data.select ?? []).map((f: string) =>
       refFromWire(String(f)),
     );
-    return new Query({ q, sort, slice, aggregations, selection });
+    const facetSort = data.facet_sort
+      ? FacetOrder.fromWire(String(data.facet_sort))
+      : null;
+    return new Query({ q, sort, slice, aggregations, selection, facetSort });
   }
 
   toParams(): Params {
@@ -241,10 +267,11 @@ export class Query {
     if (this.aggregations.length) {
       Object.assign(params, aggregationsToParams(this.aggregations));
     }
+    if (this.facetSort) params.facet_sort = [this.facetSort.wire];
     Object.assign(params, selectionToParams(this.selection));
     if (this.sort) {
       const direction = this.sort.ascending ? "asc" : "desc";
-      params.sort = [`${this.sort.value}:${direction}`];
+      params.sort = [`${this.sort.ref.wire}:${direction}`];
     }
     if (this.sliceRange) {
       if (this.offset) params.offset = [String(this.offset)];
@@ -266,7 +293,14 @@ export class Query {
       const idx = value.indexOf(":");
       const field = idx < 0 ? value : value.slice(0, idx);
       const direction = idx < 0 ? "" : value.slice(idx + 1);
-      sort = new Sort(field, direction !== "desc");
+      sort = new Sort(refFromWire(field), direction !== "desc");
+    }
+    let facetSort: FacetOrder | null = null;
+    if (items.facet_sort) {
+      if (items.facet_sort.length > 1) {
+        throw new QueryError("Multi-field facet sort is not supported");
+      }
+      facetSort = FacetOrder.fromWire(items.facet_sort[0]);
     }
     let slice: Slice | null = null;
     if ("limit" in items || "offset" in items) {
@@ -280,6 +314,7 @@ export class Query {
       slice,
       aggregations: aggs,
       selection: paramsToSelection(items),
+      facetSort,
     });
   }
 
@@ -318,10 +353,11 @@ export class Query {
     if (this.aggregations.length) {
       Object.assign(params, aggregationsToParams(this.aggregations));
     }
+    if (this.facetSort) params.facet_sort = [this.facetSort.wire];
     Object.assign(params, selectionToParams(this.selection));
     if (this.sort) {
       const direction = this.sort.ascending ? "asc" : "desc";
-      params.sort = [`${this.sort.value}:${direction}`];
+      params.sort = [`${this.sort.ref.wire}:${direction}`];
     }
     if (this.sliceRange) {
       if (this.offset) params.offset = [String(this.offset)];

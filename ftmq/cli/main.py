@@ -80,10 +80,10 @@ def cli_q(
     with ErrorHandler():
         # -q (Aleph filter params) and --rql (nested & | ~) are the query
         # surfaces. Each string is a whole query, not just a filter tree: it
-        # carries aggregations, its `select` projection, sort and slice as well
-        # (`sort=name:desc&limit=10`, later strings winning). rql carries
-        # filters, aggregations and `select(...)` only - it has no sort / slice
-        # operator.
+        # carries aggregations, its `select` projection, sort, facet sort and
+        # slice as well (`sort=name:desc&limit=10`, later strings winning).
+        # rql carries filters, aggregations and `select(...)` only - it has no
+        # sort / slice operator.
         parsed = [Query.from_string(value) for value in query or ()]
         parsed += [Query.from_rql(value) for value in rql or ()]
         q = Query(
@@ -91,6 +91,9 @@ def cli_q(
             selection={ref for sub in parsed for ref in sub.selection},
             sort=next((sub.sort for sub in reversed(parsed) if sub.sort), None),
             slice=next((sub.slice for sub in reversed(parsed) if sub.slice), None),
+            facet_sort=next(
+                (sub.facet_sort for sub in reversed(parsed) if sub.facet_sort), None
+            ),
         )
         # several query strings AND together, as chained `.where()` does
         for sub in parsed:

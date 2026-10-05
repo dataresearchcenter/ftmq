@@ -11,8 +11,10 @@ from ftmq.query.aggregations import (
     A,
     Agg,
     Aggregator,
+    FacetOrder,
     aggregations_from_dict,
     aggregations_to_dict,
+    make_facet_order,
 )
 from ftmq.query.aleph import (
     aggregations_to_params,
@@ -37,7 +39,7 @@ from ftmq.query.leaves import (
     SchemataLeaf,
 )
 from ftmq.query.nodes import Expr, combine
-from ftmq.query.refs import NUMERIC_PROPS, GroupRef, PropRef, Ref, ref_from_wire
+from ftmq.query.refs import GroupRef, PropRef, Ref, ref_from_wire
 from ftmq.query.rql import parse_rql
 from ftmq.query.rql import to_rql as serialize_rql
 from ftmq.query.sql import Sql, SqlSource
@@ -56,11 +58,16 @@ def _make_slice(limit: int | None, offset: int | None) -> slice | None:
 
 
 class Sort:
-    """An ordering over a single entity property (both evaluators agree: the
-    SQL adapter never supported more than one sort field)."""
+    """A single-property ordering: `Sort(P("date"))`."""
 
-    def __init__(self, value: str, ascending: bool = True) -> None:
-        self.value = value
+    def __init__(self, ref: Ref, ascending: bool = True) -> None:
+        # only properties are sortable for now
+        if not isinstance(ref, PropRef):
+            raise QueryError(
+                f"Invalid sort field: `{getattr(ref, 'wire', ref)}` - only a "
+                'property is sortable, e.g. `P("date")`'
+            )
+        self.ref = ref
         self.ascending = ascending
 
     def apply(self, entity: EntityProxy) -> tuple[Any, ...]:
@@ -73,34 +80,28 @@ class Sort:
             A tuple of the entity's values for the sort property (a numeric
             property is cast to numbers).
         """
-        values: list[Any] = entity.get(self.value, quiet=True) or []
-        if self.value in NUMERIC_PROPS:
+        values: list[Any] = list(self.ref.values(entity))
+        if self.ref.is_numeric:
             values = [registry.number.to_number(v) for v in values]
         return tuple(values)
 
     def apply_iter(self, entities: EntityProxies) -> EntityProxies:
-        """Sort a stream of entities.
-
-        Args:
-            entities: The entities to sort.
-
-        Yields:
-            The entities in sorted order.
-        """
-        yield from sorted(entities, key=self.apply, reverse=not self.ascending)
+        """Sort a stream of entities, those without the property last."""
+        keyed = [(self.apply(e), e) for e in entities]
+        present = [(k, e) for k, e in keyed if k]
+        present.sort(key=lambda x: x[0], reverse=not self.ascending)
+        yield from (e for _, e in present)
+        yield from (e for k, e in keyed if not k)
 
     def serialize(self) -> str:
-        """Serialize to the field name, prefixed `-` when descending.
-
-        Returns:
-            The field name, e.g. `"name"` or `"-date"`.
-        """
-        return self.value if self.ascending else f"-{self.value}"
+        """The field's wire spelling, prefixed `-` when descending."""
+        return self.ref.wire if self.ascending else f"-{self.ref.wire}"
 
     @classmethod
     def deserialize(cls, value: str) -> Self:
         """Rebuild from [`serialize`][ftmq.query.main.Sort.serialize] output."""
-        return cls(value.lstrip("-"), ascending=not value.startswith("-"))
+        ascending = not value.startswith("-")
+        return cls(ref_from_wire(value.removeprefix("-")), ascending=ascending)
 
 
 class Query:
@@ -114,7 +115,7 @@ class Query:
 
         q = Query().where(M(schema="Person"), P(name__ilike="jane%"))
         q = q.where(G(countries="de") | G(countries="at"))
-        q = q.order_by("name")[:10]
+        q = q.order_by(P("name"))[:10]
         ```
     """
 
@@ -132,6 +133,7 @@ class Query:
         sort: Sort | None = None,
         slice: slice | None = None,
         selection: Iterable[Ref] | None = None,
+        facet_sort: FacetOrder | None = None,
     ):
         self.q: Expr | None = q if q is not None else combine(*nodes)
         self.aggregations: set[Agg] = set(aggregations or [])
@@ -139,6 +141,14 @@ class Query:
         self.sort = sort
         self.slice = slice
         self.selection: tuple[Ref, ...] = tuple(sorted(set(selection or ())))
+        if facet_sort is not None and not any(
+            facet_sort.orders(agg) and agg.groups for agg in self.aggregations
+        ):
+            raise QueryError(
+                f"Invalid facet sort: `{facet_sort.wire}` - not a grouped "
+                "aggregation of the query"
+            )
+        self.facet_sort = facet_sort
 
     def __getitem__(self, value: Any) -> Self:
         """
@@ -195,6 +205,7 @@ class Query:
             sort=self.sort,
             slice=self.slice,
             selection=self.selection,
+            facet_sort=self.facet_sort,
         )
         data.update(kwargs)
         return self.__class__(**data)
@@ -358,6 +369,8 @@ class Query:
             data["offset"] = self.offset
         if self.aggregations:
             data["aggregations"] = aggregations_to_dict(self.aggregations)
+        if self.facet_sort:
+            data["facet_sort"] = self.facet_sort.wire
         if self.selection:
             data["select"] = [ref.wire for ref in self.selection]
         return data
@@ -374,19 +387,23 @@ class Query:
         if data.get("aggregations"):
             aggregations = aggregations_from_dict(data["aggregations"])
         selection = [ref_from_wire(f) for f in data.get("select") or []]
+        facet_sort = None
+        if data.get("facet_sort"):
+            facet_sort = FacetOrder.from_wire(str(data["facet_sort"]))
         return cls(
             q=q,
             sort=sort,
             slice=slice_,
             aggregations=aggregations,
             selection=selection,
+            facet_sort=facet_sort,
         )
 
     def to_params(self) -> dict[str, list[str]]:
         """
         Project to an Aleph-style filter param dict (`filter:` / `exclude:` /
-        `empty:` keys, `metric:` / `facet` aggregation keys, plus `sort` /
-        `limit` / `offset`).
+        `empty:` keys, `metric:` / `facet` / `facet_sort` aggregation keys,
+        plus `sort` / `limit` / `offset`).
 
         Raises `QueryError` for queries outside the flat Aleph-expressible
         subset (cross-field OR, negated groups).
@@ -394,10 +411,12 @@ class Query:
         params = {k: list(v) for k, v in expr_to_params(self.q).items()}
         if self.aggregations:
             params.update(aggregations_to_params(self.aggregations))
+        if self.facet_sort:
+            params["facet_sort"] = [self.facet_sort.wire]
         params.update(selection_to_params(self.selection))
         if self.sort:
             direction = "asc" if self.sort.ascending else "desc"
-            params["sort"] = [f"{self.sort.value}:{direction}"]
+            params["sort"] = [f"{self.sort.ref.wire}:{direction}"]
         if self.slice:
             if self.offset:
                 params["offset"] = [str(self.offset)]
@@ -416,7 +435,12 @@ class Query:
             if len(items["sort"]) > 1:
                 raise QueryError("Multi-field sort is not supported")
             field, _, direction = items["sort"][0].partition(":")
-            sort = Sort(field, ascending=direction != "desc")
+            sort = Sort(ref_from_wire(field), ascending=direction != "desc")
+        facet_sort = None
+        if items.get("facet_sort"):
+            if len(items["facet_sort"]) > 1:
+                raise QueryError("Multi-field facet sort is not supported")
+            facet_sort = FacetOrder.from_wire(items["facet_sort"][0])
         slice_ = None
         if "limit" in items or "offset" in items:
             offset = int((items.get("offset") or ["0"])[0] or 0)
@@ -429,6 +453,7 @@ class Query:
             slice=slice_,
             aggregations=aggregations,
             selection=params_to_selection(items),
+            facet_sort=facet_sort,
         )
 
     def to_string(self) -> str:
@@ -493,21 +518,17 @@ class Query:
         q = new if self.q is None else (self.q & new)
         return self._chain(q=q)
 
-    def order_by(self, value: str, *, ascending: bool = True) -> Self:
-        """
-        Set the sorting (a single field; the SQL adapter never supported more).
+    def order_by(self, ref: Ref, *, ascending: bool = True) -> Self:
+        """Sort by a single property: `order_by(P("date"), ascending=False)`.
 
         Args:
-            value: The field to order by; a leading `-` marks descending
-                (`order_by("-date")` == `order_by("date", ascending=False)`)
-            ascending: Ascending or descending
+            ref: The property reference; only properties are sortable.
+            ascending: Ascending or descending.
 
         Returns:
             The updated `Query` instance.
         """
-        if value.startswith("-"):
-            value, ascending = value[1:], False
-        return self._chain(sort=Sort(value, ascending=ascending))
+        return self._chain(sort=Sort(ref, ascending=ascending))
 
     def aggregate(self, *nodes: A) -> Self:
         """Add aggregation projections to the query.
@@ -532,6 +553,23 @@ class Query:
         for node in nodes:
             aggs.update(node.aggs)
         return self._chain(aggregations=aggs)
+
+    def order_facets(self, *, ascending: bool = False, **func: Ref) -> Self:
+        """Rank facet buckets by a grouped metric, descending by default:
+        `order_facets(sum=P("amountEur"))`. Also picks the buckets kept by
+        the SQL top-N cap.
+
+        Args:
+            ascending: Rank the smallest values first.
+            **func: Exactly one `func=<ref>` pair of a grouped aggregation.
+
+        Returns:
+            The updated `Query` instance.
+        """
+        if len(func) != 1:
+            raise QueryError("Facet sort takes exactly one `func=<ref>` pair")
+        [(name, ref)] = func.items()
+        return self._chain(facet_sort=make_facet_order(name, ref, ascending))
 
     def select(self, *refs: Ref) -> Self:
         """Restrict the properties the matching entities are read with.

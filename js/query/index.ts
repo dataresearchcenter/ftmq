@@ -28,6 +28,8 @@ export {
   type AggFunc,
   type ANode,
   type ASpec,
+  FacetOrder,
+  type FacetSortSpec,
 } from "./aggregations.js";
 export { type Params } from "./aleph.js";
 export { type ParamsInput, Query, Sort } from "./query.js";

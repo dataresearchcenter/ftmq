@@ -73,7 +73,7 @@ For production, use several workers: `granian --interface asgi --workers 4 ftmq.
 # catalog with computed dataset statistics
 curl -s "localhost:8000/catalog"
 # filtered, sorted entities
-curl -s "localhost:8000/entities?filter:schema=Person&sort=name&limit=5"
+curl -s "localhost:8000/entities?filter:schema=Person&sort=properties.name&limit=5"
 # aggregation (rides on /entities; limit=0 returns only aggregations)
 curl -s "localhost:8000/entities?filter:schema=Payment&metric:sum=properties.amountEur&limit=0"
 # full-text search and autocomplete
@@ -147,7 +147,7 @@ The api speaks the Aleph / OpenAleph filter grammar, the same [`Query.from_param
 /entities?filter:group.countries=de                        # property-type groups
 /entities?filter:group.entities=<entity-id>                # reverse lookup (any edge)
 /entities?filter:context.origin=crawl                      # context columns
-/entities?sort=name:desc&limit=100&offset=200              # sorting and pagination
+/entities?sort=properties.name:desc&limit=100&offset=200   # sorting and pagination
 /entities?filter:schema=Payment&metric:sum=properties.amountEur&facet=year&limit=0   # aggregations only
 /entities?q=jane+doe&filter:dataset=my_dataset&filter:group.countries=de
 ```
@@ -155,6 +155,12 @@ The api speaks the Aleph / OpenAleph filter grammar, the same [`Query.from_param
 Aggregations ride on the entities query: add `metric:<func>=<field>` (and `facet=<field>` to group them). Ungrouped aggregations are returned in the response `metrics`, grouped ones in `facets`; set `limit=0` to get only those (plus `total`), no results.
 
 `metric:` and `facet` take the same field spelling as `filter:`: `properties.<name>` for a property, `group.<name>` for a property-type group, `context.<name>` for a context column; meta fields and `year` are bare. The response keys the metrics the same way. A `facet` on its own groups an entity count: `?facet=group.countries` is short for `?metric:count=id&facet=group.countries`, and `metric:count=id` agrees with the response `total`.
+
+Each facet bucket carries its entity `count` and the requested metrics within it, under `metrics` and keyed as the top-level `metrics` (`{field: {func: value}}`). Buckets are ranked by entity count; `facet_sort=<func>:<field>[:asc]` ranks them by one of the requested metrics instead (descending by default). Each facet is capped to its top `MAX_SQL_AGG_GROUPS` buckets.
+
+```bash
+/entities?filter:schema=Payment&metric:sum=properties.amountEur&facet=properties.beneficiary&facet_sort=sum:properties.amountEur&limit=0
+```
 
 For nested boolean trees that the flat grammar cannot express (a cross-field `OR`, a negated group), pass a full [RQL](./query.md) string via `rql=`. It overrides the flat filter params, while `sort` / `limit` / `offset` still apply, and it also carries aggregations:
 
@@ -181,7 +187,7 @@ Retrieve flags shape the response: `nested` (inline adjacent entities), `feature
   "offset": 0,
   "next": "https://.../entities?...&offset=100&limit=100",
   "previous": null,
-  "facets": { "year": { "values": [{ "value": "2011", "label": "2011", "count": 42 }], "total": 10 } },
+  "facets": { "year": { "values": [{ "value": "2011", "label": "2011", "count": 42, "metrics": { "properties.amountEur": { "sum": 1953402.15 } } }], "total": 10 } },
   "metrics": { "properties.amountEur": { "sum": 40589689.15 } },
   "filters": { "schema": ["Person"] },
   "query_q": null,
@@ -204,11 +210,11 @@ Old params map to the current grammar:
 | `schema=X&schema_include_descendants=1` | `filter:schemata=X` |
 | `name__ilike=%jane%` | `filter:ilike:properties.name=jane` |
 | `date__gte=2023` | `filter:gte:properties.date=2023` |
-| `jurisdiction__not=eu` | `exclude:properties.jurisdiction=eu` |
+| `jurisdiction__not=eu` | `rql=ne(properties.jurisdiction,eu)` (`exclude:properties.jurisdiction=eu` also keeps entities without a jurisdiction) |
 | `canonical_id__startswith=eu-` | `filter:startswith:canonical_id=eu-` |
 | `reverse=<id>` | `filter:group.entities=<id>` |
 | `country=de` (search) | `filter:group.countries=de` |
-| `order_by=-date` | `sort=date:desc` |
+| `order_by=-date` | `sort=properties.date:desc` |
 | `page=3&limit=100` | `offset=200&limit=100` |
 | `aggSum=amountEur&aggGroups=year` | `metric:sum=properties.amountEur&facet=year` |
 

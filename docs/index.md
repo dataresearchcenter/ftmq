@@ -45,7 +45,7 @@ q = Query().where(
     M(schemata="LegalEntity"),
     G(countries="de") | (G(countries="at") & P(incorporationDate__gte=2020)),
     ~P(status__ilike="%dissolved%"),
-).order_by("incorporationDate", ascending=False)[:5]
+).order_by(P("incorporationDate"), ascending=False)[:5]
 
 for proxy in smart_read_proxies("s3://data/entities.ftm.json"):
     if q.apply(proxy):

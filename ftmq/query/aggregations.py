@@ -72,6 +72,66 @@ def make_agg(func: str, ref: Ref, groups: Iterable[Ref] = ()) -> Agg:
     )
 
 
+@dataclass(frozen=True)
+class FacetOrder:
+    """Ranks facet buckets by a grouped metric instead of by entity count.
+    Wire spelling: `<func>:<field>[:asc]`."""
+
+    func: str
+    ref: Ref
+    ascending: bool = False
+
+    @property
+    def wire(self) -> str:
+        """E.g. `sum:properties.amountEur` or `count:id:asc`."""
+        wire = f"{self.func}:{self.ref.wire}"
+        return f"{wire}:asc" if self.ascending else wire
+
+    @classmethod
+    def from_wire(cls, value: str) -> FacetOrder:
+        """Parse the wire spelling (`:desc` is accepted too).
+
+        Args:
+            value: E.g. `sum:properties.amountEur:asc`.
+
+        Returns:
+            The facet order.
+        """
+        func, _, rest = value.partition(":")
+        field, _, direction = rest.partition(":")
+        if direction not in ("", "asc", "desc"):
+            raise QueryError(
+                f"Invalid facet sort: `{value}` - expected `<func>:<field>[:asc]`"
+            )
+        return make_facet_order(func, ref_from_wire(field), direction == "asc")
+
+    def orders(self, agg: Agg) -> bool:
+        """Whether this ranks by `agg` (ignoring its grouping).
+
+        Args:
+            agg: An aggregation spec.
+
+        Returns:
+            `True` if `agg` has this function and field.
+        """
+        return agg.func == self.func and agg.ref == self.ref
+
+
+def make_facet_order(func: str, ref: Ref, ascending: bool = False) -> FacetOrder:
+    """Validate and build a `FacetOrder`.
+
+    Args:
+        func: The aggregation function.
+        ref: The aggregated field.
+        ascending: Rank the smallest values first.
+
+    Returns:
+        The facet order.
+    """
+    agg = make_agg(func, ref)
+    return FacetOrder(func=agg.func, ref=agg.ref, ascending=ascending)
+
+
 def _ensure_ref(ref: Ref) -> Ref:
     """Aggregations address fields by reference, not by name: the family a
     bare string belongs to is exactly what the `M` / `P` / `G` / `C` markers

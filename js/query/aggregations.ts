@@ -113,3 +113,48 @@ export function aggregationsFromDict(data: Record<string, any>[]): Agg[] {
       ),
   );
 }
+
+/**
+ * Ranks facet buckets by a grouped metric instead of by entity count.
+ * Wire spelling: `<func>:<field>[:asc]`.
+ */
+export class FacetOrder {
+  readonly func: AggFunc;
+  readonly ref: Ref;
+  readonly ascending: boolean;
+
+  constructor(func: AggFunc, ref: Ref, ascending = false) {
+    if (!AGG_FUNCS.has(func)) {
+      throw new QueryError(`Invalid aggregation function: \`${func}\``);
+    }
+    this.func = func;
+    this.ref = ref;
+    this.ascending = ascending;
+  }
+
+  /** E.g. `sum:properties.amountEur` or `count:id:asc`. */
+  get wire(): string {
+    const wire = `${this.func}:${this.ref.wire}`;
+    return this.ascending ? `${wire}:asc` : wire;
+  }
+
+  /** Parse the wire spelling (`:desc` is accepted too). */
+  static fromWire(value: string): FacetOrder {
+    const [func, field = "", direction = "", ...rest] = value.split(":");
+    if (rest.length || !["", "asc", "desc"].includes(direction)) {
+      throw new QueryError(
+        `Invalid facet sort: \`${value}\` - expected \`<func>:<field>[:asc]\``,
+      );
+    }
+    return new FacetOrder(
+      func as AggFunc,
+      refFromWire(field),
+      direction === "asc",
+    );
+  }
+}
+
+/** `orderFacets` input: one `func: ref` pair plus the direction. */
+export type FacetSortSpec = { ascending?: boolean } & Partial<
+  Record<AggFunc, Ref>
+>;
