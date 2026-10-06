@@ -1,21 +1,35 @@
 from collections import defaultdict
+from dataclasses import dataclass
+from typing import Annotated
 
-from fastapi import HTTPException, Request
-from pydantic import BaseModel
+from fastapi import HTTPException
+from fastapi import Query as QueryField
+from fastapi import Request
 
-from ftmq.api.settings import Settings
+from ftmq.api.settings import settings
 from ftmq.api.store import get_catalog
 from ftmq.query import Query
 
-settings = Settings()
 
+@dataclass(frozen=True)
+class RetrieveParams:
+    """The response-shaping query params (a `Depends()` dependency)."""
 
-class RetrieveParams(BaseModel):
-    nested: bool
-    featured: bool
-    dehydrate: bool
-    dehydrate_nested: bool
-    stats: bool
+    nested: Annotated[
+        bool, QueryField(description="Inline adjacent entities instead of their ids")
+    ] = False
+    featured: Annotated[
+        bool, QueryField(description="Only include featured properties and caption")
+    ] = False
+    dehydrate: Annotated[
+        bool, QueryField(description="Only include id, schema and caption")
+    ] = False
+    dehydrate_nested: Annotated[
+        bool, QueryField(description="Dehydrate nested entities")
+    ] = True
+    stats: Annotated[bool, QueryField(description="Include statistics in response")] = (
+        False
+    )
 
 
 def params_from_request(request: Request) -> dict[str, list[str]]:

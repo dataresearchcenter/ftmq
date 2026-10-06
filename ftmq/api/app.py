@@ -16,12 +16,11 @@ from ftmq.api.serialize import (
     EntityResponse,
     ErrorResponse,
 )
-from ftmq.api.settings import DEFAULT_DESCRIPTION, Settings
+from ftmq.api.settings import DEFAULT_DESCRIPTION, settings
 from ftmq.api.store import Datasets
 from ftmq.model import Catalog, Dataset
 
 log = get_logger(__name__)
-settings = Settings()
 
 
 def get_description() -> str:
@@ -37,10 +36,11 @@ app = FastAPI(
     description=get_description(),
     redoc_url="/",
     version=__version__,
+    responses={500: {"model": ErrorResponse, "description": "Server error"}},
 )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[*settings.allowed_origin, "http://localhost:3000"],
+    allow_origins=settings.allowed_origin,
     allow_methods=["OPTIONS", "GET"],
 )
 
@@ -50,9 +50,6 @@ log.info("Ftm store: %s" % settings.store_uri)
 @app.get(
     "/catalog",
     response_model=Catalog,
-    responses={
-        500: {"model": ErrorResponse, "description": "Server error"},
-    },
 )
 async def dataset_list(request: Request) -> Catalog:
     """
@@ -67,9 +64,6 @@ async def dataset_list(request: Request) -> Catalog:
 @app.get(
     "/catalog/{dataset}",
     response_model=Dataset,
-    responses={
-        500: {"model": ErrorResponse, "description": "Server error"},
-    },
 )
 async def dataset_detail(request: Request, dataset: Datasets) -> Dataset:
     """
@@ -98,12 +92,11 @@ def get_authenticated(
     response_model=EntitiesResponse,
     responses={
         400: {"model": ErrorResponse, "description": "Invalid query"},
-        500: {"model": ErrorResponse, "description": "Server error"},
     },
 )
 async def entities(
     request: Request,
-    retrieve_params: Annotated[RetrieveParams, Depends(views.get_retrieve_params)],
+    retrieve_params: Annotated[RetrieveParams, Depends()],
     authenticated: Annotated[bool, Depends(get_authenticated)],
 ) -> EntitiesResponse:
     """
@@ -203,13 +196,12 @@ async def entities(
     responses={
         307: {"description": "The entity was merged into another ID"},
         404: {"model": ErrorResponse, "description": "Entity not found"},
-        500: {"model": ErrorResponse, "description": "Server error"},
     },
 )
 async def detail_entity(
     request: Request,
     entity_id: str,
-    retrieve_params: Annotated[RetrieveParams, Depends(views.get_retrieve_params)],
+    retrieve_params: Annotated[RetrieveParams, Depends()],
 ) -> EntityResponse | RedirectResponse | ErrorResponse:
     """
     Retrieve a single entity.
@@ -231,7 +223,6 @@ async def detail_entity(
     response_model=AutocompleteResponse,
     responses={
         400: {"model": ErrorResponse, "description": "Invalid query"},
-        500: {"model": ErrorResponse, "description": "Server error"},
     },
 )
 async def autocomplete(request: Request, q: str) -> AutocompleteResponse:

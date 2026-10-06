@@ -34,17 +34,20 @@ class EntityModel(BaseModel):
 
     @classmethod
     def from_proxy(
-        cls, entity: Entity, adjacents: Iterable[Entity] | None = None
+        cls,
+        entity: Entity,
+        adjacents: Iterable[Entity] | Mapping[str, "EntityModel"] | None = None,
     ) -> Self:
+        """Build from an entity, inlining the referenced `adjacents` (entities,
+        or models already built from them, keyed by id)."""
         properties = dict(entity.properties)
         if adjacents:
-            adjacents_: dict[str, EntityModel] = {
-                must_str(e.id): cls.from_proxy(e) for e in adjacents
-            }
+            if not isinstance(adjacents, Mapping):
+                adjacents = {must_str(e.id): cls.from_proxy(e) for e in adjacents}
             for prop in entity.iterprops():
                 if prop.type == registry.entity:
                     properties[prop.name] = [
-                        adjacents_.get(i, i) for i in entity.get(prop)
+                        adjacents.get(i, i) for i in entity.get(prop)
                     ]
         return cls(
             id=must_str(entity.id),

@@ -1663,7 +1663,7 @@ description = "URL manipulation made simple."
 optional = true
 python-versions = "*"
 groups = ["main"]
-markers = "extra == \"aleph\" or extra == \"api\""
+markers = "extra == \"aleph\""
 files = [
     {file = "furl-2.1.4-py2.py3-none-any.whl", hash = "sha256:da34d0b34e53ffe2d2e6851a7085a05d96922b5b578620a37377ff1dbeeb11c8"},
     {file = "furl-2.1.4.tar.gz", hash = "sha256:877657501266c929269739fb5f5980534a41abd6bbabcb367c136d1d3b2a6015"},
@@ -3660,7 +3660,7 @@ description = "Ordered Multivalue Dictionary"
 optional = true
 python-versions = "*"
 groups = ["main"]
-markers = "extra == \"aleph\" or extra == \"api\""
+markers = "extra == \"aleph\""
 files = [
     {file = "orderedmultidict-1.0.2-py2.py3-none-any.whl", hash = "sha256:ab5044c1dca4226ae4c28524cfc5cc4c939f0b49e978efa46a6ad6468049f79b"},
     {file = "orderedmultidict-1.0.2.tar.gz", hash = "sha256:16a7ae8432e02cc987d2d6d5af2df5938258f87c870675c73ee77a0920e6f4a6"},
@@ -6327,7 +6327,7 @@ tomli = ">=2.4.0"
 
 [extras]
 aleph = ["alephclient", "furl"]
-api = ["fastapi", "furl", "granian"]
+api = ["fastapi", "granian"]
 duckdb = ["duckdb", "duckdb-engine", "sqlalchemy"]
 lake = ["deltalake", "duckdb", "pandas", "pyarrow"]
 level = ["plyvel"]
@@ -6338,4 +6338,4 @@ sql = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.15"
-content-hash = "f6c361c9489e363a2ee3bc6bdcfd85ccbbb9c76c8e2253c4a4b00d3d84127fdc"
+content-hash = "3e3c3181e41f6a8ffb754d6453f1ddc09fa376d1bbb63515dbb044052a30362f"

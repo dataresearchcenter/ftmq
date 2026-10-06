@@ -97,8 +97,13 @@ class Settings(BaseSettings):
     """Allowed origins"""
 
     default_limit: int = 100
-    max_facet_size: int = 50
     """Default public pagination limit"""
+
+    max_facet_size: int = 50
+    """Public cap on the buckets per facet"""
 
     info: ApiInfo = ApiInfo()
     """Rendered information on redoc page"""
+
+
+settings = Settings()

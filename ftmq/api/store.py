@@ -4,22 +4,18 @@ from typing import TYPE_CHECKING, Literal, TypeAlias
 from anystore.logging import get_logger
 from fastapi import HTTPException
 
-from ftmq.api.settings import Settings
+from ftmq.api.settings import settings
 from ftmq.model import Catalog, Dataset
-from ftmq.model.stats import DatasetStats
-from ftmq.query import Query
-from ftmq.query.aggregations import AggregatorResult
 from ftmq.store import Store
 from ftmq.store import get_store as _get_store
-from ftmq.store.base import get_linker
-from ftmq.types import Entities, Entity, StatementEntity
+from ftmq.store.base import View, get_linker
+from ftmq.types import Entity
 from ftmq.util import get_dehydrated_entity, get_featured_entity
 
 if TYPE_CHECKING:
     from ftmq.api.query import RetrieveParams
 
 log = get_logger(__name__)
-settings = Settings()
 
 
 def get_store_datasets() -> set[str]:
@@ -74,70 +70,33 @@ def get_store(dataset: str | None = None) -> Store:
     # history: `resolver_uri` may be a sql database or a json edge dump.
     # Unset, the store falls back to a resolver table in its own database.
     linker = get_linker(settings.resolver_uri) if settings.resolver_uri else None
-    if dataset is not None:
-        get_dataset(dataset)  # 404 guard against the catalog
-        # scope by name: the ftmq store expects a runtime dataset (or its name),
-        # not the pydantic catalog model
-        return _get_store(uri=settings.store_uri, dataset=dataset, linker=linker)
-    return _get_store(uri=settings.store_uri, linker=linker)
+    # scoped by name: the store expects a runtime dataset, not the catalog model
+    return _get_store(uri=settings.store_uri, dataset=dataset, linker=linker)
 
 
-def retrieve_entities(entities: Entities, params: "RetrieveParams") -> Entities:
-    for proxy in entities:
-        if params.dehydrate:
-            proxy = get_dehydrated_entity(proxy)
-        elif params.featured:
-            proxy = get_featured_entity(proxy)
-        yield proxy
-
-
-class View:
-    """A wrapper around a store's default [`View`][ftmq.store.base.View] scoped
-    to the api's use cases."""
-
-    def __init__(self, dataset: str | None = None) -> None:
-        self.store = get_store(dataset)
-        self.dataset = dataset
-        self.view = self.store.default_view()
-
-    def get_entity(self, entity_id: str, params: "RetrieveParams") -> Entity:
-        # a referent id addresses the merged entity: the statements of a
-        # resolved store carry the canonical id, so resolve before looking up
-        canonical = self.store.linker.get_canonical(entity_id)
-        proxy = self.view.get_entity(canonical)
-        if proxy is None:
-            # fall back to the original id
-            proxy = self.view.get_entity(entity_id)
-            if proxy is None:
-                raise HTTPException(404, detail=[f"Entity `{entity_id}` not found."])
-        if params.dehydrate:
-            return get_dehydrated_entity(proxy)
-        if params.featured:
-            return get_featured_entity(proxy)
-        return proxy
-
-    def get_entities(self, query: Query, params: "RetrieveParams") -> Entities:
-        yield from retrieve_entities(self.view.query(query), params)
-
-    def get_adjacents(self, proxies: Entities) -> set[StatementEntity]:
-        return self.view.get_adjacents(proxies)
-
-    def get_adjacent(self, proxy: StatementEntity):
-        return self.view.get_adjacent(proxy)
-
-    def stats(self, query: Query | None = None) -> DatasetStats:
-        return self.view.stats(query)
-
-    def count(self, query: Query | None = None) -> int:
-        return self.view.count(query)
-
-    def aggregations(self, query: Query) -> AggregatorResult | None:
-        return self.view.aggregations(query)
+def shape(proxy: Entity, params: "RetrieveParams") -> Entity:
+    """Dehydrate an entity, or reduce it to its featured properties, as asked."""
+    if params.dehydrate:
+        return get_dehydrated_entity(proxy)
+    if params.featured:
+        return get_featured_entity(proxy)
+    return proxy
 
 
 @cache
 def get_view(dataset: str | None = None) -> View:
-    return View(dataset)
+    return get_store(dataset).default_view()
+
+
+def get_entity(entity_id: str, params: "RetrieveParams") -> Entity:
+    """The entity by id, or by a referent id the store's linker resolves."""
+    # the statements of a resolved store carry the canonical id
+    view = get_view()
+    proxy = view.get_entity(get_store().linker.get_canonical(entity_id))
+    proxy = proxy or view.get_entity(entity_id)
+    if proxy is None:
+        raise HTTPException(404, detail=[f"Entity `{entity_id}` not found."])
+    return shape(proxy, params)
 
 
 # cache at boot time

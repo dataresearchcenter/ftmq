@@ -9,8 +9,7 @@ from collections.abc import Iterable
 from typing import Any, Self, Union
 
 from fastapi import Request
-from furl import furl
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from ftmq.model import DatasetStats, EntityModel
 from ftmq.query import Query, QueryError
@@ -18,30 +17,22 @@ from ftmq.query.aggregations import AggregatorResult, make_agg
 from ftmq.query.refs import IdRef
 from ftmq.search.model import AutocompleteResult
 from ftmq.types import Entities, Entity
+from ftmq.util import must_str
 
 EntityProperties = dict[str, list[Union[str, "EntityResponse"]]]
 
 
 class ErrorResponse(BaseModel):
-    detail: str = Field(..., examples=["Detailed error message"])
+    detail: list[str] = Field(..., examples=[["Detailed error message"]])
 
 
 class EntityResponse(EntityModel):
-    model_config = ConfigDict(populate_by_name=True)
-
     # not part of the public wire format (inherited from `EntityModel`)
     dataset: str | None = Field(None, exclude=True)
     # nested adjacents serialize as responses too (no `dataset`)
     properties: EntityProperties = Field(
         default_factory=dict, examples=[{"name": ["Jane Doe"]}]
     )
-
-    @classmethod
-    def from_entity(cls, entity: Entity, adjacents: Entities | None = None) -> Self:
-        return cls.from_proxy(entity, adjacents)
-
-
-EntityResponse.model_rebuild()
 
 
 def with_bucket_counts(query: Query) -> Query:
@@ -102,16 +93,14 @@ def build_facets(aggregations: AggregatorResult, query: Query) -> dict[str, Any]
     for field, results in aggregations.get("groups", {}).items():
         counts = results.get("count", {}).get("id", {})
         buckets = {gval: _bucket(gval, count) for gval, count in counts.items()}
-        ranked = False
         for agg in query.aggregations:
             if field not in {g.wire for g in agg.groups}:
                 continue
-            ranked = ranked or bool(order and order.orders(agg))
             for gval, value in results.get(agg.func, {}).get(agg.key, {}).items():
                 bucket = buckets.setdefault(gval, _bucket(gval, 0))
                 bucket["metrics"].setdefault(agg.key, {})[agg.func] = value
         values = sorted(buckets.values(), key=lambda v: (-v["count"], v["value"]))
-        if order is not None and ranked:
+        if order is not None:
             keyed = [
                 (v["metrics"].get(order.ref.wire, {}).get(order.func), v)
                 for v in values
@@ -168,13 +157,12 @@ class EntitiesResponse(BaseModel):
         query: Query,
         stats: DatasetStats | None = None,
         adjacents: Iterable[Entity] | None = None,
-        count: int = 0,
+        total: int = 0,
         aggregations: AggregatorResult | None = None,
         query_q: str | None = None,
     ) -> Self:
-        url = furl(str(request.url))
-        results = [EntityResponse.from_entity(e, adjacents) for e in entities]
-        total = stats.entity_count if stats else count
+        nested = {must_str(e.id): EntityResponse.from_proxy(e) for e in adjacents or []}
+        results = [EntityResponse.from_proxy(e, nested) for e in entities]
         limit, offset = query.limit or 0, query.offset or 0
         response = cls(
             results=results,
@@ -191,14 +179,13 @@ class EntitiesResponse(BaseModel):
             metrics=build_metrics(aggregations, query) if aggregations else {},
         )
         if limit:
+            page = request.url.include_query_params
             if offset > 0:
-                url.args["offset"] = max(0, offset - limit)
-                url.args["limit"] = limit
-                response.previous = str(url)
+                response.previous = str(
+                    page(offset=max(0, offset - limit), limit=limit)
+                )
             if offset + limit < total:
-                url.args["offset"] = offset + limit
-                url.args["limit"] = limit
-                response.next = str(url)
+                response.next = str(page(offset=offset + limit, limit=limit))
         return response
 
 
