@@ -1,7 +1,6 @@
 from urllib.parse import urlparse
 
 from nomenklatura import settings
-from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,8 +16,6 @@ def get_db_url() -> str:
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="ftmq_search_")
-
-    debug: bool = Field(alias="debug", default=False)
 
     uri: str = get_db_url()
     yaml_uri: str | None = None

@@ -3,10 +3,6 @@ from typing import Generator, Iterable, TypeAlias, TypeVar
 from followthemoney import Statement, StatementEntity, ValueEntity
 from followthemoney.proxy import EntityProxy
 
-# property multi-value
-Value: TypeAlias = list[str]
-"""FtM property value is always multi-valued string"""
-
 Entity = TypeVar("Entity", StatementEntity, ValueEntity)
 """Generic type used mostly in ftmq"""
 

@@ -156,6 +156,29 @@ def test_agg_groupby(donations):
     }
 
 
+def test_agg_facet_size(donations):
+    # a facet keeps its top buckets: by entity count, or by the facet sort
+    def top(q: Query) -> list[str]:
+        _ = list(q.apply_iter(donations))
+        groups = q.aggregator.result["groups"]["properties.beneficiary"]
+        return list(groups["sum"]["properties.amountEur"])
+
+    q = Query().where(M(schema="Payment"))
+    q = q.aggregate(A(sum=P("amountEur"), by=P("beneficiary")))
+    assert len(top(q)) == 11
+    assert top(q.facet_size(P("beneficiary"), 3)) == [
+        "c326dd8021ee75fe9608f31ecb4e2e7388144102",  # 126 payments
+        "783d918df9f9178400d6b3386439ab3b3679979c",  # 53
+        "7202347006660188aab5c1e264c4bee948478fd6",  # 39
+    ]
+    q = q.facet_size(P("beneficiary"), 3).order_facets(sum=P("amountEur"))
+    assert top(q) == [
+        "c326dd8021ee75fe9608f31ecb4e2e7388144102",
+        "6d8377d3938b85fa1bfd1985486f0f913c42e224",
+        "783d918df9f9178400d6b3386439ab3b3679979c",
+    ]
+
+
 def test_agg_groupby_meta(donations):
     res = _run(A(count=M("id"), by=M("schema")).aggs, donations)
     assert res["count"]["id"] == 474

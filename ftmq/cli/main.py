@@ -94,6 +94,7 @@ def cli_q(
             facet_sort=next(
                 (sub.facet_sort for sub in reversed(parsed) if sub.facet_sort), None
             ),
+            facet_sizes={r: n for sub in parsed for r, n in sub.facet_sizes.items()},
         )
         # several query strings AND together, as chained `.where()` does
         for sub in parsed:
@@ -126,10 +127,10 @@ def cli_q(
         if stats:
             smart_write_model(output_uri, Collector().collect_many(proxies))
         elif q.aggregations:
-            aggregator = q.get_aggregator()
-            for _ in aggregator.apply(proxies):
+            for _ in proxies:  # `apply_iter` collects into `q.aggregator`
                 pass
-            smart_write_json(output_uri, [aggregator.result], clean=True)
+            result = q.aggregator.result if q.aggregator else {}
+            smart_write_json(output_uri, [result], clean=True)
         else:
             smart_write_proxies(output_uri, proxies)
 

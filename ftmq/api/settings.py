@@ -24,13 +24,13 @@ The main api endpoints:
 * Retrieve a list of entities based on filter criteria and sorting, with
   pagination: `/entities?{params}`
 * Aggregate property values on the same query (Aleph-style): add
-  `metric:sum=amountEur&facet=year`, set `limit=0` for aggregations only
+  `metric:sum=properties.amountEur&facet=year`, set `limit=0` for aggregations only
 * Search for entities via full-text search: `/entities?q=<search term>`
 * Autocomplete names: `/autocomplete?q=<term>`
 
 Filtering uses the Aleph / OpenAleph filter grammar, e.g.
 `filter:schema=Payment`, `filter:gte:properties.date=2023`,
-`exclude:properties.jurisdiction=eu`, sorting via `sort=name:desc` and
+`exclude:properties.jurisdiction=eu`, sorting via `sort=properties.name:desc` and
 pagination via `limit` / `offset`.
 
 Two more endpoints for catalog / dataset metadata:
@@ -65,6 +65,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="ftmq_api_",
         env_nested_delimiter="_",
+        env_nested_max_split=1,
         nested_model_default_partial_update=True,
     )
 
@@ -78,7 +79,7 @@ class Settings(BaseSettings):
     """nomenklatura resolver uri: a sql database holding a `resolver` table, or
     a json lines edge dump. Defaults to the store uri."""
 
-    build_api_key: str = "secret-key-for-build"
+    build_api_key: str | None = None
     """Backend api key to use for build process (higher limit)"""
 
     min_search_length: int = 3
@@ -98,5 +99,11 @@ class Settings(BaseSettings):
     default_limit: int = 100
     """Default public pagination limit"""
 
+    max_facet_size: int = 50
+    """Public cap on the buckets per facet"""
+
     info: ApiInfo = ApiInfo()
     """Rendered information on redoc page"""
+
+
+settings = Settings()

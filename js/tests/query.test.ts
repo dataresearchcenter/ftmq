@@ -285,6 +285,22 @@ test("select builds a projection alongside the filter tree", () => {
   assert.equal("select" in new Query().where(P({ name: "x" })).toDict(), false);
 });
 
+test("facetSize sets the buckets of a facet", () => {
+  const q = new Query()
+    .aggregate(A({ sum: P("amountEur"), by: P("beneficiary") }))
+    .facetSize(P("beneficiary"), 3);
+  assert.deepEqual(q.toParams()["facet_size:properties.beneficiary"], ["3"]);
+  assert.equal(
+    q.toRequestParams().get("facet_size:properties.beneficiary"),
+    "3",
+  );
+  assert.throws(() => q.facetSize(P("beneficiary"), 0), QueryError);
+  assert.throws(
+    () => Query.fromParams({ facet: ["year"], "facet_size:year": ["x"] }),
+    QueryError,
+  );
+});
+
 test("orderFacets ranks facet buckets by a metric", () => {
   const q = new Query()
     .aggregate(A({ sum: P("amountEur"), by: P("beneficiary") }))

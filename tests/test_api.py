@@ -149,6 +149,24 @@ def test_api_entities_nested(api_client):
     assert "id" in nested[0] and "schema" in nested[0]
 
 
+def test_api_build_key(api_client, monkeypatch):
+    from ftmq.api import app
+
+    url = "/entities?limit=500&dehydrate=true&api_key=secret-key-for-build"
+    assert len(api_client.get(url).json()["results"]) == 500
+    # unset, no key raises the cap
+    monkeypatch.setattr(app.settings, "build_api_key", None)
+    url = "/entities?limit=500&featured=true&api_key=secret-key-for-build"
+    assert len(api_client.get(url).json()["results"]) == 100
+
+
+def test_api_settings(monkeypatch):
+    from ftmq.api.settings import Settings
+
+    monkeypatch.setenv("FTMQ_API_INFO_DESCRIPTION_URI", "./README.md")
+    assert Settings().info.description_uri == "./README.md"
+
+
 def test_api_entity_detail(api_client):
     res = api_client.get(f"/entities/{ADDRESS_ID}")
     assert res.status_code == 200
@@ -246,6 +264,15 @@ def test_api_aggregation(api_client):
     # ... a grouped one
     res = api_client.get(f"{url}&facet_sort=avg:properties.amountEur")
     assert res.status_code == 400
+
+    # `facet_size:<field>` keeps the top buckets; `total` counts all values
+    facet_url = f"{url}&facet_size:properties.beneficiary=3"
+    facet = api_client.get(facet_url).json()["facets"]["properties.beneficiary"]
+    assert len(facet["values"]) == 3
+    assert facet["total"] == 11
+    # unauthenticated, it is capped
+    data = api_client.get(f"{url}&facet_size:properties.beneficiary=500").json()
+    assert data["query"]["facet_size"] == {"properties.beneficiary": 50}
 
     # aggregations returned alongside entities when limit > 0
     res = api_client.get(

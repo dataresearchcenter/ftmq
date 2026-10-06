@@ -86,7 +86,7 @@ def test_sql():
     q = q.where(P(date__gte=2023)).order_by(P("name"), ascending=False)
     # same three memberships, but the sort binds `prop` as :prop_1 / :prop_2 first
     # (it reads the `id` rows too, to keep entities without the sort prop)
-    whereclause2 = whereclause.replace(":prop_1", ":prop_3")
+    memberships = whereclause.replace(":prop_1", ":prop_3").removeprefix("WHERE ")
     assert isinstance(q.sql.statements, Select)
     assert _compare_str(
         q.sql.statements,
@@ -96,8 +96,7 @@ def test_sql():
             max(CASE WHEN (test_table.prop = :prop_1) THEN test_table.value END) AS sortable_value
             FROM test_table
             WHERE test_table.prop IN (__[POSTCOMPILE_prop_2])
-            AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
-                FROM test_table {whereclause2})
+            AND {memberships}
             GROUP BY test_table.canonical_id
             ORDER BY sortable_value DESC NULLS LAST, test_table.canonical_id)
         AS anon_1 ON test_table.canonical_id = anon_1.canonical_id
@@ -138,8 +137,7 @@ def test_sql():
             min(CASE WHEN (test_table.prop = :prop_1) THEN test_table.value END) AS sortable_value
             FROM test_table
             WHERE test_table.prop IN (__[POSTCOMPILE_prop_2])
-            AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
-                FROM test_table {whereclause2})
+            AND {memberships}
             GROUP BY test_table.canonical_id
             ORDER BY sortable_value ASC NULLS LAST, test_table.canonical_id
             LIMIT :param_1 OFFSET :param_2)
@@ -191,7 +189,7 @@ def test_sql():
         FROM test_table
         WHERE test_table.prop = 'country' AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id
         FROM test_table
-        WHERE test_table.prop = 'date' AND test_table.value = '2023') GROUP BY test_table.value ORDER BY count DESC
+        WHERE test_table.prop = 'date' AND test_table.value = '2023') GROUP BY test_table.value ORDER BY count DESC, test_table.value
         """,
     )
 
@@ -234,11 +232,11 @@ def test_sql():
         str(q.sql.statements.compile(compile_kwargs={"literal_binds": True})),
         f"""
         SELECT {fields} FROM test_table
-        WHERE test_table.canonical_id IN ({ids} WHERE test_table.schema = 'Event')
+        WHERE test_table.canonical_id IN
+            ({ids} WHERE test_table.prop_type = 'entity' AND test_table.value = 'my_id')
         AND test_table.canonical_id IN
             ({ids} WHERE test_table.prop = 'date' AND test_table.value = '2023')
-        AND test_table.canonical_id IN
-            ({ids} WHERE test_table.prop_type = 'entity' AND test_table.value = 'my_id')
+        AND test_table.canonical_id IN ({ids} WHERE test_table.schema = 'Event')
         ORDER BY test_table.canonical_id
         """,
     )
@@ -262,18 +260,6 @@ def test_sql():
         ORDER BY test_table.canonical_id
         """,
     )
-    # the row-level escape hatch keeps the same predicates un-lifted, for
-    # callers that want the matching statements rather than the matching
-    # entities' statements
-    assert _compare_str(
-        q.sql.row_statements,
-        f"""
-        SELECT {fields} FROM test_table
-        WHERE test_table.dataset = :dataset_1 AND test_table.schema = :schema_1
-        ORDER BY test_table.canonical_id
-        """,
-    )
-
     # but we need complex query if we want a limit:
     assert "canonical_id IN" in str(q[:10].sql.statements)
 
@@ -299,9 +285,9 @@ def test_sql_ids():
     # they used to be OR-ed into one clause
     q = Query().where(M(entity_id="a", canonical_id="b"))
     assert (
-        "WHERE test_table.canonical_id = :canonical_id_1"
-        " AND test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id"
+        "WHERE test_table.canonical_id IN (SELECT DISTINCT test_table.canonical_id"
         " FROM test_table WHERE test_table.entity_id = :entity_id_1)"
+        " AND test_table.canonical_id = :canonical_id_1"
         in " ".join(str(q.sql.canonical_ids).split())
     )
 
@@ -395,9 +381,9 @@ def test_sql_boolean_tree():
         where(Query().where(P(name="jane"), P(country="de"))),
         f"""
         {ids} WHERE test_table.canonical_id IN
-            ({ids} WHERE test_table.prop = 'country' AND test_table.value = 'de')
-        AND test_table.canonical_id IN
             ({ids} WHERE test_table.prop = 'name' AND test_table.value = 'jane')
+        AND test_table.canonical_id IN
+            ({ids} WHERE test_table.prop = 'country' AND test_table.value = 'de')
         """,
     )
 
@@ -918,12 +904,20 @@ def test_sql_select_projection():
     sliced = _literal(Sql(q[:10], SqlSource(COREF)).statements)
     assert "coref.prop = 'id'" in sliced
 
-    # the row-level escape hatch is projected too
-    assert "coref.prop = 'id'" in _literal(Sql(q, SqlSource(COREF)).row_statements)
-
     # without a selection nothing changes
     plain = Query().where(M(schema="Person"))
     assert (
         "coref.prop"
         not in _literal(Sql(plain, SqlSource(COREF)).statements).split("WHERE", 1)[1]
     )
+
+
+def test_sql_entity_id_source():
+    # a source keyed by `entity_id` (as ftm-lakehouse's) reads `canonical_id`
+    # from its own column, as a filter and as an aggregation field
+    q = Query().where(M(canonical_id="c1"))
+    q = q.aggregate(A(count=M("id"), by=M("canonical_id")))
+    sql = Sql(q, SqlSource(COREF, id_column="entity_id"))
+    assert "coref.canonical_id = 'c1'" in _literal(sql.canonical_ids)
+    grouped = _literal(sql.grouped_aggregations(M("canonical_id")))
+    assert "coref.canonical_id AS gval" in grouped

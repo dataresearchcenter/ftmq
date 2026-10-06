@@ -37,11 +37,9 @@ lake = [
     "pyarrow (>=25.0.1,<26.0.0)",
     "pandas (>=3.0.6,<4.0.0)",
 ]
-aleph = ["furl (>=2.1.4,<3.0.0)", "alephclient (>=2.6.0,<3.0.0)"]
 search = ["tantivy (>=0.26.2,<0.27.0)"]
 api = [
     "fastapi (>=0.139.2,<0.140.0)",
-    "furl (>=2.1.4,<3.0.0)",
     "granian (>=2.8.3,<3.0.0)",
 ]
 
@@ -94,6 +92,6 @@ filterwarnings = [
 NOMENKLATURA_STATEMENT_TABLE = "test_table"
 NOMENKLATURA_DB_URL = "sqlite:///:memory:"
 DEBUG = 1
-MAX_SQL_AGG_GROUPS = 11
 FTMQ_API_USE_CACHE = 1
+FTMQ_API_BUILD_API_KEY = "secret-key-for-build"
 FTMQ_API_CACHE_URI = "memory:///ftmq-api-cache"

@@ -10,11 +10,7 @@ class MemoryQueryView(View, nk.MemoryView):
 
 
 class MemoryStore(Store, nk.MemoryStore):
+    view_class = MemoryQueryView
+
     def get_scope(self) -> Dataset:
         return get_scope_dataset(*self.entities.keys())
-
-    def view(
-        self, scope: Dataset | None = None, external: bool = False
-    ) -> MemoryQueryView:
-        scope = scope or self.dataset
-        return MemoryQueryView(self, scope, external=external)

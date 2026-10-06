@@ -7,7 +7,6 @@
 ### Supported backends
 
 - in memory: `get_store("memory://")`
-- Redis (or kvrocks): `get_store("redis://localhost")`
 - LevelDB: `get_store("leveldb://data")`
 - Sql:
     - sqlite: `get_store("sqlite:///data.db")`
@@ -57,7 +56,7 @@ with store.writer() as bulk:
         bulk.add_entity(proxy)
 ```
 
-An already resolved store still needs the linker on the read side, for one thing: a lookup by a *referent* id. The statements carry the canonical id, so `get_entity("left-1")` finds nothing - the reader maps the id through the linker first (the api does this in [`ftmq.api.store.View.get_entity`][ftmq.api.store.View.get_entity]). Everything else - filters, counts, aggregations - reads the resolved ids straight out of the data.
+An already resolved store still needs the linker on the read side, for one thing: a lookup by a *referent* id. The statements carry the canonical id, so `get_entity("left-1")` finds nothing - the reader maps the id through the linker first (the api does this in [`ftmq.api.store.get_entity`][ftmq.api.store.get_entity]). Everything else - filters, counts, aggregations - reads the resolved ids straight out of the data.
 
 The in-memory store is the exception to the write side: it keeps whatever canonical id a statement already carries, so merges have to be applied before writing to it. It cannot dump its statements either - `ftmq statements read` and [`Store.statements`][ftmq.store.base.Store.statements] need a SQL-family backend.
 

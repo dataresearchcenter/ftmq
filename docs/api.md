@@ -26,7 +26,7 @@ cat entities.ftm.json | ftmq apply-dataset -d my_dataset --replace-dataset -o en
 ftmq -i entities.my_dataset.ftm.json -o sqlite:///ftm.store
 ```
 
-Any [ftmq store backend](./stores.md) works as the target (`sqlite://`, `postgresql://`, `leveldb://`, `redis://`, ...); a sqlite file is the simplest to start with.
+Any [ftmq store backend](./stores.md) works as the target (`sqlite://`, `postgresql://`, `leveldb://`, ...); a sqlite file is the simplest to start with.
 
 ### 3. Build the search index
 
@@ -156,7 +156,7 @@ Aggregations ride on the entities query: add `metric:<func>=<field>` (and `facet
 
 `metric:` and `facet` take the same field spelling as `filter:`: `properties.<name>` for a property, `group.<name>` for a property-type group, `context.<name>` for a context column; meta fields and `year` are bare. The response keys the metrics the same way. A `facet` on its own groups an entity count: `?facet=group.countries` is short for `?metric:count=id&facet=group.countries`, and `metric:count=id` agrees with the response `total`.
 
-Each facet bucket carries its entity `count` and the requested metrics within it, under `metrics` and keyed as the top-level `metrics` (`{field: {func: value}}`). Buckets are ranked by entity count; `facet_sort=<func>:<field>[:asc]` ranks them by one of the requested metrics instead (descending by default). Each facet is capped to its top `MAX_SQL_AGG_GROUPS` buckets.
+Each facet bucket carries its entity `count` and the requested metrics within it, under `metrics` and keyed as the top-level `metrics` (`{field: {func: value}}`). Buckets are ranked by entity count; `facet_sort=<func>:<field>[:asc]` ranks them by one of the requested metrics instead (descending by default). Each facet returns its top 20 buckets, or `facet_size:<field>=N` (at most `FTMQ_API_MAX_FACET_SIZE`, 50, unless the request carries the `api_key`); the facet's `total` counts all its distinct values.
 
 ```bash
 /entities?filter:schema=Payment&metric:sum=properties.amountEur&facet=properties.beneficiary&facet_sort=sum:properties.amountEur&limit=0
@@ -222,7 +222,7 @@ The `/similar` endpoint was removed. `/aggregate` and `/search` are merged into 
 
 ## Settings
 
-Environment variables use the `FTMQ_API_` prefix (see [`Settings`][ftmq.api.settings.Settings]): `FTMQ_API_CATALOG` (catalog uri, required for multi-dataset instances), `FTMQ_API_STORE_URI` (defaults to nomenklatura's `NOMENKLATURA_DB_URL`), `FTMQ_API_RESOLVER_URI` (deduplication decisions: a sql database with a `resolver` table or a json edge dump; defaults to the store's own database - it expects an already resolved store, see below), `FTMQ_API_DEFAULT_LIMIT` (public pagination cap, default 100), `FTMQ_API_BUILD_API_KEY`, `FTMQ_API_MIN_SEARCH_LENGTH`, `FTMQ_API_ALLOWED_ORIGIN`, `FTMQ_API_INFO_TITLE` / `FTMQ_API_INFO_DESCRIPTION_URI` (ReDoc landing page). The search store location comes from `FTMQ_SEARCH_URI` (defaults to the nomenklatura database when it is sqlite).
+Environment variables use the `FTMQ_API_` prefix (see [`Settings`][ftmq.api.settings.Settings]): `FTMQ_API_CATALOG` (catalog uri, required for multi-dataset instances), `FTMQ_API_STORE_URI` (defaults to nomenklatura's `NOMENKLATURA_DB_URL`), `FTMQ_API_RESOLVER_URI` (deduplication decisions: a sql database with a `resolver` table or a json edge dump; defaults to the store's own database - it expects an already resolved store, see below), `FTMQ_API_DEFAULT_LIMIT` (public pagination cap, default 100), `FTMQ_API_MAX_FACET_SIZE` (public facet size cap, default 50), `FTMQ_API_BUILD_API_KEY` (unset by default, so no request exceeds the cap), `FTMQ_API_MIN_SEARCH_LENGTH`, `FTMQ_API_ALLOWED_ORIGIN`, `FTMQ_API_INFO_TITLE` / `FTMQ_API_INFO_DESCRIPTION_URI` (ReDoc landing page). The search store location comes from `FTMQ_SEARCH_URI` (defaults to the nomenklatura database when it is sqlite).
 
 Deduplication: `FTMQ_API_RESOLVER_URI` gives the api the merge decisions, which it uses to map a requested id to its canonical one - so `/entities/{referent_id}` serves the merged entity. It does **not** merge the data: the api expects a store whose statements already carry the canonical id (see [merged entities](./stores.md#merged-entities-resolver--linker) for how to resolve a store). Point it at an unresolved store and only id lookups behave, while filters, counts, aggregations and search still return the cluster members separately.
 

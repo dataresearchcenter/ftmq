@@ -1,16 +1,10 @@
-from collections.abc import Iterable
 from functools import cache
-from typing import Annotated
 
 from anystore.decorators import anycache
 from anystore.store import Store, get_store
 from anystore.util import make_data_checksum
-from fastapi import HTTPException
-from fastapi import Query as QueryField
-from fastapi import Request
+from fastapi import HTTPException, Request
 from fastapi.responses import RedirectResponse
-from followthemoney import EntityProxy
-from furl import furl
 
 from ftmq.api.query import RetrieveParams, build_query
 from ftmq.api.serialize import (
@@ -19,21 +13,21 @@ from ftmq.api.serialize import (
     EntityResponse,
     with_bucket_counts,
 )
-from ftmq.api.settings import Settings
-from ftmq.api.store import get_catalog, get_dataset, get_view
+from ftmq.api.settings import settings
+from ftmq.api.store import get_catalog, get_dataset, get_entity, get_view, shape
 from ftmq.model import Catalog, Dataset
 from ftmq.query import QueryError
 from ftmq.search.store import get_store as get_search_store
+from ftmq.store.base import View
+from ftmq.types import Entity
 from ftmq.util import get_dehydrated_entity
-
-settings = Settings()
 
 
 def get_cache_key(request: Request, *args, **kwargs) -> str | None:
     if not settings.use_cache:
         return None
-    f = furl(str(request.url))
-    return f"{f.host}{f.path}/{make_data_checksum(f.querystr)}"
+    url = request.url
+    return f"{url.hostname}{url.path}/{make_data_checksum(url.query)}"
 
 
 @cache
@@ -41,49 +35,28 @@ def get_cache() -> Store:
     return get_store(**settings.cache.model_dump())
 
 
-def get_retrieve_params(
-    nested: Annotated[
-        bool, QueryField(description="Inline adjacent entities instead of their ids")
-    ] = False,
-    featured: Annotated[
-        bool, QueryField(description="Only include featured properties and caption")
-    ] = False,
-    dehydrate: Annotated[
-        bool, QueryField(description="Only include id, schema and caption")
-    ] = False,
-    dehydrate_nested: Annotated[
-        bool, QueryField(description="Dehydrate nested entities")
-    ] = True,
-    stats: Annotated[
-        bool, QueryField(description="Include statistics in response")
-    ] = False,
-) -> RetrieveParams:
-    return RetrieveParams(
-        nested=nested,
-        featured=featured,
-        dehydrate=dehydrate,
-        dehydrate_nested=dehydrate_nested,
-        stats=stats,
-    )
+def get_nested(view: View, entities: list[Entity], params: RetrieveParams) -> list:
+    """The entities the given ones reference, to inline with `nested=true`."""
+    if not params.nested:
+        return []
+    adjacents = view.get_adjacents(entities)
+    if params.dehydrate_nested:
+        return [get_dehydrated_entity(e) for e in adjacents]
+    return list(adjacents)
 
 
 @anycache(store=get_cache(), key_func=get_cache_key, model=Catalog)
 def dataset_list(request: Request) -> Catalog:
     catalog = get_catalog()
-    datasets: list[Dataset] = []
     for dataset in catalog.datasets:
-        view = get_view(dataset.name)
-        dataset.apply_stats(view.stats())
-        datasets.append(dataset)
-    catalog.datasets = datasets
+        dataset.apply_stats(get_view(dataset.name).stats())
     return catalog
 
 
 @anycache(store=get_cache(), key_func=get_cache_key, model=Dataset)
 def dataset_detail(request: Request, name: str) -> Dataset:
-    view = get_view(name)
     dataset = get_dataset(name)
-    dataset.apply_stats(view.stats())
+    dataset.apply_stats(get_view(name).stats())
     return dataset
 
 
@@ -107,30 +80,23 @@ def entity_list(
                 request=request,
                 entities=hits,
                 query=query,
-                count=len(hits),
+                total=len(hits),
                 query_q=q,
             )
-        entities: list = []
-        adjacents: Iterable[EntityProxy] = []
+        entities: list[Entity] = []
         # `limit=0` returns only aggregations / stats (openaleph-style facets),
         # so the entity fetch is skipped
         if query.limit != 0:
-            entities = [e for e in view.get_entities(query, retrieve_params)]
-            if retrieve_params.nested:
-                adjacents = view.get_adjacents(entities)
-                if retrieve_params.dehydrate_nested:
-                    adjacents = [get_dehydrated_entity(e) for e in adjacents]
-        aggregations = None
-        if query.aggregations:
-            aggregations = view.aggregations(with_bucket_counts(query))
+            entities = [shape(e, retrieve_params) for e in view.query(query)]
+        stats = view.stats(query) if retrieve_params.stats else None
         return EntitiesResponse.from_view(
             request=request,
             entities=entities,
             query=query,
-            adjacents=adjacents,
-            stats=view.stats(query) if retrieve_params.stats else None,
-            count=view.count(query) if not retrieve_params.stats else 0,
-            aggregations=aggregations,
+            adjacents=get_nested(view, entities, retrieve_params),
+            stats=stats,
+            total=stats.entity_count if stats else view.count(query),
+            aggregations=view.aggregations(with_bucket_counts(query)),
         )
     except QueryError as e:
         raise HTTPException(400, detail=[str(e)])
@@ -142,14 +108,9 @@ def entity_response(
     entity_id: str,
     retrieve_params: RetrieveParams,
 ) -> EntityResponse:
-    view = get_view()
-    entity = view.get_entity(entity_id, retrieve_params)
-    adjacents: Iterable[EntityProxy] = []
-    if retrieve_params.nested:
-        adjacents = [e[1] for e in view.get_adjacent(entity)]
-        if retrieve_params.dehydrate_nested:
-            adjacents = [get_dehydrated_entity(e) for e in adjacents]
-    return EntityResponse.from_entity(entity, adjacents)
+    entity = get_entity(entity_id, retrieve_params)
+    adjacents = get_nested(get_view(), [entity], retrieve_params)
+    return EntityResponse.from_proxy(entity, adjacents)
 
 
 def entity_detail(
@@ -159,9 +120,8 @@ def entity_detail(
 ) -> EntityResponse | RedirectResponse:
     entity = entity_response(request, entity_id, retrieve_params)
     if entity.id != entity_id:  # merged into another entity
-        url = furl(request.url)
-        url.path.segments[-1] = entity.id
-        response = RedirectResponse(url)
+        path = f"{request.url.path.rsplit('/', 1)[0]}/{entity.id}"
+        response = RedirectResponse(str(request.url.replace(path=path)))
         response.headers["X-Entity-ID"] = entity.id
         response.headers["X-Entity-Schema"] = entity.schema_
         return response
@@ -170,7 +130,7 @@ def entity_detail(
 
 @anycache(store=get_cache(), key_func=get_cache_key, model=AutocompleteResponse)
 def autocomplete(request: Request, q: str) -> AutocompleteResponse:
-    if q is None or len(q) < settings.min_search_length:
+    if len(q) < settings.min_search_length:
         raise HTTPException(400, [f"Invalid search query: `{q}`"])
     store = get_search_store()
     return AutocompleteResponse(candidates=store.autocomplete(q))

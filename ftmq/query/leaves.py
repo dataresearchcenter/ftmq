@@ -18,7 +18,7 @@ per-family entity access plus correct `null` (present/absent) semantics.
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from typing import Any, Iterable, Iterator, TypedDict
+from typing import Any, Callable, Iterable, Iterator, TypedDict
 
 from banal import as_bool, ensure_list, hash_data, is_listish
 from followthemoney import model
@@ -49,27 +49,26 @@ class LeafDict(TypedDict):
     v: "str | bool | list[str]"  # cast value (list for `in` / `not_in`)
 
 
-# the value comparators of the query grammar (in-memory semantics in
-# `Leaf.match`, SQL translation in `Sql.get_expression`)
-COMPARATORS: frozenset[str] = frozenset(
-    {
-        "eq",
-        "not",
-        "in",
-        "not_in",
-        "null",
-        "gt",
-        "gte",
-        "lt",
-        "lte",
-        "like",
-        "ilike",
-        "notlike",
-        "notilike",
-        "startswith",
-        "endswith",
-    }
-)
+# the value comparators of the query grammar: their in-memory test, `(entity
+# value, leaf value)`, plus `null`, a presence check (see `Leaf.apply`); SQL
+# translation in `Sql.get_expression`
+MATCHERS: dict[str, Callable[[Any, Any], Any]] = {
+    "eq": lambda v, x: v == x,
+    "not": lambda v, x: v != x,
+    "in": lambda v, x: v in x,
+    "not_in": lambda v, x: v not in x,
+    "gt": lambda v, x: v > x,
+    "gte": lambda v, x: v >= x,
+    "lt": lambda v, x: v < x,
+    "lte": lambda v, x: v <= x,
+    "like": lambda v, x: x in v,
+    "ilike": lambda v, x: x.lower() in v.lower(),
+    "notlike": lambda v, x: x not in v,
+    "notilike": lambda v, x: x.lower() not in v.lower(),
+    "startswith": lambda v, x: v.startswith(x),
+    "endswith": lambda v, x: v.endswith(x),
+}
+COMPARATORS: frozenset[str] = frozenset(MATCHERS) | {"null"}
 
 
 # the comparators that bound a value from one side. Two of them on the same
@@ -243,36 +242,10 @@ class Leaf:
 
     def match(self, value: Any) -> bool:
         """Apply the comparator to one entity value (the in-memory match)."""
-        c = self.comparator
-        if c == "eq":
-            return bool(value == self.value)
-        if c == "not":
-            return bool(value != self.value)
-        if c == "in":
-            return value in self.value
-        if c == "not_in":
-            return value not in self.value
-        if c == "startswith":
-            return bool(value.startswith(self.value))
-        if c == "endswith":
-            return bool(value.endswith(self.value))
-        if c == "gt":
-            return bool(value > self.value)
-        if c == "gte":
-            return bool(value >= self.value)
-        if c == "lt":
-            return bool(value < self.value)
-        if c == "lte":
-            return bool(value <= self.value)
-        if c == "like":
-            return self.value in value
-        if c == "ilike":
-            return bool(self.value.lower() in value.lower())
-        if c == "notlike":
-            return self.value not in value
-        if c == "notilike":
-            return bool(self.value.lower() not in value.lower())
-        raise QueryError(f"Comparator not implemented: `{c}`")
+        matcher = MATCHERS.get(self.comparator)
+        if matcher is None:
+            raise QueryError(f"Comparator not implemented: `{self.comparator}`")
+        return bool(matcher(value, self.value))
 
     def match_row(self, statement: Any) -> bool:
         """Test this condition against a single statement row.
@@ -316,7 +289,7 @@ class Leaf:
         value = self.value
         if isinstance(value, (set, frozenset)):
             value = sorted(value)
-        return LeafDict(t=self.family, f=self.key, op=str(self.comparator), v=value)
+        return LeafDict(t=self.family, f=self.key, op=self.comparator, v=value)
 
 
 class RefLeaf(Leaf):
@@ -358,7 +331,7 @@ class SchemaLeaf(RefLeaf):
         super().__init__(value, comparator)
         # validate real schema names for equality-style comparators (a
         # `startswith`/`ilike` prefix is not expected to be a full schema)
-        if str(self.comparator) in ("eq", "in", "not", "not_in"):
+        if self.comparator in ("eq", "in", "not", "not_in"):
             for name in ensure_list(value):
                 if model.get(name) is None:
                     raise QueryError(f"Invalid schema: `{name}`")
@@ -380,22 +353,22 @@ class SchemataLeaf(Leaf):
             self.schemata.add(schema)
         if not self.schemata:
             raise QueryError(f"Invalid schemata: `{value}`")
-        if str(self.comparator) not in ("eq", "in", "not", "not_in"):
+        if self.comparator not in ("eq", "in", "not", "not_in"):
             raise QueryError(f"Invalid comparator for `schemata`: `{self.comparator}`")
 
-    # defining `__eq__` would set `__hash__` to None; the base hash (over
-    # `field_dict`) stays correct, as `schemata` is derived from value +
-    # comparator
-    __hash__ = Leaf.__hash__
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, SchemataLeaf):
-            return False
-        return super().__eq__(other) and self.schemata == other.schemata
+    @property
+    def names(self) -> set[str]:
+        """The concrete schemata matched: each one plus its non-abstract
+        descendants."""
+        names: set[str] = set()
+        for schema in self.schemata:
+            names.add(schema.name)
+            names.update(d.name for d in schema.descendants if not d.abstract)
+        return names
 
     def apply(self, entity: EntityProxy) -> bool:
         hit = bool(self.schemata & entity.schema.schemata)
-        if str(self.comparator) in ("not", "not_in"):
+        if self.comparator in ("not", "not_in"):
             return not hit
         return hit
 
@@ -473,82 +446,34 @@ _META_LEAVES: dict[str, type[Leaf]] = {
 }
 
 
-def make_meta_leaf(key: str, value: Any) -> Leaf:
-    """Build a meta leaf (the `M` family) from a lookup.
+def make_leaf(family: str, key: str, value: Any) -> Leaf:
+    """Build a leaf of a field family from a `field__comparator` lookup.
 
     Args:
-        key: A meta lookup key, e.g. `dataset__in`, `schema` or `id__startswith`.
+        family: `M` (meta), `P` (property), `G` (property-type group) or `C`
+            (context column; any identifier, checked at SQL compile time).
+        key: A lookup key, e.g. `name`, `amountEur__gte` or `schema__in`.
         value: The lookup value.
 
     Returns:
-        The resolved meta leaf.
+        The leaf.
 
     Raises:
-        QueryError: If the field is not a known meta field.
+        QueryError: For an unknown family, meta field, property or group.
     """
     field, comparator = parse_lookup(key)
-    cls = _META_LEAVES.get(field)
-    if cls is None:
-        raise QueryError(f"Unknown meta field: `{field}`")
-    return cls(value, comparator)
-
-
-def make_property_leaf(key: str, value: Any) -> Leaf:
-    """Build a property leaf (the `P` family) from a lookup.
-
-    Args:
-        key: A property lookup key, e.g. `name` or `amountEur__gte`.
-        value: The lookup value.
-
-    Returns:
-        The resolved property leaf.
-
-    Raises:
-        QueryError: If the property is not a valid FtM property.
-    """
-    prop, comparator = parse_lookup(key)
-    return PropertyLeaf(prop, value, comparator)
-
-
-def make_group_leaf(key: str, value: Any) -> Leaf:
-    """Build a property-type group leaf (the `G` family) from a lookup.
-
-    Args:
-        key: A group lookup key, e.g. `countries`, `dates__gte` or `entities`.
-        value: The lookup value.
-
-    Returns:
-        The resolved group leaf.
-
-    Raises:
-        QueryError: If the group is not a valid `registry.groups` name.
-    """
-    group, comparator = parse_lookup(key)
-    return GroupLeaf(group, value, comparator)
-
-
-def make_context_leaf(key: str, value: Any) -> Leaf:
-    """Build a context leaf (the `C` family) from a lookup.
-
-    Args:
-        key: A context / column key, e.g. `origin`, `fragment` or
-            `first_seen__gte`. Any identifier is accepted; validity of a SQL
-            column is checked at compile time.
-        value: The lookup value.
-
-    Returns:
-        The resolved context leaf.
-    """
-    field, comparator = parse_lookup(key)
-    return ContextLeaf(field, value, comparator)
-
-
-LEAF_FACTORIES = {
-    "M": make_meta_leaf,
-    "P": make_property_leaf,
-    "G": make_group_leaf,
-    "C": make_context_leaf,
-}
+    if family == "M":
+        cls = _META_LEAVES.get(field)
+        if cls is None:
+            raise QueryError(f"Unknown meta field: `{field}`")
+        return cls(value, comparator)
+    if family == "P":
+        return PropertyLeaf(field, value, comparator)
+    if family == "G":
+        return GroupLeaf(field, value, comparator)
+    if family == "C":
+        return ContextLeaf(field, value, comparator)
+    raise QueryError(f"Unknown field family: `{family}`")
 
 
 def leaf_from_dict(data: LeafDict) -> Leaf:
@@ -563,4 +488,4 @@ def leaf_from_dict(data: LeafDict) -> Leaf:
     """
     field, op, value = data["f"], data["op"], data["v"]
     key = field if op == "eq" else f"{field}__{op}"
-    return LEAF_FACTORIES[data["t"]](key, value)
+    return make_leaf(data["t"], key, value)

@@ -1,21 +1,35 @@
 from collections import defaultdict
+from dataclasses import dataclass
+from typing import Annotated
 
-from fastapi import HTTPException, Request
-from pydantic import BaseModel
+from fastapi import HTTPException
+from fastapi import Query as QueryField
+from fastapi import Request
 
-from ftmq.api.settings import Settings
+from ftmq.api.settings import settings
 from ftmq.api.store import get_catalog
 from ftmq.query import Query
 
-settings = Settings()
 
+@dataclass(frozen=True)
+class RetrieveParams:
+    """The response-shaping query params (a `Depends()` dependency)."""
 
-class RetrieveParams(BaseModel):
-    nested: bool
-    featured: bool
-    dehydrate: bool
-    dehydrate_nested: bool
-    stats: bool
+    nested: Annotated[
+        bool, QueryField(description="Inline adjacent entities instead of their ids")
+    ] = False
+    featured: Annotated[
+        bool, QueryField(description="Only include featured properties and caption")
+    ] = False
+    dehydrate: Annotated[
+        bool, QueryField(description="Only include id, schema and caption")
+    ] = False
+    dehydrate_nested: Annotated[
+        bool, QueryField(description="Dehydrate nested entities")
+    ] = True
+    stats: Annotated[bool, QueryField(description="Include statistics in response")] = (
+        False
+    )
 
 
 def params_from_request(request: Request) -> dict[str, list[str]]:
@@ -39,8 +53,9 @@ def build_query(request: Request, authenticated: bool | None = False) -> Query:
     plain params.
 
     Non-query params (`q`, `api_key`, retrieve flags) are ignored by the
-    parser. The limit is capped to `settings.default_limit` unless the request
-    is authenticated; datasets are validated against the catalog.
+    parser. The limit is capped to `settings.default_limit` and each facet
+    size to `settings.max_facet_size`, unless the request is authenticated;
+    datasets are validated against the catalog.
 
     Raises:
         HTTPException: 422 for a dataset not in the catalog.
@@ -60,6 +75,10 @@ def build_query(request: Request, authenticated: bool | None = False) -> Query:
     limit = q.limit if q.limit is not None else settings.default_limit
     if not authenticated:
         limit = min(limit, settings.default_limit)
+        sizes = {r: q.get_facet_size(r) for r in q.facet_sizes}
+        q = q._chain(
+            facet_sizes={r: min(n, settings.max_facet_size) for r, n in sizes.items()}
+        )
     offset = q.offset or 0
     q = q[offset : offset + limit]
     names = get_catalog().names

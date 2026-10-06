@@ -81,6 +81,16 @@ interface QueryInit {
   slice?: Slice | null;
   selection?: Ref[];
   facetSort?: FacetOrder | null;
+  facetSizes?: Record<string, number>;
+}
+
+/** Facet sizes keyed by wire spelling, in sorted key order. */
+function sortedSizes(sizes: Record<string, number>): Record<string, number> {
+  return Object.fromEntries(
+    Object.keys(sizes)
+      .sort(byString)
+      .map((k) => [k, sizes[k]]),
+  );
 }
 
 /** Dedupe and order refs by their wire spelling, as the Python side does. */
@@ -98,6 +108,7 @@ export class Query {
   sliceRange: Slice | null;
   selection: Ref[];
   facetSort: FacetOrder | null;
+  facetSizes: Record<string, number>;
 
   constructor(init: QueryInit = {}) {
     this.q = init.q ?? null;
@@ -106,6 +117,7 @@ export class Query {
     this.sliceRange = init.slice ?? null;
     this.selection = uniqueRefs(init.selection ?? []);
     this.facetSort = init.facetSort ?? null;
+    this.facetSizes = sortedSizes(init.facetSizes ?? {});
   }
 
   private chain(patch: QueryInit): Query {
@@ -121,6 +133,8 @@ export class Query {
         patch.selection !== undefined ? patch.selection : this.selection,
       facetSort:
         patch.facetSort !== undefined ? patch.facetSort : this.facetSort,
+      facetSizes:
+        patch.facetSizes !== undefined ? patch.facetSizes : this.facetSizes,
     });
   }
 
@@ -162,6 +176,16 @@ export class Query {
     const [func] = funcs;
     const facetSort = new FacetOrder(func, spec[func] as Ref, !!spec.ascending);
     return this.chain({ facetSort });
+  }
+
+  /** Set how many buckets a facet returns: `q.facetSize(P("beneficiary"), 50)`. */
+  facetSize(ref: Ref, size: number): Query {
+    if (!Number.isInteger(size) || size < 1) {
+      throw new QueryError(
+        `Invalid facet size for \`${ref.wire}\`: \`${size}\``,
+      );
+    }
+    return this.chain({ facetSizes: { ...this.facetSizes, [ref.wire]: size } });
   }
 
   /**
@@ -237,6 +261,7 @@ export class Query {
       data.aggregations = aggregationsToDict(this.aggregations);
     }
     if (this.facetSort) data.facet_sort = this.facetSort.wire;
+    if (Object.keys(this.facetSizes).length) data.facet_size = this.facetSizes;
     if (this.selection.length) {
       data.select = this.selection.map((ref) => ref.wire);
     }
@@ -259,7 +284,16 @@ export class Query {
     const facetSort = data.facet_sort
       ? FacetOrder.fromWire(String(data.facet_sort))
       : null;
-    return new Query({ q, sort, slice, aggregations, selection, facetSort });
+    const facetSizes = data.facet_size ?? {};
+    return new Query({
+      q,
+      sort,
+      slice,
+      aggregations,
+      selection,
+      facetSort,
+      facetSizes,
+    });
   }
 
   toParams(): Params {
@@ -268,6 +302,9 @@ export class Query {
       Object.assign(params, aggregationsToParams(this.aggregations));
     }
     if (this.facetSort) params.facet_sort = [this.facetSort.wire];
+    for (const [field, size] of Object.entries(this.facetSizes)) {
+      params[`facet_size:${field}`] = [String(size)];
+    }
     Object.assign(params, selectionToParams(this.selection));
     if (this.sort) {
       const direction = this.sort.ascending ? "asc" : "desc";
@@ -302,6 +339,17 @@ export class Query {
       }
       facetSort = FacetOrder.fromWire(items.facet_sort[0]);
     }
+    const facetSizes: Record<string, number> = {};
+    for (const [key, values] of Object.entries(items)) {
+      if (!key.startsWith("facet_size:")) continue;
+      const field = key.slice("facet_size:".length);
+      if (values.length > 1 || !/^\d+$/.test(values[0])) {
+        throw new QueryError(
+          `Invalid facet size for \`${field}\`: \`${values}\``,
+        );
+      }
+      facetSizes[refFromWire(field).wire] = parseInt(values[0], 10);
+    }
     let slice: Slice | null = null;
     if ("limit" in items || "offset" in items) {
       const offset = parseInt((items.offset ?? ["0"])[0] || "0", 10) || 0;
@@ -315,6 +363,7 @@ export class Query {
       aggregations: aggs,
       selection: paramsToSelection(items),
       facetSort,
+      facetSizes,
     });
   }
 
@@ -354,6 +403,9 @@ export class Query {
       Object.assign(params, aggregationsToParams(this.aggregations));
     }
     if (this.facetSort) params.facet_sort = [this.facetSort.wire];
+    for (const [field, size] of Object.entries(this.facetSizes)) {
+      params[`facet_size:${field}`] = [String(size)];
+    }
     Object.assign(params, selectionToParams(this.selection));
     if (this.sort) {
       const direction = this.sort.ascending ? "asc" : "desc";

@@ -77,28 +77,15 @@ def get_store(
             return SQLStore(dataset, uri=uri, linker=linker, cast_types=cast_types)
         except ImportError:
             raise ImportError("Can not load SqlStore. Install sql dependencies.")
-    if "aleph" in parsed.scheme:
-        try:
-            from ftmq.store.aleph import AlephStore
-
-            # no `cast_types`: the aleph writer posts entity proxies to the
-            # remote api, no statements pass through it
-            return AlephStore.from_uri(uri, dataset=dataset, linker=linker)
-        except ImportError:
-            raise ImportError("Can not load AlephStore. Install `alephclient`")
     if uri.startswith("lake+"):
         try:
             from ftmq.store.lake import LakeStore
 
-            uri = str(uri)[5:]
             return LakeStore(
-                uri=uri, dataset=dataset, linker=linker, cast_types=cast_types
+                uri=uri[5:], dataset=dataset, linker=linker, cast_types=cast_types
             )
         except ImportError:
             raise ImportError("Can not load LakeStore. Install `[lake]` dependencies")
-    if uri.startswith("fragments+"):
-        uri = str(uri)[10:]
-        raise NotImplementedError(uri)
     raise NotImplementedError(uri)
 
 

@@ -10,7 +10,6 @@ from nomenklatura.resolver import Resolver
 from ftmq.query import A, C, G, M, P, Query, Year
 from ftmq.query.refs import PropRef
 from ftmq.store import MemoryStore, Store, get_store
-from ftmq.store.aleph import AlephStore, parse_uri
 from ftmq.store.base import (
     PreservingLinker,
     get_linker,
@@ -219,7 +218,7 @@ def _run_store_test(cls: type[Store], proxies, test_pop: bool | None = True, **k
                         "9fbaa5733790781e56eec4998aeacf5093dccbf5": 290725,
                         "9e292c150c617eec85e5479c5f039f8441569441": 175000,
                         "49d46f7e70e19bc497a17734af53ea1a00c831d6": 1221256,
-                        "4b308dc2b128377e63a4bf2e4c1b9fcd59614eee": 52000,  # pytest: MAX_SQL_AGG_GROUPS=11
+                        "4b308dc2b128377e63a4bf2e4c1b9fcd59614eee": 52000,
                     }
                 }
             }
@@ -418,6 +417,69 @@ def test_store_facet_sort(tmp_path, donations, uri):
         Year(), limit=2
     )
     assert {row[2] for row in store._execute(stmt, stream=False)} == {"2008", "2009"}
+
+
+@pytest.mark.parametrize("uri", ["sqlite:///{}/s.db", "duckdb://{}/s.duckdb"])
+def test_store_sql_count_not_in(tmp_path, proxies, uri):
+    store = get_store(uri.format(tmp_path))
+    with store.writer() as bulk:
+        for proxy in proxies:
+            bulk.add_entity(proxy)
+    view = store.default_view()
+    assert view.count() == len(proxies)
+    # `not_in` compiles as it applies in memory
+    q = Query().where(M(dataset__not_in=["donations"]))
+    expected = {e.id for e in q.apply_iter(proxies)}
+    assert len(expected) == 151
+    assert {e.id for e in view.query(q)} == expected
+
+
+def test_store_lake_view_filter(tmp_path, donations):
+    # the view filter applies to (unioned) aggregations too
+    from ftmq.store.lake import TABLE
+
+    with LakeStore(uri=tmp_path).writer() as bulk:
+        for proxy in donations:
+            bulk.add_entity(proxy)
+    lake = LakeStore(uri=tmp_path, view_filter=TABLE.c.schema == "Payment")
+    q = Query().aggregate(A(count=M("id"), by=M("schema")))
+    res = lake.default_view().aggregations(q)
+    assert res["groups"]["schema"]["count"]["id"] == {"Payment": 290}
+
+
+def test_store_facet_size(tmp_path, donations):
+    # every backend keeps the same top buckets, ties broken by value
+    stores = [
+        get_store("memory://", dataset="donations"),
+        get_store(f"sqlite:///{tmp_path}/f.db", dataset="donations"),
+        get_store(f"duckdb://{tmp_path}/f.duckdb", dataset="donations"),
+        LakeStore(uri=tmp_path / "lake", dataset="donations"),
+    ]
+    for store in stores:
+        with store.writer() as bulk:
+            for proxy in donations:
+                bulk.add_entity(proxy)
+    counted = Query().where(M(schema="Payment"))
+    counted = counted.aggregate(A(count=M("id"), by=P("beneficiary")))
+    summed = Query().where(M(schema="Payment"))
+    summed = summed.aggregate(A(sum=P("amountEur"), by=P("beneficiary")))
+    summed = summed.order_facets(sum=P("amountEur"))
+    for q, func, field in (
+        (counted, "count", "id"),
+        (summed, "sum", "properties.amountEur"),
+    ):
+        for size in range(1, 12):
+            sized = q.facet_size(P("beneficiary"), size)
+            kept = [
+                set(
+                    store.default_view().aggregations(sized)["groups"][
+                        "properties.beneficiary"
+                    ][func][field]
+                )
+                for store in stores
+            ]
+            assert len(kept[0]) == size
+            assert all(k == kept[0] for k in kept), (func, size)
 
 
 def test_store_scoped_views(tmp_path):
@@ -794,26 +856,8 @@ def test_store_init(tmp_path):
     assert isinstance(store, DuckDBStore)
     store = get_store(dataset="test_dataset")
     assert store.dataset.name == "test_dataset"
-    store = get_store("http+aleph://test_dataset@aleph.example.org")
-    assert isinstance(store, AlephStore)
-    assert store.dataset.name == "test_dataset"
     store = get_store(f"lake+{tmp_path}")
     assert isinstance(store, LakeStore)
-
-
-def test_store_aleph():
-    assert parse_uri("http://localhost") == ("http://localhost", None, None)
-    assert parse_uri("http://localhost") == ("http://localhost", None, None)
-    assert parse_uri("https://dataset@localhost") == (
-        "https://localhost",
-        None,
-        "dataset",
-    )
-    assert parse_uri("https://dataset:api_key@localhost") == (
-        "https://localhost",
-        "api_key",
-        "dataset",
-    )
 
 
 def test_store_fragments_to_lake(tmp_path):

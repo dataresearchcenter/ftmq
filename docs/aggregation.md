@@ -108,15 +108,17 @@ q.to_string()   # "facet=properties.beneficiary&metric:sum=properties.amountEur"
 
 ### Ranking facet buckets
 
-Buckets are ranked by entity count. [`order_facets`][ftmq.Query.order_facets] ranks them by one of the query's grouped metrics instead (descending unless `ascending=True`), spelled `facet_sort=<func>:<field>[:asc]` in URL params and in `to_dict`. The SQL backends cap each facet to its top `MAX_SQL_AGG_GROUPS` buckets.
+Buckets are ranked by entity count. [`order_facets`][ftmq.Query.order_facets] ranks them by one of the query's grouped metrics instead (descending unless `ascending=True`), spelled `facet_sort=<func>:<field>[:asc]` in URL params and in `to_dict`.
+
+Each facet keeps its top 20 buckets in that ranking, ties broken by value, on every backend. [`facet_size`][ftmq.Query.facet_size] sets another number per facet, spelled `facet_size:<field>=N` in URL params and `{"facet_size": {field: N}}` in `to_dict`; neither has an RQL operator.
 
 ```python
 q = Query().aggregate(A(sum=P("amountEur"), by=P("beneficiary")))
-q = q.order_facets(sum=P("amountEur"))
-q.to_string()   # "facet=properties.beneficiary&facet_sort=sum%3Aproperties.amountEur&metric:sum=properties.amountEur"
+q = q.order_facets(sum=P("amountEur")).facet_size(P("beneficiary"), 5)
+q.to_string()   # "facet=properties.beneficiary&facet_size:properties.beneficiary=5&facet_sort=sum%3Aproperties.amountEur&metric:sum=properties.amountEur"
 ```
 
-The metric has to be a grouped aggregation of the query, otherwise a [`QueryError`][ftmq.QueryError] is raised. Like sort and slice, the facet sort has no RQL operator.
+The metric has to be a grouped aggregation, and a facet size a facet, of the query; otherwise a [`QueryError`][ftmq.QueryError] is raised.
 
 ## Reference
 

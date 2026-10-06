@@ -26,7 +26,7 @@ flowchart TD
     Q -->|to_params / to_string| PARAMS
 
     subgraph run [Run against entities]
-        MEM["in-memory<br/>memory · level · redis stores<br/>smart_read_proxies (files, streams)"]
+        MEM["in-memory<br/>memory · level stores<br/>smart_read_proxies (files, streams)"]
         SQLB["SQL · Lake stores<br/>(statement tables)"]
     end
 
@@ -108,7 +108,7 @@ An entity is a set of statements, so a condition on it is really "some statement
 
 So `P(date__gte="2024-10") & P(date__lt="2024-11")` is one date inside October 2024, not one date after it plus another before December. Only conjunctions join: under `|` the alternatives stay independent, and `~` negates the joined condition ("no statement is both").
 
-This narrows which *entities* match; it never narrows what comes back. A matching entity is still assembled from all of its statements, including those from other origins - see [`select`](#selecting-properties) to narrow that, and [`row_statements`][ftmq.query.sql.Sql.row_statements] to read only the matching rows.
+This narrows which *entities* match; it never narrows what comes back. A matching entity is still assembled from all of its statements, including those from other origins - see [`select`](#selecting-properties) to narrow that.
 
 !!! note "Two known gaps"
     Co-reference between *distinct* row-scoped columns needs the statements themselves. Every store-backed entity carries them, so SQL and memory agree; an entity read off a json stream has only an aggregated context (`origin` a set of origins, `first_seen` the earliest), where the correlation between two columns is already lost - there each condition is tested on its own. Everything else in the table behaves identically everywhere.

@@ -1643,6 +1643,93 @@
     }
   },
   {
+    "name": "facet_size",
+    "dict": {
+      "aggregations": [
+        {
+          "func": "count",
+          "field": "id",
+          "by": [
+            "year"
+          ]
+        },
+        {
+          "func": "sum",
+          "field": "properties.amountEur",
+          "by": [
+            "properties.beneficiary"
+          ]
+        }
+      ],
+      "facet_size": {
+        "properties.beneficiary": 50,
+        "year": 5
+      }
+    },
+    "params": {
+      "metric:count": [
+        "id"
+      ],
+      "metric:sum": [
+        "properties.amountEur"
+      ],
+      "facet": [
+        "properties.beneficiary",
+        "year"
+      ],
+      "facet_size:properties.beneficiary": [
+        "50"
+      ],
+      "facet_size:year": [
+        "5"
+      ]
+    },
+    "string": "facet=properties.beneficiary&facet=year&facet_size:properties.beneficiary=50&facet_size:year=5&metric:count=id&metric:sum=properties.amountEur",
+    "rql": "and(aggregate(properties.beneficiary,sum(properties.amountEur)),aggregate(year,count(id)))",
+    "params_dict": {
+      "aggregations": [
+        {
+          "func": "count",
+          "field": "id",
+          "by": [
+            "properties.beneficiary",
+            "year"
+          ]
+        },
+        {
+          "func": "sum",
+          "field": "properties.amountEur",
+          "by": [
+            "properties.beneficiary",
+            "year"
+          ]
+        }
+      ],
+      "facet_size": {
+        "properties.beneficiary": 50,
+        "year": 5
+      }
+    },
+    "rql_dict": {
+      "aggregations": [
+        {
+          "func": "count",
+          "field": "id",
+          "by": [
+            "year"
+          ]
+        },
+        {
+          "func": "sum",
+          "field": "properties.amountEur",
+          "by": [
+            "properties.beneficiary"
+          ]
+        }
+      ]
+    }
+  },
+  {
     "name": "facet_sort_asc",
     "dict": {
       "aggregations": [

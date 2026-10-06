@@ -250,29 +250,6 @@ frozenlist = ">=1.1.0"
 typing-extensions = {version = ">=4.2", markers = "python_version < \"3.13\""}
 
 [[package]]
-name = "alephclient"
-version = "2.7.0"
-description = "Command-line client for Aleph API"
-optional = true
-python-versions = "*"
-groups = ["main"]
-markers = "extra == \"aleph\""
-files = [
-    {file = "alephclient-2.7.0-py2.py3-none-any.whl", hash = "sha256:9625b659a6f993f294ba22c52edbff273f7356890b95ae655e8479e8e71972bb"},
-    {file = "alephclient-2.7.0.tar.gz", hash = "sha256:e14623d5e459a13a63c73bf314f9b4d9b48cbcbbc8dc82cd63e5301b73750782"},
-]
-
-[package.dependencies]
-banal = ">=1.0.1"
-click = ">=7.0"
-pyyaml = "*"
-requests = ">=2.21.0"
-requests_toolbelt = ">=0.9.1"
-
-[package.extras]
-dev = ["mypy", "pytest", "pytest-mock (>=1.10.0)", "types-requests", "types-setuptools", "wheel"]
-
-[[package]]
 name = "annotated-doc"
 version = "0.0.5"
 description = "Document parameters, class attributes, return types, and variables inline, with Annotated."
@@ -1655,23 +1632,6 @@ test = ["aiohttp (!=4.0.0a0,!=4.0.0a1)", "numpy", "pytest", "pytest-asyncio (!=0
 test-downstream = ["aiobotocore (>=2.5.4,<3.0.0)", "dask[dataframe,test]", "moto[server] (>4,<5)", "pytest-timeout", "xarray", "zarr"]
 test-full = ["adlfs", "aiohttp (!=4.0.0a0,!=4.0.0a1)", "backports-zstd ; python_version < \"3.14\"", "cloudpickle", "dask", "distributed", "dropbox", "dropboxdrivefs", "fastparquet", "fusepy", "gcsfs (>=2026.4.0)", "jinja2", "kerchunk", "libarchive-c", "lz4", "notebook", "numpy", "ocifs", "pandas (<3.0.0)", "panel", "paramiko", "pyarrow (>=1)", "pyftpdlib", "pygit2", "pytest", "pytest-asyncio (!=0.22.0)", "pytest-benchmark", "pytest-cov", "pytest-mock", "pytest-recording", "pytest-rerunfailures", "python-snappy", "requests", "s3fs (>=2026.6.0)", "smbprotocol", "tqdm", "urllib3", "zarr (<3.2.0)", "zstandard ; python_version < \"3.14\""]
 tqdm = ["tqdm"]
-
-[[package]]
-name = "furl"
-version = "2.1.4"
-description = "URL manipulation made simple."
-optional = true
-python-versions = "*"
-groups = ["main"]
-markers = "extra == \"aleph\" or extra == \"api\""
-files = [
-    {file = "furl-2.1.4-py2.py3-none-any.whl", hash = "sha256:da34d0b34e53ffe2d2e6851a7085a05d96922b5b578620a37377ff1dbeeb11c8"},
-    {file = "furl-2.1.4.tar.gz", hash = "sha256:877657501266c929269739fb5f5980534a41abd6bbabcb367c136d1d3b2a6015"},
-]
-
-[package.dependencies]
-orderedmultidict = ">=1.0.1"
-six = ">=1.8.0"
 
 [[package]]
 name = "ghp-import"
@@ -3654,22 +3614,6 @@ files = [
 et-xmlfile = "*"
 
 [[package]]
-name = "orderedmultidict"
-version = "1.0.2"
-description = "Ordered Multivalue Dictionary"
-optional = true
-python-versions = "*"
-groups = ["main"]
-markers = "extra == \"aleph\" or extra == \"api\""
-files = [
-    {file = "orderedmultidict-1.0.2-py2.py3-none-any.whl", hash = "sha256:ab5044c1dca4226ae4c28524cfc5cc4c939f0b49e978efa46a6ad6468049f79b"},
-    {file = "orderedmultidict-1.0.2.tar.gz", hash = "sha256:16a7ae8432e02cc987d2d6d5af2df5938258f87c870675c73ee77a0920e6f4a6"},
-]
-
-[package.dependencies]
-six = ">=1.8.0"
-
-[[package]]
 name = "orjson"
 version = "3.12.0"
 description = "Fast, correct Python JSON library supporting dataclasses, datetimes, and numpy"
@@ -5094,22 +5038,6 @@ socks = ["PySocks (>=1.5.6,!=1.5.7)"]
 use-chardet-on-py3 = ["chardet (>=3.0.2,<8)"]
 
 [[package]]
-name = "requests-toolbelt"
-version = "1.0.0"
-description = "A utility belt for advanced users of python-requests"
-optional = true
-python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
-groups = ["main"]
-markers = "extra == \"aleph\""
-files = [
-    {file = "requests-toolbelt-1.0.0.tar.gz", hash = "sha256:7681a0a3d047012b5bdc0ee37d7f8f07ebe76ab08caeccfc3921ce23c88d5bc6"},
-    {file = "requests_toolbelt-1.0.0-py2.py3-none-any.whl", hash = "sha256:cccfdd665f0a24fcf4726e690f65639d272bb0637b9b92dfd91a5568ccf6bd06"},
-]
-
-[package.dependencies]
-requests = ">=2.0.1,<3.0.0"
-
-[[package]]
 name = "rich"
 version = "15.0.0"
 description = "Render rich text, tables, progress bars, syntax highlighting, markdown and more to the terminal"
@@ -6326,8 +6254,7 @@ pyyaml = ">=6.0.2"
 tomli = ">=2.4.0"
 
 [extras]
-aleph = ["alephclient", "furl"]
-api = ["fastapi", "furl", "granian"]
+api = ["fastapi", "granian"]
 duckdb = ["duckdb", "duckdb-engine", "sqlalchemy"]
 lake = ["deltalake", "duckdb", "pandas", "pyarrow"]
 level = ["plyvel"]
@@ -6338,4 +6265,4 @@ sql = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.15"
-content-hash = "f6c361c9489e363a2ee3bc6bdcfd85ccbbb9c76c8e2253c4a4b00d3d84127fdc"
+content-hash = "276bb8b85675d96901fb3cb3ce1bfb4ba3e966a010cba2e11c4c18945df46a17"

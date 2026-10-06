@@ -31,16 +31,9 @@ def make_dataset(name: str | None = DEFAULT_DATASET) -> Dataset:
 
 
 def ensure_dataset(ds: str | Dataset | None = None) -> Dataset:
-    # deliberately not cached: followthemoney identifies datasets by name
-    # alone, so caching would hand back an *equal but different* dataset - two
-    # scopes spanning different members share a name (see `get_scope_dataset`)
-    # and the first one built would win. The name -> dataset construction it
-    # delegates to is cached instead.
-    if not ds:
-        return make_dataset()
-    if isinstance(ds, str):
-        return make_dataset(ds)
-    return ds
+    # not cached: datasets compare by name, so a cache could hand back an equal
+    # dataset with other members (see `get_scope_dataset`)
+    return ds if isinstance(ds, Dataset) else make_dataset(ds)
 
 
 @cache
@@ -415,26 +408,18 @@ def make_fingerprint_id(*values: Any) -> str | None:
     return make_entity_id(*map(make_fingerprint, values))
 
 
-def get_entity_caption_property(e: Entity) -> SDict:
-    """Get the minimal properties dict required to compute the caption"""
-    for prop in e.schema.caption:
-        if e.caption:
-            return {prop: [e.caption]}
-        for value in e.get(prop):
-            return {prop: [value]}
-    return {}
-
-
 def get_dehydrated_entity(e: Entity) -> Entity:
     """
     Reduce an Entity to only its property dict that is needed to compute the
     caption.
     """
-    data = {
-        "id": e.id,
-        "schema": e.schema.name,
-        "properties": get_entity_caption_property(e),
-    }
+    properties: SDict = {}
+    for prop in e.schema.caption:
+        values = [e.caption] if e.caption else e.get(prop)[:1]
+        if values:
+            properties = {prop: values}
+            break
+    data = {"id": e.id, "schema": e.schema.name, "properties": properties}
     return make_entity(data, e.__class__)
 
 

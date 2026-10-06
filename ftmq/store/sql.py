@@ -1,4 +1,3 @@
-import os
 from collections import defaultdict
 from decimal import Decimal
 
@@ -16,8 +15,6 @@ from ftmq.query.sql import Sql, SqlSource
 from ftmq.store.base import Store, View, get_engine
 from ftmq.types import StatementEntities, Statements
 from ftmq.util import ensure_dataset, get_scope_dataset
-
-MAX_SQL_AGG_GROUPS = int(os.environ.get("MAX_SQL_AGG_GROUPS", 10))
 
 # schema-name partitions of the model, for the dataset coverage stats
 THINGS = sorted(k for k, s in model.schemata.items() if s.is_a("Thing"))
@@ -69,10 +66,10 @@ class SQLQueryView(View, nk.SQLView):
         return stats
 
     def count(self, query: Query | None = None) -> int:
-        if query is not None:
-            for res in self.store._execute(self._sql(query).count, stream=False):
-                for count in res:
-                    return count
+        query = query or Query()
+        for res in self.store._execute(self._sql(query).count, stream=False):
+            for count in res:
+                return count
         return 0
 
     def aggregations(self, query: Query) -> AggregatorResult | None:
@@ -87,9 +84,9 @@ class SQLQueryView(View, nk.SQLView):
         if sql.group_props:
             res["groups"] = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
             for ref in sorted(sql.group_props):
-                # one round trip per grouper: the select carries the group
-                # value per row, capped to the most frequent group values
-                grouped = sql.grouped_aggregations(ref, limit=MAX_SQL_AGG_GROUPS)
+                # one round trip per grouper, capped to its top buckets
+                limit = query.get_facet_size(ref)
+                grouped = sql.grouped_aggregations(ref, limit=limit)
                 for field, func, group, value in self.store._execute(
                     grouped, stream=False
                 ):
@@ -99,6 +96,8 @@ class SQLQueryView(View, nk.SQLView):
 
 
 class SQLStore(Store, nk.SQLStore):
+    view_class = SQLQueryView
+
     def __init__(self, *args, **kwargs) -> None:
         # nomenklatura takes an engine, not a uri
         kwargs["engine"] = get_engine(kwargs.get("uri"))
@@ -122,9 +121,3 @@ class SQLStore(Store, nk.SQLStore):
         for row in self._execute(q, stream=False):
             names.add(row[0])
         return get_scope_dataset(*names)
-
-    def view(
-        self, scope: Dataset | None = None, external: bool = False
-    ) -> "SQLQueryView":
-        scope = scope or self.dataset
-        return SQLQueryView(self, scope, external=external)

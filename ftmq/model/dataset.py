@@ -1,8 +1,8 @@
 from datetime import datetime
-from typing import Literal, TypeVar
+from typing import Literal
 
 from anystore.io import logged_items
-from anystore.types import HttpUrlStr, SDict
+from anystore.types import HttpUrlStr
 from followthemoney.dataset import DataPublisher
 from followthemoney.dataset.dataset import DatasetModel as _DatasetModel
 from pydantic import AnyUrl
@@ -11,11 +11,8 @@ from rigour.mime.types import FTM
 from ftmq.model.mixins import BaseModel
 from ftmq.model.stats import DatasetStats
 from ftmq.types import Entities
-from ftmq.util import DEFAULT_DATASET
 
 ContentType = Literal["documents", "structured", "mixed"]
-
-D = TypeVar("D", bound="Dataset")
 
 
 class Dataset(BaseModel, _DatasetModel):
@@ -46,12 +43,6 @@ class Dataset(BaseModel, _DatasetModel):
         self.stats = stats
 
 
-def ensure_dataset(data: SDict | Dataset) -> Dataset:
-    if isinstance(data, Dataset):
-        return data
-    return Dataset(**data)
-
-
 class Catalog(BaseModel):
     name: str = "catalog"
     title: str = "Catalog"
@@ -80,8 +71,3 @@ class Catalog(BaseModel):
     def names(self) -> set[str]:
         """Get the names of all datasets in the catalog."""
         return {d.name for d in self.datasets}
-
-
-def make_dataset(name: str = DEFAULT_DATASET, cls: type[D] = Dataset, **kwargs) -> D:
-    kwargs["title"] = kwargs.pop("title", name)
-    return cls(name=name, **kwargs)

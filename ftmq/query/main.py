@@ -1,19 +1,21 @@
 from __future__ import annotations
 
 from itertools import islice
-from typing import TYPE_CHECKING, Any, Iterable, Self, cast
+from typing import TYPE_CHECKING, Any, Iterable, Mapping, Self, cast
 
 from banal import ensure_list, hash_data
 from followthemoney.proxy import EntityProxy
 from followthemoney.types import registry
 
 from ftmq.query.aggregations import (
+    DEFAULT_FACET_SIZE,
     A,
     Agg,
     Aggregator,
     FacetOrder,
     aggregations_from_dict,
     aggregations_to_dict,
+    groupers,
     make_facet_order,
 )
 from ftmq.query.aleph import (
@@ -22,22 +24,11 @@ from ftmq.query.aleph import (
     normalize_multidict,
     params_to_aggregations,
     params_to_expr,
-    params_to_selection,
     params_to_string,
-    selection_to_params,
     string_to_params,
 )
 from ftmq.query.exceptions import QueryError
-from ftmq.query.leaves import (
-    ContextLeaf,
-    DatasetLeaf,
-    GroupLeaf,
-    IdLeaf,
-    Leaf,
-    PropertyLeaf,
-    SchemaLeaf,
-    SchemataLeaf,
-)
+from ftmq.query.leaves import DatasetLeaf, Leaf, SchemaLeaf, SchemataLeaf
 from ftmq.query.nodes import Expr, combine
 from ftmq.query.refs import GroupRef, PropRef, Ref, ref_from_wire
 from ftmq.query.rql import parse_rql
@@ -47,6 +38,16 @@ from ftmq.types import EntityProxies
 
 if TYPE_CHECKING:
     from sqlalchemy import Select
+
+
+def _single(items: dict[str, list[str]], key: str) -> str | None:
+    """The one value of a param, `None` if absent."""
+    values = items.get(key)
+    if not values:
+        return None
+    if len(values) > 1:
+        raise QueryError(f"`{key}` takes a single value: `{values}`")
+    return values[0]
 
 
 def _make_slice(limit: int | None, offset: int | None) -> slice | None:
@@ -129,15 +130,15 @@ class Query:
         *nodes: Expr,
         q: Expr | None = None,
         aggregations: Iterable[Agg] | None = None,
-        aggregator: Aggregator | None = None,
         sort: Sort | None = None,
         slice: slice | None = None,
         selection: Iterable[Ref] | None = None,
         facet_sort: FacetOrder | None = None,
+        facet_sizes: Mapping[Ref, int] | None = None,
     ):
         self.q: Expr | None = q if q is not None else combine(*nodes)
         self.aggregations: set[Agg] = set(aggregations or [])
-        self.aggregator = aggregator
+        self.aggregator: Aggregator | None = None
         self.sort = sort
         self.slice = slice
         self.selection: tuple[Ref, ...] = tuple(sorted(set(selection or ())))
@@ -149,6 +150,15 @@ class Query:
                 "aggregation of the query"
             )
         self.facet_sort = facet_sort
+        facets = groupers(self.aggregations)
+        for ref, size in (facet_sizes or {}).items():
+            if ref not in facets:
+                raise QueryError(
+                    f"Invalid facet size: `{ref.wire}` - not a facet of the query"
+                )
+            if not isinstance(size, int) or size < 1:
+                raise QueryError(f"Invalid facet size for `{ref.wire}`: `{size}`")
+        self.facet_sizes: dict[Ref, int] = dict(sorted((facet_sizes or {}).items()))
 
     def __getitem__(self, value: Any) -> Self:
         """
@@ -201,11 +211,11 @@ class Query:
         data: dict[str, Any] = dict(
             q=self.q,
             aggregations=self.aggregations,
-            aggregator=self.aggregator,
             sort=self.sort,
             slice=self.slice,
             selection=self.selection,
             facet_sort=self.facet_sort,
+            facet_sizes=self.facet_sizes,
         )
         data.update(kwargs)
         return self.__class__(**data)
@@ -265,35 +275,15 @@ class Query:
         return Sql(self, source).statements
 
     @property
-    def ids(self) -> set[IdLeaf]:
-        """
-        The current id filters
-        """
-        return {f for f in self._leaves if isinstance(f, IdLeaf)}
-
-    @property
-    def datasets(self) -> set[DatasetLeaf]:
-        """
-        The current dataset filters
-        """
-        return {f for f in self._leaves if isinstance(f, DatasetLeaf)}
-
-    @property
     def dataset_names(self) -> set[str]:
         """
         The names of the current filtered datasets
         """
         names: set[str] = set()
-        for f in self.datasets:
-            names.update(ensure_list(f.value))
+        for f in self._leaves:
+            if isinstance(f, DatasetLeaf):
+                names.update(ensure_list(f.value))
         return names
-
-    @property
-    def schemata(self) -> set[SchemaLeaf]:
-        """
-        The current schema filters
-        """
-        return {f for f in self._leaves if isinstance(f, SchemaLeaf)}
 
     @property
     def schemata_names(self) -> set[str]:
@@ -306,44 +296,10 @@ class Query:
         names: set[str] = set()
         for f in self._leaves:
             if isinstance(f, SchemataLeaf):
-                for schema in f.schemata:
-                    names.add(schema.name)
-                    names.update(d.name for d in schema.descendants if not d.abstract)
+                names.update(f.names)
             elif isinstance(f, SchemaLeaf):
                 names.update(ensure_list(f.value))
         return names
-
-    @property
-    def context(self) -> set[ContextLeaf]:
-        """
-        The current context filters (the `C` family, e.g. `origin`)
-        """
-        return {f for f in self._leaves if isinstance(f, ContextLeaf)}
-
-    @property
-    def countries(self) -> set[str]:
-        """
-        The current filtered countries
-        """
-        names: set[str] = set()
-        for f in self._leaves:
-            if isinstance(f, GroupLeaf) and f.key == "countries":
-                names.update(ensure_list(f.value))
-        return names
-
-    @property
-    def groups(self) -> set[GroupLeaf]:
-        """
-        The current property groups lookup filters
-        """
-        return {f for f in self._leaves if isinstance(f, GroupLeaf)}
-
-    @property
-    def properties(self) -> set[PropertyLeaf]:
-        """
-        The current property lookup filters
-        """
-        return {f for f in self._leaves if isinstance(f, PropertyLeaf)}
 
     # --- serialization -----------------------------------------------------
 
@@ -371,6 +327,8 @@ class Query:
             data["aggregations"] = aggregations_to_dict(self.aggregations)
         if self.facet_sort:
             data["facet_sort"] = self.facet_sort.wire
+        if self.facet_sizes:
+            data["facet_size"] = {r.wire: n for r, n in self.facet_sizes.items()}
         if self.selection:
             data["select"] = [ref.wire for ref in self.selection]
         return data
@@ -390,6 +348,9 @@ class Query:
         facet_sort = None
         if data.get("facet_sort"):
             facet_sort = FacetOrder.from_wire(str(data["facet_sort"]))
+        facet_sizes = {
+            ref_from_wire(k): v for k, v in (data.get("facet_size") or {}).items()
+        }
         return cls(
             q=q,
             sort=sort,
@@ -397,23 +358,27 @@ class Query:
             aggregations=aggregations,
             selection=selection,
             facet_sort=facet_sort,
+            facet_sizes=facet_sizes,
         )
 
     def to_params(self) -> dict[str, list[str]]:
         """
         Project to an Aleph-style filter param dict (`filter:` / `exclude:` /
-        `empty:` keys, `metric:` / `facet` / `facet_sort` aggregation keys,
-        plus `sort` / `limit` / `offset`).
+        `empty:` keys, `metric:` / `facet` / `facet_sort` / `facet_size:`
+        aggregation keys, plus `sort` / `limit` / `offset`).
 
         Raises `QueryError` for queries outside the flat Aleph-expressible
         subset (cross-field OR, negated groups).
         """
-        params = {k: list(v) for k, v in expr_to_params(self.q).items()}
+        params = expr_to_params(self.q)
         if self.aggregations:
             params.update(aggregations_to_params(self.aggregations))
         if self.facet_sort:
             params["facet_sort"] = [self.facet_sort.wire]
-        params.update(selection_to_params(self.selection))
+        for ref, size in self.facet_sizes.items():
+            params[f"facet_size:{ref.wire}"] = [str(size)]
+        if self.selection:
+            params["select"] = [ref.wire for ref in self.selection]
         if self.sort:
             direction = "asc" if self.sort.ascending else "desc"
             params["sort"] = [f"{self.sort.ref.wire}:{direction}"]
@@ -431,29 +396,30 @@ class Query:
         q = params_to_expr(items)
         aggregations = params_to_aggregations(items) or None
         sort = None
-        if items.get("sort"):
-            if len(items["sort"]) > 1:
-                raise QueryError("Multi-field sort is not supported")
-            field, _, direction = items["sort"][0].partition(":")
+        if value := _single(items, "sort"):
+            field, _, direction = value.partition(":")
             sort = Sort(ref_from_wire(field), ascending=direction != "desc")
         facet_sort = None
-        if items.get("facet_sort"):
-            if len(items["facet_sort"]) > 1:
-                raise QueryError("Multi-field facet sort is not supported")
-            facet_sort = FacetOrder.from_wire(items["facet_sort"][0])
-        slice_ = None
-        if "limit" in items or "offset" in items:
-            offset = int((items.get("offset") or ["0"])[0] or 0)
-            _limit = items.get("limit")
-            limit = int(_limit[0]) if _limit else None
-            slice_ = _make_slice(limit, offset)
+        if value := _single(items, "facet_sort"):
+            facet_sort = FacetOrder.from_wire(value)
+        facet_sizes: dict[Ref, int] = {}
+        for key in items:
+            if key.startswith("facet_size:"):
+                size = _single(items, key) or ""
+                if not size.isdigit():
+                    raise QueryError(f"Invalid facet size for `{key}`: `{size}`")
+                facet_sizes[ref_from_wire(key[len("facet_size:") :])] = int(size)
+        offset = int(_single(items, "offset") or 0)
+        limit = _single(items, "limit")
+        slice_ = _make_slice(int(limit) if limit else None, offset)
         return cls(
             q=q,
             sort=sort,
             slice=slice_,
             aggregations=aggregations,
-            selection=params_to_selection(items),
+            selection=[ref_from_wire(f) for f in items.get("select", [])],
             facet_sort=facet_sort,
+            facet_sizes=facet_sizes,
         )
 
     def to_string(self) -> str:
@@ -571,6 +537,23 @@ class Query:
         [(name, ref)] = func.items()
         return self._chain(facet_sort=make_facet_order(name, ref, ascending))
 
+    def facet_size(self, ref: Ref, size: int) -> Self:
+        """Set how many buckets a facet returns (the top ones, see
+        [`order_facets`][ftmq.Query.order_facets]).
+
+        Args:
+            ref: A facet of the query, e.g. `P("beneficiary")`.
+            size: The number of buckets (default 20).
+
+        Returns:
+            The updated `Query` instance.
+        """
+        return self._chain(facet_sizes={**self.facet_sizes, ref: size})
+
+    def get_facet_size(self, ref: Ref) -> int:
+        """The number of buckets the facet `ref` returns."""
+        return self.facet_sizes.get(ref, DEFAULT_FACET_SIZE)
+
     def select(self, *refs: Ref) -> Self:
         """Restrict the properties the matching entities are read with.
 
@@ -637,7 +620,7 @@ class Query:
         Returns:
             A fresh accumulator over this query's aggregations.
         """
-        return Aggregator(self.aggregations)
+        return Aggregator(self.aggregations, self.facet_sizes, self.facet_sort)
 
     # --- execution ---------------------------------------------------------
 
