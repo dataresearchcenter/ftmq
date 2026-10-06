@@ -5,7 +5,7 @@ from anystore.util import clean_dict
 from followthemoney import model
 from followthemoney.dataset.dataset import Dataset
 from nomenklatura.store import sql as nk
-from sqlalchemy import select
+from sqlalchemy import and_, select
 
 from ftmq.model.stats import DatasetStats, compile_stats
 from ftmq.query import Query
@@ -34,14 +34,20 @@ class SQLQueryView(View, nk.SQLView):
         # the view scope compiles to an entity-level membership conjunct, so
         # it composes with any dataset filters in the query - including
         # `~` / `|` trees. An out-of-scope dataset filter matches nothing.
-        return Sql(query, self.store.source, scope=self.dataset_names)
+        source = self.store.source
+        if not self.external:
+            # hide enrichment candidates, as nomenklatura's own views do
+            rows = self.store.table.c.external.is_(False)
+            if source.base_filter is not None:
+                rows = and_(source.base_filter, rows)
+            source = SqlSource(source.table, source.id_column, source.prune, rows)
+        return Sql(query, source, scope=self.dataset_names)
 
     def query(self, query: Query | None = None) -> StatementEntities:
         if query:
             yield from self.store._iterate(self._sql(query).statements)
         else:
-            view = self.store.view(self.scope)
-            yield from view.entities()
+            yield from self.entities()
 
     def stats(self, query: Query | None = None) -> DatasetStats:
         query = query or Query()

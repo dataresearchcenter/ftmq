@@ -332,11 +332,10 @@ class View(nk.View[Dataset, StatementEntity]):
         Yields:
             Generator of `followthemoney.StatementEntity`
         """
-        view = self.store.view(self.scope)
         if query:
-            yield from query.apply_iter(view.entities())
+            yield from query.apply_iter(self.entities())
         else:
-            yield from view.entities()
+            yield from self.entities()
 
     def get_adjacents(
         self, proxies: Iterable[StatementEntity], inverted: bool | None = False

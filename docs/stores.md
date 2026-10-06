@@ -81,6 +81,8 @@ view = store.default_view()
 proxies = store.query(q)
 ```
 
+A view hides `external` statements (enrichment candidates not yet accepted) unless it is built with `store.view(scope, external=True)`, whether it is read through `query()`, `count()`, `stats()` or `aggregations()`.
+
 ### Command line
 
 ```bash
