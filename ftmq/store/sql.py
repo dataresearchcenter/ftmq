@@ -96,6 +96,8 @@ class SQLQueryView(View, nk.SQLView):
 
 
 class SQLStore(Store, nk.SQLStore):
+    view_class = SQLQueryView
+
     def __init__(self, *args, **kwargs) -> None:
         # nomenklatura takes an engine, not a uri
         kwargs["engine"] = get_engine(kwargs.get("uri"))
@@ -119,9 +121,3 @@ class SQLStore(Store, nk.SQLStore):
         for row in self._execute(q, stream=False):
             names.add(row[0])
         return get_scope_dataset(*names)
-
-    def view(
-        self, scope: Dataset | None = None, external: bool = False
-    ) -> "SQLQueryView":
-        scope = scope or self.dataset
-        return SQLQueryView(self, scope, external=external)

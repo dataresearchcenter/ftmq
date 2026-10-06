@@ -43,6 +43,14 @@ class Schemata(BaseModel):
     schemata: list[Schema] = []
 
 
+def _schemata(schemata: Counter, countries: Counter) -> Schemata:
+    return Schemata(
+        schemata=[Schema(name=k, count=v) for k, v in schemata.items()],
+        countries=[Country(code=k, count=v) for k, v in countries.items()],
+        total=schemata.total(),
+    )
+
+
 class DatasetStats(BaseModel):
     things: Schemata = Schemata()
     intervals: Schemata = Schemata()
@@ -88,31 +96,12 @@ class Collector:
         self.end.update(proxy.get("date", quiet=True))
 
     def export(self) -> DatasetStats:
-        start = min(self.start) if self.start else None
-        end = max(self.end) if self.end else None
-        countries = set(self.things_countries.keys()) | set(
-            self.intervals_countries.keys()
-        )
-        things = Schemata(
-            schemata=[Schema(name=k, count=v) for k, v in self.things.items()],
-            countries=[
-                Country(code=k, count=v) for k, v in self.things_countries.items()
-            ],
-            total=self.things.total(),
-        )
-        intervals = Schemata(
-            schemata=[Schema(name=k, count=v) for k, v in self.intervals.items()],
-            countries=[
-                Country(code=k, count=v) for k, v in self.intervals_countries.items()
-            ],
-            total=self.intervals.total(),
-        )
         return DatasetStats(
-            start=start,
-            end=end,
-            countries=countries,
-            things=things,
-            intervals=intervals,
+            start=min(self.start) if self.start else None,
+            end=max(self.end) if self.end else None,
+            countries=set(self.things_countries) | set(self.intervals_countries),
+            things=_schemata(self.things, self.things_countries),
+            intervals=_schemata(self.intervals, self.intervals_countries),
             entity_count=self.entity_count,
         )
 
@@ -167,16 +156,12 @@ def compile_stats(
         The compiled :class:`DatasetStats`.
     """
     c = Collector()
-    for schema, count in things:
-        c.things[schema] = count
-    for schema, count in intervals:
-        c.intervals[schema] = count
-    for country, count in things_countries:
-        if country is not None:
-            c.things_countries[country] = count
-    for country, count in intervals_countries:
-        if country is not None:
-            c.intervals_countries[country] = count
+    c.things = Counter(dict(things))
+    c.intervals = Counter(dict(intervals))
+    c.things_countries = Counter({k: v for k, v in things_countries if k is not None})
+    c.intervals_countries = Counter(
+        {k: v for k, v in intervals_countries if k is not None}
+    )
     if entity_count is None:
         entity_count = c.things.total() + c.intervals.total()
     c.entity_count = entity_count

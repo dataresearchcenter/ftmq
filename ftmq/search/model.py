@@ -5,7 +5,6 @@ from followthemoney.types import registry
 from pydantic import BaseModel, ConfigDict, Field
 
 from ftmq.model import EntityModel
-from ftmq.search.exceptions import IntegrityError
 from ftmq.util import entity_fingerprints
 
 
@@ -28,13 +27,12 @@ class EntityDocument(BaseModel):
     @classmethod
     def from_entity(cls, entity: EntityProxy) -> Self:
         if entity.id is None:
-            raise IntegrityError("Entity has no ID!")
+            raise ValueError("Entity has no ID!")
         names = entity.get_type_values(registry.name)
         fps = sorted(entity_fingerprints(entity))
         text = " ".join(
             sorted([v for values in entity.properties.values() for v in values])
         )
-        text = text or ""
         dates = entity.get_type_values(registry.date)
 
         return cls(

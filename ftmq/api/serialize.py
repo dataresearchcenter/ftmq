@@ -6,7 +6,7 @@ https://github.com/opensanctions/yente/
 import math
 from collections import defaultdict
 from collections.abc import Iterable
-from typing import Any, Self, Union
+from typing import Any, Self
 
 from fastapi import Request
 from pydantic import BaseModel, Field
@@ -19,20 +19,13 @@ from ftmq.search.model import AutocompleteResult
 from ftmq.types import Entities, Entity
 from ftmq.util import must_str
 
-EntityProperties = dict[str, list[Union[str, "EntityResponse"]]]
-
 
 class ErrorResponse(BaseModel):
     detail: list[str] = Field(..., examples=[["Detailed error message"]])
 
 
 class EntityResponse(EntityModel):
-    # not part of the public wire format (inherited from `EntityModel`)
-    dataset: str | None = Field(None, exclude=True)
-    # nested adjacents serialize as responses too (no `dataset`)
-    properties: EntityProperties = Field(
-        default_factory=dict, examples=[{"name": ["Jane Doe"]}]
-    )
+    """An entity on the wire, with its adjacents inlined when nested."""
 
 
 def with_bucket_counts(query: Query) -> Query:

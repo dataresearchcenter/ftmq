@@ -55,7 +55,7 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from ftmq.query.sql import PruneFn, SqlSource, prune_by_schema
 from ftmq.store.base import DEFAULT_ORIGIN, Store
-from ftmq.store.sql import SQLQueryView, SQLStore
+from ftmq.store.sql import SQLStore
 from ftmq.util import apply_dataset, ensure_entity, get_scope_dataset, iso_datetime
 
 log = get_logger(__name__)
@@ -556,12 +556,6 @@ class LakeStore(SQLStore):
             if name.startswith("dataset="):
                 names.add(name.split("=")[1])
         return get_scope_dataset(*names)
-
-    def view(
-        self, scope: Dataset | None = None, external: bool = False
-    ) -> SQLQueryView:
-        scope = scope or self.dataset
-        return SQLQueryView(self, scope, external)
 
     def writer(
         self, origin: str | None = DEFAULT_ORIGIN, source: str | None = None

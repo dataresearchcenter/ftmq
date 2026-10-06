@@ -1,2 +1,0 @@
-class IntegrityError(Exception):
-    pass

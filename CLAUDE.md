@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ftmq is a Python library for querying and filtering [Follow The Money](https://followthemoney.tech) (FTM) entities. It provides:
 - A composable `Query` language (`M` / `P` / `G` / `C` nodes composed with `&` / `|` / `~`, plus `A` aggregation projections over the same families used as bare field references) for filtering entities by meta fields, properties, property-type groups and context/storage columns
 - Smart I/O helpers for reading/writing FTM entities from various sources (files, S3, databases)
-- Multiple storage backends via nomenklatura stores (memory, LevelDB, SQL, Aleph, Delta Lake)
+- Multiple storage backends via nomenklatura stores (memory, LevelDB, SQL, Delta Lake)
 - CLI for piping and filtering FTM JSON streams
 
 ## Behaviour rules for code agents
@@ -111,7 +111,6 @@ All stores inherit from `ftmq/store/base.py:Store` which extends nomenklatura's 
 - **level**: LevelDB backend (requires `plyvel`)
 - **sql**: SQLAlchemy-based (SQLite, PostgreSQL) with SQL query optimization
 - **duckdb**: the sql store against a duckdb database file (requires `duckdb-engine`); only the bulk upsert and the index DDL (no partial indexes, no index reflection) are duckdb-specific, everything else is `store/sql.py`
-- **aleph**: Aleph API backend (requires `alephclient`)
 - **lake**: Delta Lake parquet-based store using DuckDB for queries (requires `[lake]` extras)
 - **fragments**: Entity fragment store for incremental processing
 

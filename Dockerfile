@@ -23,7 +23,7 @@ ENTRYPOINT ["ftmq"]
 FROM ftmq AS full
 
 RUN apt-get -qq update && apt-get install -qq -y libleveldb-dev libpq5 && apt-get clean
-RUN pip install --no-cache-dir ".[level,sql,postgres,duckdb,lake,aleph,search,api]" redis
+RUN pip install --no-cache-dir ".[level,sql,postgres,duckdb,lake,search,api]" redis
 
 # the default target: plain ftmq
 FROM ftmq

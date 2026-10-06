@@ -6,7 +6,7 @@ from followthemoney.types import registry
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ftmq.types import Entity
-from ftmq.util import DEFAULT_DATASET, make_entity, must_str
+from ftmq.util import make_entity, must_str
 
 Properties: TypeAlias = Mapping[str, Sequence["str | EntityModel"]]
 
@@ -23,7 +23,6 @@ class EntityModel(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     id: str = Field(..., examples=["NK-A7z...."])
-    dataset: str = DEFAULT_DATASET
     caption: str = Field(..., examples=["Jane Doe"])
     schema_: str = Field(..., examples=["LegalEntity"], alias="schema")
     properties: Properties = Field(

@@ -10,7 +10,6 @@ from nomenklatura.resolver import Resolver
 from ftmq.query import A, C, G, M, P, Query, Year
 from ftmq.query.refs import PropRef
 from ftmq.store import MemoryStore, Store, get_store
-from ftmq.store.aleph import AlephStore, parse_uri
 from ftmq.store.base import (
     PreservingLinker,
     get_linker,
@@ -857,26 +856,8 @@ def test_store_init(tmp_path):
     assert isinstance(store, DuckDBStore)
     store = get_store(dataset="test_dataset")
     assert store.dataset.name == "test_dataset"
-    store = get_store("http+aleph://test_dataset@aleph.example.org")
-    assert isinstance(store, AlephStore)
-    assert store.dataset.name == "test_dataset"
     store = get_store(f"lake+{tmp_path}")
     assert isinstance(store, LakeStore)
-
-
-def test_store_aleph():
-    assert parse_uri("http://localhost") == ("http://localhost", None, None)
-    assert parse_uri("http://localhost") == ("http://localhost", None, None)
-    assert parse_uri("https://dataset@localhost") == (
-        "https://localhost",
-        None,
-        "dataset",
-    )
-    assert parse_uri("https://dataset:api_key@localhost") == (
-        "https://localhost",
-        "api_key",
-        "dataset",
-    )
 
 
 def test_store_fragments_to_lake(tmp_path):

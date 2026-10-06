@@ -183,24 +183,20 @@ def get_preserving_linker() -> PreservingLinker:
     return PreservingLinker()
 
 
-_CASTING_WRITERS: dict[type[Any], type[Any]] = {}
-
-
+@cache
 def _casting_writer(cls: type[Any]) -> type[Any]:
     """A backend writer class that casts statement values on the way in."""
-    if cls not in _CASTING_WRITERS:
 
-        class CastingWriter(cls):  # type: ignore[misc]
-            # no attributes of its own, so an instance can be reblessed into it
-            __slots__ = ()
+    class CastingWriter(cls):  # type: ignore[misc]
+        # no attributes of its own, so an instance can be reblessed into it
+        __slots__ = ()
 
-            def add_statement(self, stmt: Statement, *args: Any, **kwargs: Any) -> None:
-                # a value that doesn't parse is written as it came in
-                super().add_statement(cast_statement(stmt) or stmt, *args, **kwargs)
+        def add_statement(self, stmt: Statement, *args: Any, **kwargs: Any) -> None:
+            # a value that doesn't parse is written as it came in
+            super().add_statement(cast_statement(stmt) or stmt, *args, **kwargs)
 
-        CastingWriter.__name__ = f"Casting{cls.__name__}"
-        _CASTING_WRITERS[cls] = CastingWriter
-    return _CASTING_WRITERS[cls]
+    CastingWriter.__name__ = f"Casting{cls.__name__}"
+    return CastingWriter
 
 
 Writer: TypeAlias = nk.Writer[Dataset, StatementEntity]
@@ -273,8 +269,10 @@ class Store(nk.Store[Dataset, StatementEntity]):
         datasets present in the backend when it was opened without one."""
         return self.get_scope() if self._implicit_scope else self.dataset
 
+    view_class: type["View"]
+
     def view(self, scope: Dataset | None = None, external: bool = False) -> "View":
-        raise NotImplementedError
+        return self.view_class(self, scope or self.dataset, external=external)
 
     def default_view(self, external: bool = False) -> "View":
         return self.view(self.scope, external)
@@ -343,12 +341,11 @@ class View(nk.View[Dataset, StatementEntity]):
     def get_adjacents(
         self, proxies: Iterable[StatementEntity], inverted: bool | None = False
     ) -> set[StatementEntity]:
-        seen: set[StatementEntity] = set()
-        for proxy in proxies:
-            for _, adjacent in self.get_adjacent(proxy, inverted=bool(inverted)):
-                if adjacent.id not in seen:
-                    seen.add(adjacent)
-        return seen
+        return {
+            adjacent
+            for proxy in proxies
+            for _, adjacent in self.get_adjacent(proxy, inverted=bool(inverted))
+        }
 
     def stats(self, query: Query | None = None) -> DatasetStats:
         c = Collector()
