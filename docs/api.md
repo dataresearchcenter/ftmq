@@ -65,7 +65,7 @@ granian --interface asgi ftmq.api.app:app
 
 `FTMQ_API_STORE_URI` defaults to nomenklatura's `NOMENKLATURA_DB_URL`, and `FTMQ_SEARCH_URI` defaults to that same database when it is sqlite, so with the single-file layout above every variable is optional (without `FTMQ_API_CATALOG` the catalog is derived from the store). The catalog and stores are read once at process start: after changing data, restart the server.
 
-For production, use several workers: `granian --interface asgi --workers 4 ftmq.api.app:app`. Any other ASGI server (uvicorn, hypercorn, ...) works as well.
+For production, use several workers: `granian --interface asgi --workers 4 ftmq.api.app:app`. Routes run in the server's thread pool, so a worker also serves concurrent requests while others wait on the store; that pays off for I/O-bound backends (lake, postgres), while for CPU-bound work more workers scale better than threads. Any other ASGI server (uvicorn, hypercorn, ...) works as well.
 
 ### 6. Verify
 
