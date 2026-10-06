@@ -482,6 +482,49 @@ def test_store_facet_size(tmp_path, donations):
             assert all(k == kept[0] for k in kept), (func, size)
 
 
+@pytest.mark.parametrize("backend", ["memory", "leveldb", "sqlite", "duckdb", "lake"])
+def test_store_external(tmp_path, backend):
+    # enrichment candidates (`external`) only show in an `external=True` view,
+    # whichever way the view is read
+    uris = {
+        "memory": "memory://",
+        "leveldb": f"leveldb://{tmp_path}/level.db",
+        "sqlite": f"sqlite:///{tmp_path}/s.db",
+        "duckdb": f"duckdb://{tmp_path}/s.duckdb",
+    }
+    if backend == "lake":
+        store = LakeStore(uri=tmp_path / "lake", dataset="d")
+    else:
+        store = get_store(uris[backend], dataset="d")
+    with store.writer() as bulk:
+        for value, external in (("a", False), ("b", True)):
+            bulk.add_statement(
+                Statement(
+                    entity_id="e1",
+                    prop="name",
+                    schema="Person",
+                    value=value,
+                    dataset="d",
+                    external=external,
+                )
+            )
+        bulk.add_statement(
+            Statement(
+                entity_id="e2",
+                prop="name",
+                schema="Person",
+                value="c",
+                dataset="d",
+                external=True,
+            )
+        )
+    for external, names, count in ((False, ["a"], 1), (True, ["a", "b", "c"], 2)):
+        view = store.view(store.dataset, external=external)
+        for q in (None, Query().where(M(schema="Person"))):
+            assert sorted(n for e in view.query(q) for n in e.get("name")) == names
+        assert view.count() == count, (backend, external)
+
+
 def test_store_scoped_views(tmp_path):
     # a canonical entity spanning two datasets: the scope selects which
     # *entities* a view surfaces (those with a statement in a scoped dataset),

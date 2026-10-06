@@ -114,6 +114,8 @@ All stores inherit from `ftmq/store/base.py:Store` which extends nomenklatura's 
 - **lake**: Delta Lake parquet-based store using DuckDB for queries (requires `[lake]` extras)
 - **fragments**: Entity fragment store for incremental processing
 
+A view hides `external` statements (enrichment candidates) unless built with `external=True`, on every read path: `View.query` filters its own `entities()`, and `SQLQueryView._sql` folds `external IS false` into the compiled source's `base_filter`.
+
 Backend selection is automatic via URI scheme in `get_store()`:
 ```python
 get_store("memory://")
