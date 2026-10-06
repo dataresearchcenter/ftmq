@@ -51,7 +51,7 @@ log.info("Ftm store: %s" % settings.store_uri)
     "/catalog",
     response_model=Catalog,
 )
-async def dataset_list(request: Request) -> Catalog:
+def dataset_list(request: Request) -> Catalog:
     """
     Show metadata for catalog (as described in
     [followthemoney.Dataset](https://followthemoney.tech))
@@ -65,7 +65,7 @@ async def dataset_list(request: Request) -> Catalog:
     "/catalog/{dataset}",
     response_model=Dataset,
 )
-async def dataset_detail(request: Request, dataset: Datasets) -> Dataset:
+def dataset_detail(request: Request, dataset: Datasets) -> Dataset:
     """
     Show metadata for given dataset (as described in
     [followthemoney.Dataset](https://followthemoney.tech))
@@ -94,7 +94,7 @@ def get_authenticated(
         400: {"model": ErrorResponse, "description": "Invalid query"},
     },
 )
-async def entities(
+def entities(
     request: Request,
     retrieve_params: Annotated[RetrieveParams, Depends()],
     authenticated: Annotated[bool, Depends(get_authenticated)],
@@ -198,7 +198,7 @@ async def entities(
         404: {"model": ErrorResponse, "description": "Entity not found"},
     },
 )
-async def detail_entity(
+def detail_entity(
     request: Request,
     entity_id: str,
     retrieve_params: Annotated[RetrieveParams, Depends()],
@@ -225,7 +225,7 @@ async def detail_entity(
         400: {"model": ErrorResponse, "description": "Invalid query"},
     },
 )
-async def autocomplete(request: Request, q: str) -> AutocompleteResponse:
+def autocomplete(request: Request, q: str) -> AutocompleteResponse:
     """
     Simple autocomplete by names
     """
