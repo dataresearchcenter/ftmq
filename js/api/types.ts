@@ -2,28 +2,22 @@ import type { IEntityDatum } from "@opensanctions/followthemoney";
 
 import type { IDatasetStats } from "./model.js";
 
-// --- request options -------------------------------------------------------
-
-/** Non-query request params: response-shaping flags plus the optional `q`
- * full-text search term (read by the api directly, not part of the `Query`). */
+/** Non-query request params: response-shaping flags and the `q` search term. */
 export interface IRetrieveParams {
   readonly nested?: boolean;
   readonly featured?: boolean;
   readonly dehydrate?: boolean;
   readonly dehydrate_nested?: boolean;
   readonly stats?: boolean;
-  // a `q` term routes the /entities query to full-text search via ftmq.search
   readonly q?: string;
 }
-
-// --- aggregations ----------------------------------------------------------
 
 // ungrouped aggregations, Aleph `metrics`: `{prop: {func: value}}`
 export type IMetrics = {
   readonly [prop: string]: { readonly [func: string]: number };
 };
 
-// a facet bucket: its entity `count` plus the requested `metrics` within it
+// a facet bucket: its entity `count` and its `metrics`
 export interface IFacetValue {
   readonly value: string;
   readonly label: string;
@@ -38,8 +32,6 @@ export type IFacets = {
     readonly total: number;
   };
 };
-
-// --- responses -------------------------------------------------------------
 
 // the api echoes back the canonical query serialization (`Query.toDict`)
 export type IQueryDict = Record<string, any>;

@@ -17,9 +17,7 @@ def get_store(
     linker: Linker | None = None,
     cast_types: bool = True,
 ) -> Store:
-    """
-    Get an initialized [Store][ftmq.store.base.Store]. The backend is inferred
-    by the scheme of the store uri.
+    """Get an initialized [Store][ftmq.store.base.Store], inferred by the uri scheme.
 
     Example:
         ```python

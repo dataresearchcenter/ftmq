@@ -4,8 +4,7 @@ import { test } from "node:test";
 import Api from "../api/index.js";
 import { Query } from "../query/index.js";
 
-// a fake `/entities` endpoint over `total` entities that serves the requested
-// page, as the api does after clamping the limit
+// a fake `/entities` endpoint serving the requested page of `total` entities
 function fakeEntities(total: number): typeof fetch {
   return (async (input: string | URL | Request) => {
     const url = new URL(String(input));

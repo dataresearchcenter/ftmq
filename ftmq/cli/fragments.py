@@ -29,7 +29,7 @@ def cli_fragments_list_datasets(
     ] = "-",
 ) -> None:
     """
-    List datasets within a fragments store
+    List the datasets of a fragments store.
     """
     with ErrorHandler():
         store = get_fragments_store(input_uri)
@@ -67,12 +67,11 @@ def cli_fragments_iterate(
     ] = None,
 ) -> None:
     """
-    Iterate all entities from a fragments dataset
+    Iterate the aggregated entities of a fragments dataset.
     """
     with ErrorHandler():
         fragments = get_fragments(dataset, database_uri=input_uri)
 
-        # Parse timestamp strings to datetime objects
         since_dt = datetime.fromisoformat(since) if since else None
         until_dt = datetime.fromisoformat(until) if until else None
 
@@ -94,8 +93,9 @@ def cli_fragments_iterate_fragments(
     ] = "-",
 ) -> None:
     """
-    Iterate all fragments from a dataset, unsorted and not aggregated. Useful
-    for streaming into another storage that does dedupe by itself.
+    Iterate the raw fragments of a dataset, unsorted and not aggregated.
+
+    For streaming into a storage that aggregates by itself.
     """
     with ErrorHandler():
         fragments = get_fragments(dataset, database_uri=input_uri)

@@ -55,7 +55,8 @@ def cli_q(
         typer.Option(
             "-q",
             "--query",
-            help="Filter query string, e.g. 'filter:schema=Person&filter:group.countries=de'",
+            help="Aleph query string, e.g. "
+            "'filter:schema=Person&filter:group.countries=de'",
         ),
     ] = None,
     rql: Annotated[
@@ -72,18 +73,14 @@ def cli_q(
     ] = False,
 ) -> None:
     """
-    Apply ftmq filter to a json stream of ftm entities.
+    Filter entities from a json stream or a store.
 
-    Writes the matching entities - or, instead of them, their coverage
-    statistics (`--stats`) or the result of an aggregating query.
+    Several `-q` / `--rql` strings AND together. Writes the matching entities, or
+    instead their coverage statistics (`--stats`) or the result of an aggregating
+    query.
     """
     with ErrorHandler():
-        # -q (Aleph filter params) and --rql (nested & | ~) are the query
-        # surfaces. Each string is a whole query, not just a filter tree: it
-        # carries aggregations, its `select` projection, sort, facet sort and
-        # slice as well (`sort=name:desc&limit=10`, later strings winning).
-        # rql carries filters, aggregations and `select(...)` only - it has no
-        # sort / slice operator.
+        # each string is a whole query (aggregations, select, sort, slice), later wins
         parsed = [Query.from_string(value) for value in query or ()]
         parsed += [Query.from_rql(value) for value in rql or ()]
         q = Query(
@@ -96,25 +93,16 @@ def cli_q(
             ),
             facet_sizes={r: n for sub in parsed for r, n in sub.facet_sizes.items()},
         )
-        # several query strings AND together, as chained `.where()` does
+        # several query strings AND together
         for sub in parsed:
             if sub.q is not None:
                 q = q.where(sub.q)
-        # repeated flags are alternatives (`-d a -d b` means a OR b), so they
-        # combine via `__in` - chained same-field `.where()` calls would AND
+        # `-d a -d b` means a OR b, chained same-field `.where()` calls would AND
         if dataset:
             q = q.where(M(dataset__in=list(dataset)))
 
-        # statistics and aggregations are readings *of* the matching entities,
-        # so each replaces them as the output. `--stats` wins over an
-        # aggregating query - both reduce the result to one object, and the
-        # flag is the more explicit ask.
-        # A store computes both itself (the sql backends compile them into the
-        # query instead of streaming every entity into this process); a
-        # file-like source is read and reduced here.
-        # No store scope: a store source reads its full implicit scope (every
-        # dataset it holds), `-d` filters within it. Stamping a dataset onto
-        # entities that carry none is `ftmq apply-dataset`.
+        # `--stats` wins over aggregations; a store computes both itself, over
+        # every dataset it holds (`-d` filters within it)
         store = smart_get_store(input_uri)
         if store is not None and (stats or q.aggregations):
             view = store.default_view()
@@ -147,7 +135,7 @@ def cli_apply_dataset(
     replace_dataset: Annotated[bool, typer.Option("--replace-dataset")] = False,
 ) -> None:
     """
-    Uplevel an entity stream to nomenklatura entities and apply dataset(s) property
+    Add a dataset to the entities of a stream (`--replace-dataset` replaces theirs).
     """
     with ErrorHandler():
         proxies = smart_read_proxies(input_uri, entity_type=ValueEntity)
@@ -155,7 +143,6 @@ def cli_apply_dataset(
         smart_write_proxies(output_uri, proxies)
 
 
-# sub-command groups
 cli.add_typer(dataset_cli, name="dataset")
 cli.add_typer(catalog_cli, name="catalog")
 cli.add_typer(store_cli, name="store")
@@ -175,8 +162,10 @@ def cli_aggregate(
     downgrade: Annotated[bool, typer.Option("--downgrade")] = False,
 ) -> None:
     """
-    In-memory aggregation of entities, allowing to merge entities with a common
-    parent schema (as opposed to standard `ftm aggregate`)
+    Merge entities by id in memory.
+
+    With `--downgrade`, entities with conflicting schemata merge into their common
+    parent schema.
     """
     with ErrorHandler():
         proxies = aggregate(smart_read_proxies(input_uri), downgrade=downgrade)

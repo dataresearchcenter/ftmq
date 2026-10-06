@@ -8,23 +8,13 @@ export type Connector = "AND" | "OR";
 
 export type Child = Expr | Leaf;
 
-// the structural identity of a child node: its canonical serialization, the
-// same form the tree is ordered by
+// a child's structural identity: its canonical serialization
 const childKey = (child: Child): string =>
   child instanceof Expr
     ? canon(child.toDict())
     : canon({ leaf: child.fieldDict() });
 
-/**
- * Bring a node's children into canonical form: splice non-negated sub-groups of
- * the same connector into this one, and drop children that already appear.
- *
- * Both are boolean identities (associativity, and `a & a == a`), so a node
- * built as `new Query(P({name: "x"}), P({name: "x"}))` or by re-applying a
- * filter in a chained `.where()` holds the condition once. Doing it here rather
- * than in each serializer is what makes every surface see the same
- * deduplicated tree.
- */
+/** Splice non-negated same-connector sub-groups and drop duplicate children. */
 function normalize(children: Child[], connector: Connector): Child[] {
   const result: Child[] = [];
   const seen = new Set<string>();
@@ -44,12 +34,7 @@ function normalize(children: Child[], connector: Connector): Child[] {
   return result;
 }
 
-/**
- * A boolean node: a connector, an optional negation, and a list of children.
- *
- * Children are canonicalized on construction (see `normalize`), so a node never
- * holds a duplicate child or a nested group it could absorb.
- */
+/** A boolean node; children are canonicalized on construction. */
 export class Expr {
   connector: Connector;
   negated: boolean;
@@ -100,8 +85,7 @@ export class Expr {
     const key = this.connector.toLowerCase();
     const children: any[] = [];
     for (const child of this.children) {
-      // the children are flattened and deduplicated already (see `normalize`);
-      // sorting them is what makes equivalent trees serialize identically
+      // normalized already; sorting makes equivalent trees serialize alike
       if (child instanceof Expr) children.push(child.toDict());
       else children.push({ leaf: child.fieldDict() });
     }
@@ -123,9 +107,8 @@ export class Expr {
 }
 
 /**
- * A family constructor: called with `field=value` lookups it builds a condition
- * (an `Expr`), called with a bare field name it builds a reference (a `Ref`) -
- * the same field, no condition, which is what an aggregation projects over.
+ * A family constructor: lookups build a condition (`Expr`), a bare field name a
+ * `Ref`.
  *
  * ```ts
  * P({ amountEur__gte: 1000 })   // a condition

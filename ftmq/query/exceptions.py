@@ -1,7 +1,6 @@
 class QueryError(ValueError):
-    """Raised for an invalid query: an unknown field, an invalid comparator,
-    or a query that cannot be projected to the requested serialization.
+    """Raised for an invalid query.
 
-    Subclasses `ValueError` so existing `except ValueError` handlers keep
-    working.
+    An unknown field or comparator, or a query the requested serialization cannot
+    express. Subclasses `ValueError`.
     """

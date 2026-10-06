@@ -15,7 +15,7 @@ FIXTURES_PATH = (Path(__file__).parent / "fixtures").absolute()
 AUTHORITIES = "eu_authorities.ftm.json"
 DONATIONS = "donations.ijson"
 
-# --- ftmq.api test environment ---------------------------------------------
+# the ftmq.api test environment
 # Must be set at conftest import time: pytest collection imports test modules
 # (and with them the `ftmq.api.*` module-level `Settings()` and the `Datasets`
 # Literal) before any fixture runs. Both stores are file-based sqlite: the

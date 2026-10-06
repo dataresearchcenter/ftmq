@@ -1,10 +1,6 @@
-One of the main features of `ftmq` is a high-level query interface for [Follow The Money](https://followthemoney.tech) data stored in a file, a stream, or a statement-based store powered by [nomenklatura](https://github.com/opensanctions/nomenklatura).
-
-A `Query` is a composable, backend-agnostic filter over FtM entities. It is also the *canonical query representation* used across `ftmq`: the same object can be evaluated in memory, translated to SQL, or converted to and from the [Aleph / OpenAleph](https://openaleph.org) URL-param grammar.
+A `Query` is a composable, backend-agnostic filter over [Follow The Money](https://followthemoney.tech) entities in a file, a stream or a [nomenklatura](https://github.com/opensanctions/nomenklatura) statement store. The same object runs in memory, compiles to SQL, and converts to and from the [Aleph / OpenAleph](https://openaleph.org) URL params.
 
 ## Where `Query` sits in the toolchain
-
-`Query` is the hub. It is built from `M` / `P` / `G` / `C` nodes (or deserialized from a dict or from Aleph params), and from there it is either run against entities or projected back out to another representation.
 
 ```mermaid
 flowchart TD
@@ -36,15 +32,13 @@ flowchart TD
     PARAMS <-->|same filter grammar| ALEPH["OpenAleph HTTP API<br/>openaleph-search<br/>SearchQueryParser"]
 ```
 
-The param grammar works in both directions: an Aleph-style request can drive an `ftmq` store, and an `ftmq` `Query` can drive the OpenAleph API.
-
 ## Building a query
 
 A query is built from four node constructors, split by the statement-table column they target:
 
 | Node | Targets | Use it for |
 |---|---|---|
-| **`M`** (meta) | `dataset`, `schema` / `schemata`, entity ids | `M(schema="Person")`, `M(dataset__in=["d1", "d2"])` |
+| **`M`** (meta) | `dataset`, `schema` / `schemata`, `id` / `entity_id` / `canonical_id` | `M(schema="Person")`, `M(dataset__in=["d1", "d2"])` |
 | **`P`** (property) | a specific FtM property | `P(name="Jane")`, `P(amountEur__gte=1000)` |
 | **`G`** (group) | a property-*type* group (`prop_type`) | `G(countries="de")`, `G(dates__gte="2020")` |
 | **`C`** (context) | a context / storage column | `C(origin="crawl")`, `C(first_seen__gte="2024-01")` |
@@ -55,15 +49,13 @@ from ftmq import Query, M, P, G, C
 q = Query().where(M(schema="Person"), P(name="Jane"))
 ```
 
-`M` covers the metadata fields: `dataset`, `schema` / `schemata` (see below), and `id` / `entity_id` / `canonical_id`.
+`P(country="de")` matches the literal `country` [property](https://followthemoney.tech/explorer/schemata/Person/), while `G(countries="de")` matches any property of that [type](https://followthemoney.tech/explorer/types) (`nationality`, `jurisdiction`, `country`, ...). Groups are keyed by name: `names`, `dates`, `countries`, `emails`, `entities`, ...
 
-`P` matches a single, named property (example: [Person](https://followthemoney.tech/explorer/schemata/Person/)). `G` matches *any* property of a followthemoney [property type](https://followthemoney.tech/explorer/types), keyed by its group name (`names`, `dates`, `countries`, `emails`, `entities`, ...). For example `P(country="de")` matches the literal `country` property, while `G(countries="de")` matches any country-typed property (`nationality`, `jurisdiction`, `country`, ...).
-
-`C` matches a context / storage column: `origin`, plus whatever extra columns a backend carries (`fragment`, `first_seen`, `bucket`, ...). Any key is accepted at build time; in memory it reads `entity.context[key]`, in SQL it maps to the same-named statement-table column and an unknown column raises [`QueryError`][ftmq.QueryError] at compile time. On the wire a context field spells `context.<name>` (`filter:context.origin=crawl`).
+`C` accepts any key (`origin`, plus backend columns such as `fragment`, `first_seen`, `bucket`). In memory it reads `entity.context[key]`; in SQL the same-named statement column, where an unknown column raises [`QueryError`][ftmq.QueryError] at compile time. Its wire spelling is `context.<name>` (`filter:context.origin=crawl`).
 
 ### `schema` vs `schemata`
 
-`M(schema=...)` is an **exact** match, while `M(schemata=...)` matches an entity that **is-a** the given schema (the schema itself or any of its descendants):
+`M(schema=...)` is an **exact** match, `M(schemata=...)` an **is-a** match (the schema or any descendant):
 
 ```python
 Query().where(M(schema="LegalEntity"))     # only entities whose schema is exactly LegalEntity
@@ -81,61 +73,57 @@ P(name="Jane") | P(name__ilike="j%")                   # OR
 M(schema="Person") & (G(countries="de") | G(countries="at"))   # nested
 ```
 
-[`Query.where`][ftmq.Query.where] takes any number of nodes and combines them with **and**. Chained `.where()` calls also combine with **and**:
+[`Query.where`][ftmq.Query.where] combines its nodes with **and**, as do chained `.where()` calls:
 
 ```python
 q = Query().where(M(schema="Payment"), P(date__gte="2024-10"))
 q = q.where(G(countries="de") | G(countries="at"))
 ```
 
-Structurally equivalent queries (built in a different order) serialize and hash identically.
-
-Nodes are canonicalized as they combine: a sub-group of the same connector merges into its parent, and a condition that appears twice (passed twice, or re-applied in a chained `.where()`) is held once. `Query(P(name="x"), P(name="x"))` is `Query(P(name="x"))` on every surface - serialization, hash and the compiled SQL alike.
+Trees are canonicalized as they combine (nested same-connector groups merge, duplicate conditions drop), so equivalent queries serialize, hash and compile identically.
 
 ### What AND means
 
-An entity is a set of statements, so a condition on it is really "some statement of this entity says so". That leaves a question for every conjunction: does each condition get its own statement, or do they have to agree on one? ftmq answers it the same way in memory and in SQL:
+A condition holds if some statement of the entity satisfies it. In a conjunction:
 
 > **Conditions that could hold of one statement simultaneously must hold of the same one.**
 
 | conditions | share a statement | why |
 |---|---|---|
 | distinct row-scoped columns - `C(origin="crawl") & C(first_seen__gte=d)`, `M(dataset="a") & C(origin="crawl")` | **yes** | different columns of one statement |
-| bounds on one field - `P(date__gte="2024-10") & P(date__lt="2024-11")` | **yes** | a lower and an upper bound describe one value |
-| repeated equality - `M(dataset="d1") & M(dataset="d2")`, `P(name="a") & P(name="b")` | no | set semantics: "has each". `M(dataset="d1") & M(dataset="d2")` still means "present in both datasets" |
-| different properties - `P(amountEur__gte=1000) & P(country="de")` | no | a statement carries exactly one property |
-| `schema` / `schemata` / `id` / `canonical_id` | no | entity-wide facts. An entity merged across datasets can carry `LegalEntity` statements *and* `Person` ones, so `C(origin="x") & M(schema="Person")` stays "a Person having an x-origin statement" |
+| bounds on one field - `P(date__gte="2024-10") & P(date__lt="2024-11")` | **yes** | the bounds describe one value |
+| repeated equality - `M(dataset="d1") & M(dataset="d2")`, `P(name="a") & P(name="b")` | no | set semantics: "has each", e.g. present in both datasets |
+| different properties - `P(amountEur__gte=1000) & P(country="de")` | no | a statement carries one property |
+| `schema` / `schemata` / `id` / `canonical_id` | no | entity-wide: `C(origin="x") & M(schema="Person")` is "a Person with an x-origin statement" |
 
-So `P(date__gte="2024-10") & P(date__lt="2024-11")` is one date inside October 2024, not one date after it plus another before December. Only conjunctions join: under `|` the alternatives stay independent, and `~` negates the joined condition ("no statement is both").
+So `P(date__gte="2024-10") & P(date__lt="2024-11")` is one date in October 2024. Only conjunctions join: alternatives under `|` stay independent, and `~` negates the joined condition ("no statement is both").
 
-This narrows which *entities* match; it never narrows what comes back. A matching entity is still assembled from all of its statements, including those from other origins - see [`select`](#selecting-properties) to narrow that.
+This decides which entities match, not what comes back: a matching entity is assembled from all of its statements (narrow that with [`select`](#selecting-properties)).
 
 !!! note "Two known gaps"
-    Co-reference between *distinct* row-scoped columns needs the statements themselves. Every store-backed entity carries them, so SQL and memory agree; an entity read off a json stream has only an aggregated context (`origin` a set of origins, `first_seen` the earliest), where the correlation between two columns is already lost - there each condition is tested on its own. Everything else in the table behaves identically everywhere.
+    Co-reference between *distinct* row-scoped columns needs the statements. An entity read off a json stream only has an aggregated context (`origin` a set, `first_seen` the earliest), so there each condition is tested on its own.
 
-    `M(entity_id=...)` is not row-scoped: in SQL it reads the pre-resolution column, in memory the entity's own id, and co-referring it would widen that existing divergence.
-
+    `M(entity_id=...)` is not row-scoped: SQL reads the pre-resolution column, memory the entity's own id.
 
 ### Value comparators
 
-Any lookup can carry a comparator with the `__<comparator>` suffix (default is equals):
+Any lookup takes a `__<comparator>` suffix (default equals):
 
 - `eq` (default) / `not` - (not) equals
 - `gt` / `gte` / `lt` / `lte` - greater / lower (or equal)
 - `in` / `not_in` - value (not) in a list
 - `like` / `ilike` - (case-insensitive) substring match; `notlike` / `notilike` negate it. `%` and `_` in the value match literally
 - `startswith` / `endswith`
-- `null` - test for presence: `P(deathDate__null=True)` matches entities *without* a `deathDate`
+- `null` - presence: `P(deathDate__null=True)` matches entities *without* a `deathDate`
 
 ```python
-# Payments >= 1000 EUR, in October 2024. The two `date` bounds describe one
-# date - see [What AND means](#what-and-means)
+# payments >= 1000 EUR in October 2024 (one date, see What AND means)
 Query().where(M(schema="Payment"), P(amountEur__gte=1000), P(date__gte="2024-10"), P(date__lt="2024-11"))
 
-# All Janes and Joes
+# all Janes and Joes
 Query().where(P(firstName__in=["Jane", "Joe"]))
 
-# Exclude a legal form
+# exclude a legal form
 Query().where(~P(legalForm="gGmbH"))
 ```
 
@@ -150,7 +138,7 @@ P(director="entity-id")     # a specific edge property pointing at this id
 
 ### Sorting and slicing
 
-Sorting takes a single property, addressed by reference as everywhere else in a query:
+Sorting takes a single property reference:
 
 ```python
 q = Query().order_by(P("name"))                     # ascending
@@ -161,19 +149,19 @@ q = q[10:20]          # next 10
 q = q[1]              # the 2nd result (0-indexed)
 ```
 
-Only a property is sortable for now: any other reference (`M("id")`, `G("dates")`, ...), a bare string or an unknown property raises a `QueryError`. On the wire the field takes the same spelling as filters and facets: `sort=properties.name:desc` in URL params, `"order_by": "-properties.name"` in [`to_dict`][ftmq.Query.to_dict]. An entity without the sort property is still returned, last in either direction. Ties, and an unsorted slice, are ordered by entity id, so paging with `limit` / `offset` is predictable.
+Any other reference (`M("id")`, `G("dates")`, ...), a bare string or an unknown property raises a `QueryError`. Wire spelling: `sort=properties.name:desc` in URL params, `"order_by": "-properties.name"` in [`to_dict`][ftmq.Query.to_dict]. Entities without the sort property come last in either direction; ties and unsorted slices are ordered by entity id, so `limit` / `offset` paging is stable.
 
 ### Selecting properties
 
-[`select`][ftmq.Query.select] narrows the properties a matching entity is read with. It is a projection, not a filter: it never changes *which* entities match, only how much of each comes back.
+[`select`][ftmq.Query.select] restricts which properties a matching entity is read with. It never changes which entities match.
 
 ```python
 q = Query().where(M(schemata="Document")).select(P("title"), P("fileName"))
 ```
 
-On a statement backend this compiles to a `prop` predicate on the statement fetch, so a query for a document's title does not drag its `bodyText` across the wire; in memory the assembled entity is pruned to the same fields. Both give the same result. It takes the same `P` / `G` references an [aggregation](./aggregation.md) does - `G("countries")` keeps every country-typed property - and on the wire it spells `select=properties.title` (RQL: `select(properties.title)`).
+It takes `P` / `G` references (`G("countries")` keeps every country-typed property); wire spelling `select=properties.title`, RQL `select(properties.title)`. On a statement backend it filters the statement fetch, so a document's `bodyText` is not fetched; in memory the entity is pruned to the same fields.
 
-A matching entity always comes back, even with none of the selected properties set, so a projection cannot silently drop a match. What it does cost is completeness: a projected entity has a degraded `caption` and incomplete edges, and filters, sorting and aggregations still read the full entity. It is a view of an entity, not the entity.
+A matching entity always comes back, even with none of the selected properties set. A projected entity has a degraded `caption` and incomplete edges; filters, sorting and aggregations still see the full entity.
 
 Aggregations are documented on the [aggregation](./aggregation.md) page.
 
@@ -203,18 +191,16 @@ for proxy in view.query(q):
     ...
 ```
 
-!!! note "SQL / Lake stores: how the boolean tree compiles"
-    The SQL / Lake translation ([`query.sql`][ftmq.Query.sql]) compiles arbitrary `& | ~` trees and follows the in-memory evaluator. A plain conjunction of distinct fields becomes flat `WHERE` predicates; property and group conditions, and any tree involving `OR`, negation or repeated fields, lift each condition to an entity-level `canonical_id IN (...)` sub-select. Co-referring conditions share one sub-select rather than getting one each (see [What AND means](#what-and-means)). Chained same-field filters AND (as in memory); spell alternatives as `P(name__in=[...])` or `P(name="a") | P(name="b")`. A [`select`](#selecting-properties) projection is a row predicate on the statement fetch only - it never reaches the sub-selects, `count` or the aggregations.
+!!! note "SQL / Lake stores"
+    The SQL translation ([`query.sql`][ftmq.Query.sql]) compiles arbitrary `& | ~` trees with the in-memory semantics. Every condition becomes an entity-level `canonical_id IN (...)` sub-select (co-referring conditions share one, see [What AND means](#what-and-means)), so whole canonical entities come back. Chained same-field filters AND; spell alternatives as `P(name__in=[...])` or `P(name="a") | P(name="b")`. A [`select`](#selecting-properties) projection only restricts the statement fetch, never the sub-selects, `count` or the aggregations.
 
-    Caveats: `like` on SQLite is case-insensitive for ASCII (SQLite's `LIKE` collation), unlike the in-memory and DuckDB substring test. A query of *only* meta / context fields (`M(dataset=...), M(schema=...)`) filters statement rows directly, so a canonical entity merged across datasets can match in memory but not in SQL; with any property / group condition (or a store view's scope) involved, the whole canonical entity comes back.
+    On SQLite, `like` is case-insensitive for ASCII (SQLite's `LIKE` collation), unlike in memory and on DuckDB.
 
-    Numeric aggregations (`sum` / `min` / `max` / `avg`) read the text `value` column as a number with an error-tolerant cast, so a stored value that isn't a number reads as `NULL` and drops out of the aggregate instead of failing the query - the same value is skipped in memory, where `registry.number.to_number` returns `None`. A store holding display-formatted amounts (`"324,687.00"`) therefore aggregates them as `NULL` rather than as the number they display; migrate it with `ftmq statements cast-types` so the SQL backends see the canonical format.
+    Numeric aggregations and sorting read the text `value` column with an error-tolerant cast: a value that isn't a number reads as `NULL` and is skipped, as in memory. Display-formatted amounts (`"324,687.00"`) read as `NULL` too; migrate such a store with `ftmq statements cast-types`.
 
 ## Serialization
 
-`Query` serializes to a lossless nested dict (round-trips any query), plus two URL-friendly string grammars: RQL (nested) and the flat OpenAleph params (interop).
-
-Lossless nested tree (any query), for caching and storage:
+`Query` serializes to a lossless nested dict, an RQL string (nested trees) and flat OpenAleph params.
 
 ```python
 data = q.to_dict()
@@ -223,7 +209,7 @@ assert Query.from_dict(data).to_dict() == data
 
 ### RQL
 
-[RQL](https://github.com/pjwerneck/pyrql) (Resource Query Language) is a compact, URL-friendly string of nestable operators - `and()` / `or()` / `not()` around comparisons - carrying an **arbitrarily nested** `& | ~` tree in a single string. [`from_rql`][ftmq.Query.from_rql] parses it and [`to_rql`][ftmq.Query.to_rql] emits it (via the `pyrql` dependency):
+[RQL](https://github.com/pjwerneck/pyrql) carries an arbitrarily nested `& | ~` tree in one URL-friendly string (`and()` / `or()` / `not()` around comparisons). Parse with [`from_rql`][ftmq.Query.from_rql], emit with [`to_rql`][ftmq.Query.to_rql]:
 
 ```python
 q = Query().where(M(schema="Person") & (P(name="jane") | G(countries="de")))
@@ -231,7 +217,7 @@ q.to_rql()   # "and(eq(schema,Person),or(eq(properties.name,jane),eq(group.count
 Query.from_rql(q.to_rql()).to_dict() == q.to_dict()   # True
 ```
 
-Field names use the wire spelling shared by every string surface (params, RQL, [aggregations](./aggregation.md)): `properties.<name>` for a property, `group.<name>` for a property-type group, `context.<name>` for a context column; meta fields (`schema`, `dataset`, `id`, ...) and `year` are bare. A bare name that is none of those is read as a property. Comparison operators map to ftmq comparators (`eq`, `ne` → `not`, `lt` / `le` / `gt` / `ge`, `in`, `out` → `not_in`, `like` / `ilike`).
+Fields use the wire spelling shared by every string surface: `properties.<name>`, `group.<name>`, `context.<name>`; meta fields (`schema`, `dataset`, `id`, ...) and `year` are bare. Any other bare name is read as a property. Comparators: `eq`, `ne` → `not`, `lt` / `le` / `gt` / `ge`, `in`, `out` → `not_in`, `like` / `ilike`.
 
 | RQL | ftmq node |
 |---|---|
@@ -253,13 +239,13 @@ Field names use the wire spelling shared by every string surface (params, RQL, [
 | `aggregate(year,sum(properties.amountEur))` | `A(sum=P("amountEur"), by=Year())` |
 | `select(properties.title,properties.fileName)` | `.select(P("title"), P("fileName"))` |
 
-The last four rows are not filters: RQL carries [aggregations](./aggregation.md) and the [`select`](#selecting-properties) projection in the same string, side by side with the filter under the top-level `and` (`and(eq(schema,Payment),aggregate(properties.beneficiary,sum(properties.amountEur)))`).
+The last four rows are [aggregations](./aggregation.md) and the [`select`](#selecting-properties) projection, placed next to the filter under the top-level `and`: `and(eq(schema,Payment),aggregate(properties.beneficiary,sum(properties.amountEur)))`.
 
-`to_rql` raises [`QueryError`][ftmq.QueryError] for a comparator with no RQL equivalent (`null`, `startswith`, `endswith`, `notlike`, `notilike`); unlike the flat param grammar it never raises for the *shape* of a tree.
+`to_rql` raises [`QueryError`][ftmq.QueryError] for a comparator with no RQL equivalent (`null`, `startswith`, `endswith`, `notlike`, `notilike`), never for the shape of a tree.
 
 ### OpenAleph
 
-URL params (as [OpenAleph](https://openaleph.org) uses them), as a `MultiDict` or as a URL query string:
+[OpenAleph](https://openaleph.org) URL params, as a `MultiDict` or a query string:
 
 ```python
 q = Query().where(M(schema="Person"), G(countries="de"))
@@ -267,8 +253,6 @@ q.to_string()   # "filter:group.countries=de&filter:schema=Person"
 Query.from_string("filter:schema=Person&filter:group.countries=de")
 Query.from_params({"filter:schema": ["Person"], "filter:group.countries": ["de"]})
 ```
-
-The bridge maps `ftmq` nodes onto the Aleph `filter:` / `exclude:` / `empty:` convention:
 
 | Aleph param | ftmq node |
 |---|---|
@@ -282,12 +266,12 @@ The bridge maps `ftmq` nodes onto the Aleph `filter:` / `exclude:` / `empty:` co
 | `empty:properties.birthDate` | `P(birthDate__null=True)` |
 | `select=properties.title` | `.select(P("title"))` (a [projection](#selecting-properties), not a filter) |
 
-`exclude:` is the negation of the matching `filter:` (Aleph's `must_not`): `exclude:properties.country=ru` keeps every entity that does not hold `ru`, including those without a `country`, and a repeated key negates the `in` list. It is not `P(country__not="ru")`, which reads "holds a country other than `ru`" and so drops the entities without one; `not` / `not_in` have no param spelling (they are `ne(...)` / `out(...)` in RQL).
+`exclude:` negates the matching `filter:` (Aleph's `must_not`): `exclude:properties.country=ru` keeps every entity not holding `ru`, including those without a `country`; a repeated key negates the `in` list. `P(country__not="ru")` ("holds a country other than `ru`") has no param spelling; in RQL it is `ne(...)` (`not_in` is `out(...)`).
 
-The param grammar is flat, so [`to_params`][ftmq.Query.to_params] / [`to_string`][ftmq.Query.to_string] raise [`QueryError`][ftmq.QueryError] for a query that cannot be expressed as flat Aleph params (a cross-field `OR` or a negated group). [`from_params`][ftmq.Query.from_params] / [`from_string`][ftmq.Query.from_string] are total.
+The param grammar is flat: [`to_params`][ftmq.Query.to_params] / [`to_string`][ftmq.Query.to_string] raise [`QueryError`][ftmq.QueryError] for a cross-field `OR` or a negated group. [`from_params`][ftmq.Query.from_params] / [`from_string`][ftmq.Query.from_string] accept every param combination.
 
 !!! note "Result fidelity"
-    The query *language* round-trips in all directions. Exact *result-set* equivalence between the Elasticsearch backend and an `ftmq` statement store is best-effort for analyzed fields (e.g. `ilike` uses SQL `%` wildcards vs ES analyzers; the `names` group is name-normalized in ES). Aleph free-text search (`q` / `prefix`) has no `ftmq` equivalent.
+    The query language round-trips in all directions, but result sets from the OpenAleph Elasticsearch backend and an `ftmq` store can differ on analyzed fields (`ilike` vs ES analyzers, the name-normalized `names` group). Aleph free-text search (`q` / `prefix`) has no `Query` equivalent.
 
 ## Reference
 

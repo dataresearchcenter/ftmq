@@ -1,22 +1,13 @@
 """
 The Aleph / OpenAleph URL-param grammar: a bidirectional bridge between a
-`Query` filter tree and the `filter:` / `exclude:` / `empty:` param convention
-used by `openaleph_search.SearchQueryParser`.
+`Query` filter tree plus its aggregations and the `filter:` / `exclude:` /
+`empty:` / `metric:` / `facet` params of `openaleph_search.SearchQueryParser`.
 
-The *filter* half (the mapping between the boolean tree and the param keys)
-lives here, plus the *aggregation* half (`metric:<func>=<prop>` and
-`facet=<field>`, matching openaleph's metric aggregations). `sort` / `limit` /
-`offset` are query-level concerns handled by `Query.to_params` /
-`Query.from_params`.
-
-The param model is flat (AND across keys, OR within a key, `exclude:` and
-`empty:` for negation / absence), so:
-
-- `exclude:` is the negated match (`~`, Aleph's `must_not`); `not` /
-  `not_in` have no param spelling.
-- `params_to_expr` is total and always yields a flat AND-of-leaves.
-- `expr_to_params` is defined on that flat subset and raises `QueryError` for a
-  cross-field OR or a negated group.
+The param model is flat (AND across keys, OR within a key), so `params_to_expr`
+always yields a flat AND of leaves and `expr_to_params` raises `QueryError` for a
+cross-field OR or a negated group. `exclude:` is the negated match (`~`); `not` /
+`not_in` have no param spelling. `sort` / `limit` / `offset` are handled by
+`Query.to_params` / `Query.from_params`.
 """
 
 from __future__ import annotations
@@ -44,9 +35,7 @@ ALEPH_META = {
     "schema": "schema",
     "schemata": "schemata",
 }
-# comparators expressible as a `filter:<op>:<field>` prefix. The range ops match
-# openaleph-search; the substring / prefix ops are an ftmq extension of the
-# grammar (openaleph never emits them, so interop stays a superset).
+# `filter:<op>:<field>` comparators; the non-range ones are an ftmq extension
 PREFIX_OPS = ("gte", "gt", "lte", "lt", "like", "ilike", "startswith", "endswith")
 _FAMILIES = {"M": M, "P": P, "G": G, "C": C}
 
@@ -74,9 +63,7 @@ def normalize_multidict(args: Any) -> dict[str, list[str]]:
 
 
 def _collect_terms(expr: Expr) -> list[tuple[Leaf, bool]]:
-    """Flatten an Aleph-expressible flat-AND tree into `(leaf, inverted)`
-    pairs. A negated sub-tree is only allowed when it wraps a single leaf
-    (`~P(x=1)` -> exclude); anything else raises."""
+    """Flatten a flat-AND tree into `(leaf, inverted)` pairs, or raise `QueryError`."""
     if not expr:
         return []
     if expr.negated:
@@ -121,13 +108,7 @@ def _leaf_to_param(leaf: Leaf, inverted: bool) -> tuple[str, str, list[str]]:
 
 
 def _resolve_field(rest: str) -> tuple[str, str]:
-    """Map a filter field to a (family, ftmq-key) pair.
-
-    Field names are the same on both halves of the grammar, so this is
-    [`ref_from_wire`][ftmq.query.refs.ref_from_wire] plus the upstream key
-    aliases and `schemata`, which is an is-a predicate rather than a field a
-    projection could read.
-    """
+    """Map a filter field to a `(family, key)` pair, with the Aleph meta aliases."""
     if rest in ALEPH_META:
         return "M", ALEPH_META[rest]
     ref = ref_from_wire(rest)
@@ -197,15 +178,11 @@ def params_to_expr(items: dict[str, list[str]]) -> Expr | None:
 
 
 def aggregations_to_params(aggs: set[Agg]) -> dict[str, list[str]]:
-    """Project aggregation specs to openaleph metric / facet params.
+    """Project aggregation specs to openaleph `metric:` / `facet` params.
 
-    Each spec becomes a `metric:<func>=<field>` entry (the convention
-    `openaleph_search.SearchQueryParser` reads as
-    `metrics = {func: {fields}}`); grouped fields become `facet=<field>`
-    values, spelled as the filter keys are (`properties.<name>`,
-    `group.<name>`, `context.<name>`, bare meta fields and `year`). Facet
-    groups apply across all metrics - a per-metric grouping that differs
-    between metrics collapses to their union here.
+    Each spec becomes `metric:<func>=<field>`, its groups `facet=<field>` (fields
+    spelled as the filter keys are). Facets apply across all metrics, so
+    differing per-metric groupings collapse to their union.
 
     Args:
         aggs: The query's aggregation specs.
@@ -228,13 +205,10 @@ def aggregations_to_params(aggs: set[Agg]) -> dict[str, list[str]]:
 def params_to_aggregations(items: dict[str, list[str]]) -> set[Agg]:
     """Rebuild aggregation specs from openaleph `metric:` / `facet` params.
 
-    The inverse of [`aggregations_to_params`][ftmq.query.aleph.aggregations_to_params]:
-    every `facet` field groups every `metric:<func>=<prop>` (matching how
-    openaleph computes a metric within each facet bucket).
-
-    A `facet` with no `metric:` alongside it groups an entity count - the
-    idiomatic Aleph facet. Dropping it instead would discard the param in
-    silence and answer with empty facets.
+    Inverse of
+    [`aggregations_to_params`][ftmq.query.aleph.aggregations_to_params]: every
+    `facet` groups every metric, and a `facet` without a `metric:` groups an
+    entity count.
 
     Args:
         items: A normalized param mapping.
@@ -258,8 +232,7 @@ def params_to_aggregations(items: dict[str, list[str]]) -> set[Agg]:
 def params_to_string(params: dict[str, list[str]]) -> str:
     """Render an Aleph param mapping as a URL query string.
 
-    Keys are sorted for deterministic output; value order within a key is
-    preserved (multi-field `sort` priority must not be reordered).
+    Keys are sorted; value order within a key is kept (`sort` priority).
 
     Args:
         params: The param mapping.

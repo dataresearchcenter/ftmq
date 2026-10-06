@@ -13,11 +13,8 @@ ftmq is a Python library for querying and filtering [Follow The Money](https://f
 ## Behaviour rules for code agents
 
 1. Don’t assume. Don’t hide confusion. Surface tradeoffs.
-
 2. Minimum code that solves the problem. Nothing speculative.
-
 3. Touch only what you must. Clean up only your own mess.
-
 4. Define success criteria. Loop until verified.
 
 ## Environment
@@ -66,7 +63,7 @@ make pre-commit
 - **`G(**groups)`** - a followthemoney property-type group (the `prop_type` column, keyed by `registry.groups`: `names`, `dates`, `countries`, `entities`, ...). `G(entities=<id>)` is the reverse lookup; `P(<edgeProp>=<id>)` is the narrow form.
 - **`C(**context)`** - a context / storage column: `origin` plus backend-specific columns (`fragment`, `first_seen`, `bucket`, ...). In-memory it reads `entity.context[key]`; in SQL it maps to the same-named statement-table column (an unknown column raises `QueryError` at compile time).
 
-**Co-reference (what AND means).** Conditions that could hold of one statement row simultaneously must hold of the *same* row - `query/leaves.py:group_conjunction` decides which, and both evaluators consume it (`Sql._conjunction_clauses`, `Expr._apply_and`), so the rule is expressed once. Distinct **row-scoped** columns join (the `C` columns plus `dataset`; `Sql._row_membership`), as do **bounds on one field** (all-`gt`/`gte`/`lt`/`lte`, `Sql._bound_clause`) - so `P(date__gte=a) & P(date__lt=b)` is one date inside the window, not two unrelated dates. Repeated equality does *not* join (set semantics: `M(dataset="d1") & M(dataset="d2")` is "present in both datasets"), nor do different props (a row holds one prop), nor the entity-scoped fields `schema` / `schemata` / `id` / `canonical_id` (a merged Person carries `LegalEntity` rows). Only conjunctions join; `|` stays independent, `~` negates the joined clause; the view scope stays its own conjunct. Known gaps, documented in `docs/query.md`: co-reference between *distinct* row-scoped columns is SQL-only (an assembled entity aggregates its context values per key), and `entity_id` is not row-scoped because in memory it reads `entity.id`.
+**Co-reference (what AND means).** Conditions that could hold of one statement row simultaneously must hold of the *same* row - `query/leaves.py:group_conjunction` decides which, and both evaluators consume it (`Sql._conjunction_clauses`, `Expr._apply_and`), so the rule is expressed once. Distinct **row-scoped** columns join (the `C` columns plus `dataset`; `Sql._row_membership`), as do **bounds on one field** (all-`gt`/`gte`/`lt`/`lte`, `Sql._bound_clause`) - so `P(date__gte=a) & P(date__lt=b)` is one date inside the window, not two unrelated dates. Repeated equality does *not* join (set semantics: `M(dataset="d1") & M(dataset="d2")` is "present in both datasets"), nor do different props (a row holds one prop), nor the entity-scoped fields `schema` / `schemata` / `id` / `canonical_id` (a merged Person carries `LegalEntity` rows). Only conjunctions join; `|` stays independent, `~` negates the joined clause; the view scope stays its own conjunct. Known gaps, documented in `docs/query.md`: co-reference between *distinct* row-scoped columns needs the statements (a `StatementEntity`; an entity off a json stream only has its aggregated context), and `entity_id` is not row-scoped because in memory it reads `entity.id`.
 
 **Projection.** `Query.select(*refs)` (`P` / `G` refs only, `QueryError` otherwise) restricts which properties a matching entity is read with - parallel to `where()` / `aggregate()`, never changing which entities match. SQL: a `prop` / `prop_type` row predicate on the statement fetch (`Sql._projection_clauses`), always OR-ed with `prop = 'id'` so an entity holding none of the selected props still comes back; in memory: `Query._project` clones and pops, run last in `apply_iter` so filters, sort and aggregations see the full entity. Wire spelling `select=properties.title` / rql `select(...)` / dict `{"select": [...]}`.
 
@@ -99,7 +96,7 @@ This query IR and all four surfaces are mirrored in TypeScript in `js/query/`; a
 
 ### SQL compilation semantics
 
-The SQL translation compiles arbitrary `& | ~` trees, matching the in-memory evaluator: `Sql._expr_clause` lifts every leaf to an entity-level `canonical_id IN (...)` predicate and composes them (co-referring leaves of a conjunction share one sub-select; chained same-field `.where()` calls AND, as in memory - alternatives are spelled `__in`). The clause is entity-level, so it filters statement rows directly and whole canonical entities come back; a slice routes through the `canonical_ids` sub-select. `_is_flat_and` (a plain conjunction, one leaf per field) only gates partition pruning. View scoping is compiled by `Sql` itself (an entity-level dataset-membership conjunct, nomenklatura view semantics: scope selects entities, assembly stays store-wide). Caveats are documented in the note in `docs/query.md`: SQLite `LIKE` collation and the row-level semantics of meta-only queries.
+The SQL translation compiles arbitrary `& | ~` trees, matching the in-memory evaluator: `Sql._expr_clause` lifts every leaf to an entity-level `canonical_id IN (...)` predicate and composes them (co-referring leaves of a conjunction share one sub-select; chained same-field `.where()` calls AND, as in memory - alternatives are spelled `__in`). The clause is entity-level, so it filters statement rows directly and whole canonical entities come back; a slice routes through the `canonical_ids` sub-select. `_is_flat_and` (a plain conjunction, one leaf per field) only gates partition pruning. View scoping is compiled by `Sql` itself (an entity-level dataset-membership conjunct, nomenklatura view semantics: scope selects entities, assembly stays store-wide). The SQLite `LIKE` collation caveat is documented in `docs/query.md`.
 
 Typing status: `ftmq/query/` is `mypy --strict` clean except `sql.py`; `make typecheck` (strict over the whole package) still fails on the CLI, stores, model and util modules.
 
@@ -183,7 +180,8 @@ Tests use fixtures in `tests/fixtures/` (`eu_authorities.ftm.json`, `donations.i
 
 ## Conventions
 
-- Keep docstrings and comments minimal: a one-line docstring, plus Args / Returns for public API rendered in `docs/` (mkdocstrings, see `docs/reference/`); a comment only where the code would surprise, in one short line. No reasoning essays.
+- Keep docstrings and docs short, only the essentials; the audience is developers. No reasoning essays. Inline comments only where the code would surprise otherwise. Docstrings carry Args / Returns only for public API documented in `docs/` (rendered via mkdocstrings, see `docs/reference/`); keep their `Example(s):` sections.
+- No section banners (`# --- ... ---`, `// --- ... ---`) in code or tests: a comment explains surprising code, it doesn't divide a file.
 - Never use em-dashes (`—`) in prose (docstrings, comments, docs, commit messages, PR text). Use a normal hyphen (`-`) or restructure the sentence.
 - In `docs/` markdown prose, keep each paragraph on a single line (do not hard-wrap; one line per paragraph, separated by blank lines). Code docstrings and comments wrap normally.
 - Import at module top level. Use a function-local (inline) import only to break a genuine circular dependency; a type-only import belongs under `if TYPE_CHECKING:` instead.

@@ -71,8 +71,7 @@ def entity_list(
         query = build_query(request, authenticated)
         q = request.query_params.get("q")
         if q:
-            # a `q` term routes to full-text search via ftmq.search: dehydrated,
-            # relevance-ranked hits (no store-side aggregations / stats)
+            # full-text search: dehydrated hits, no aggregations / stats
             if len(q) < settings.min_search_length:
                 raise HTTPException(400, [f"Invalid search query: `{q}`"])
             hits = [e.to_proxy() for e in get_search_store().search(q, query)]
@@ -84,8 +83,7 @@ def entity_list(
                 query_q=q,
             )
         entities: list[Entity] = []
-        # `limit=0` returns only aggregations / stats (openaleph-style facets),
-        # so the entity fetch is skipped
+        # `limit=0` asks for aggregations / stats only
         if query.limit != 0:
             entities = [shape(e, retrieve_params) for e in view.query(query)]
         stats = view.stats(query) if retrieve_params.stats else None

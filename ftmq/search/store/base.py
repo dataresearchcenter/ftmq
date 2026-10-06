@@ -19,8 +19,10 @@ DATASETS, SCHEMA, COUNTRIES = "datasets", "schema", "countries"
 
 @dataclass(frozen=True)
 class FilterTerm:
-    """One search-index predicate: `field` holds any of `values` - or none of
-    them, if `negated`. The terms of a query AND together."""
+    """One search-index predicate: `field` holds any of `values` (none, if `negated`).
+
+    The terms of a query AND together.
+    """
 
     field: str
     values: frozenset[str]
@@ -28,14 +30,11 @@ class FilterTerm:
 
 
 def _leaf_term(leaf: Leaf) -> FilterTerm | None:
-    """The term a single leaf compiles to, or `None` for a field the index
-    doesn't hold (a property filter, an id, ...) - those are not expressible
-    and are dropped, as they always have been."""
+    """The term a leaf compiles to, or `None` (dropped) for an unindexed field."""
     if isinstance(leaf, DatasetLeaf):
         field, values = DATASETS, set(ensure_list(leaf.value))
     elif isinstance(leaf, SchemataLeaf):
-        # an is-a filter matches every non-abstract schema below it - the
-        # index holds the entity's exact schema
+        # the index holds the exact schema, so is-a expands to the schemata below
         field, values = SCHEMA, leaf.names
     elif isinstance(leaf, SchemaLeaf):
         field, values = SCHEMA, set(ensure_list(leaf.value))
@@ -52,8 +51,7 @@ def _leaf_term(leaf: Leaf) -> FilterTerm | None:
 
 
 def _collect(node: Expr | Leaf) -> list[FilterTerm]:
-    """The ANDed terms of one node, raising for a shape the flat term list
-    cannot represent."""
+    """The ANDed terms of a node, raising for a shape a flat term list can't hold."""
     if isinstance(node, Leaf):
         term = _leaf_term(node)
         return [] if term is None else [term]
@@ -71,9 +69,7 @@ def _collect(node: Expr | Leaf) -> list[FilterTerm]:
 
 
 def _or_term(node: Expr) -> FilterTerm:
-    """Fold a same-field OR of positive terms into one term. Anything else -
-    a cross-field OR, a negated or unindexed alternative - would silently
-    narrow the query, so it raises instead."""
+    """Fold a same-field OR of positive terms into one term, raising otherwise."""
     terms: list[FilterTerm] = []
     for child in node.children:
         child_terms = _collect(child)
@@ -88,15 +84,11 @@ def _or_term(node: Expr) -> FilterTerm:
 
 
 def get_filters(query: Query | None) -> list[FilterTerm]:
-    """Compile a query's filter tree into the flat term list a search index can
-    apply.
+    """Compile a query's filter tree into the flat term list a search index applies.
 
-    The index holds three filterable fields (`datasets`, `schema`,
-    `countries`); a filter on anything else is dropped. A `not` / `not_in`
-    comparator (or a `~` around a single condition) becomes a negated term
-    instead of being read as a positive one, and a shape that cannot be
-    expressed as ANDed terms - a cross-field OR, a negated group, a comparator
-    like `ilike` on an indexed field - raises.
+    Only `datasets`, `schema` and `countries` are indexed, filters on other fields
+    are dropped. A `not` / `not_in` comparator (or `~` around a single condition)
+    becomes a negated term.
 
     Args:
         query: The query to compile (`None` means no filters).
@@ -105,7 +97,8 @@ def get_filters(query: Query | None) -> list[FilterTerm]:
         The terms to AND together.
 
     Raises:
-        QueryError: If the query's filter tree is not expressible.
+        QueryError: For a shape ANDed terms can't express (a cross-field OR, a
+            negated group, a comparator like `ilike` on an indexed field).
     """
     if query is None or query.q is None:
         return []

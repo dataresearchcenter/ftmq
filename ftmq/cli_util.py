@@ -3,12 +3,10 @@ from typer.core import TyperGroup
 
 
 class DefaultCmdTyperGroup(TyperGroup):
-    """Route unknown or absent subcommands to a default command (the behaviour
-    of `click-default-group` used by the previous click-based cli).
+    """Route unknown or absent subcommands to a default command.
 
-    Subclasses configure the routing via the class attributes:
-    `default_cmd_name` names the fallback command, `insert_default_if_no_args`
-    makes a bare invocation run it (instead of typer's no-args handling).
+    Configured via `default_cmd_name` and `insert_default_if_no_args` (a bare
+    invocation runs the default command).
     """
 
     default_cmd_name = "q"
@@ -23,8 +21,7 @@ class DefaultCmdTyperGroup(TyperGroup):
 
     def get_command(self, ctx: Context, cmd_name: str) -> Command | None:
         if cmd_name not in self.commands:
-            # stash the consumed token to re-insert it into the default
-            # command's args in `resolve_command`
+            # re-inserted into the default command's args in `resolve_command`
             ctx._default_cmd_arg0 = cmd_name  # type: ignore[attr-defined]
             cmd_name = self.default_cmd_name
         return super().get_command(ctx, cmd_name)

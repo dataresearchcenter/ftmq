@@ -1,18 +1,14 @@
 """
 Cast statement values into the canonical format of their property type.
 
-`cast_types` normalizes `number` and `date` values in a statement stream: the
-parsed value goes into `value`, the raw string into `original_value` (unless
-that already carries a source value), and the statement `id` (a content hash
-over `value`) is regenerated for every changed statement. Statement store
-writers apply this on write; existing dumps are migrated via the CLI:
+`cast_types` normalizes `number` and `date` values: the parsed value goes into
+`value`, the raw string into `original_value` (unless already set), and the
+statement `id` is regenerated. Statement stores apply this on write, as the SQL
+backends `CAST` the `value` column. Existing dumps are migrated via the CLI:
 
 ```bash
 cat statements.csv | ftmq statements cast-types > statements.typed.csv
 ```
-
-The SQL backends `CAST` the `value` column when aggregating or sorting
-numerically, so stored values must be in this format.
 """
 
 from typing import Callable, Iterable, Iterator, TypeAlias
@@ -27,20 +23,18 @@ Caster: TypeAlias = Callable[[str], str | None]
 
 
 def cast_number(value: str) -> str | None:
-    """The canonical numeric form of a value, or `None` if it doesn't parse.
+    """Get the canonical numeric form of a value, or `None` if it doesn't parse.
 
-    This is the string `registry.number.to_number` reads (same parser, same
-    rejections), kept as a string instead of a float: the float round trip
-    would lose precision beyond 15 digits. A unit suffix is dropped
-    (`"5 kg"` -> `"5"`) and survives in `original_value`.
+    Kept as a string (no float precision loss); a unit suffix is dropped
+    (`"5 kg"` -> `"5"`).
     """
     number, _unit = registry.number.parse(value)
     return number
 
 
 def cast_date(value: str) -> str | None:
-    """The canonical ISO(-prefix) form of a date value, or `None` if it doesn't
-    parse. Partial dates (`"2021"`, `"2021-06"`) are kept as they are."""
+    """Get the canonical ISO (prefix) form of a date value, or `None` if it doesn't
+    parse. Partial dates (`"2021"`, `"2021-06"`) are kept."""
     return registry.date.clean_text(value)
 
 
@@ -52,7 +46,7 @@ DEFAULT_TYPES: tuple[str, ...] = tuple(CASTERS)
 
 
 def get_casters(types: Iterable[str]) -> dict[str, Caster]:
-    """The caster per property type, keyed as `Statement.prop_type`."""
+    """Get the caster per property type, keyed as `Statement.prop_type`."""
     casters: dict[str, Caster] = {}
     for type_ in types:
         caster = CASTERS.get(type_)
@@ -67,8 +61,7 @@ def get_casters(types: Iterable[str]) -> dict[str, Caster]:
 def cast_statement(
     stmt: Statement, casters: dict[str, Caster] | None = None
 ) -> Statement | None:
-    """Cast one statement's value into the canonical format of its property
-    type, or `None` if the value doesn't parse (it is logged as it goes by).
+    """Cast a statement's value into the canonical format of its property type.
 
     Args:
         stmt: The statement to cast
@@ -111,8 +104,7 @@ def cast_types(
     Returns:
         A generator of `Statement` instances
     """
-    # validate eagerly: a generator body would only raise once a consumer
-    # (a writer that has already emitted its header) pulls the first statement
+    # validate eagerly, before a consumer has written any output
     return _cast_types(statements, get_casters(types), drop_invalid)
 
 
@@ -125,8 +117,6 @@ def _cast_types(
     for stmt in statements:
         casted = cast_statement(stmt, casters)
         if casted is None:
-            # a value the type can't parse: keeping it is lossless but leaves
-            # the data outside the format the read side assumes
             invalid += 1
             if not drop_invalid:
                 yield stmt

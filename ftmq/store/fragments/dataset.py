@@ -47,9 +47,7 @@ EntityFragments: TypeAlias = Generator[EntityProxy, None, None]
 
 @contextmanager
 def disable_timeout(conn: Connection, store):
-    # for long running iterations (e.g. re-index in OpenAleph), for postgres we
-    # don't want to get cancelled if a idle_in_transaction_timeout is configured
-    # on the server
+    # long iterations must not be cancelled by a postgres idle-in-transaction timeout
     if store.is_postgres:
         raw_conn = conn.connection.driver_connection
         with raw_conn.cursor() as cursor:
@@ -174,7 +172,6 @@ class Fragments(object):
             if self.store.is_postgres:
                 stmt = stmt.where(self.table.c.entity["schema"].astext == schema)
             else:
-                # SQLite JSON support - use json_extract function
                 stmt = stmt.where(
                     func.json_extract(self.table.c.entity, "$.schema") == schema
                 )
@@ -184,8 +181,6 @@ class Fragments(object):
             stmt = stmt.where(self.table.c.timestamp <= until)
         if sort:
             stmt = stmt.order_by(self.table.c.id)
-        # stmt = stmt.order_by(self.table.c.origin)
-        # stmt = stmt.order_by(self.table.c.fragment)
         conn = self.store.engine.connect()
         try:
             with disable_timeout(conn, self.store) as conn:
@@ -297,10 +292,7 @@ class Fragments(object):
         until=None,
         origin=None,
     ) -> EntityFragments:
-        """
-        For large datasets an overall sort is not feasible, so we iterate in
-        sorted batched IDs.
-        """
+        """Iterate in sorted id batches (a full sort is too slow on large datasets)."""
         for entity_ids in self.get_sorted_id_batches(
             batch_size, schema=schema, since=since, until=until, origin=origin
         ):
@@ -316,10 +308,7 @@ class Fragments(object):
     def get_sorted_id_batches(
         self, batch_size=10_000, schema=None, since=None, until=None, origin=None
     ) -> Generator[list[str], None, None]:
-        """
-        Get sorted ID batches to speed up iteration and useful to parallelize
-        processing of iterator Entities
-        """
+        """Yield sorted id batches, for batched or parallel iteration."""
         last_id = None
         while True:
             stmt = select(self.table.c.id).distinct()
@@ -331,7 +320,6 @@ class Fragments(object):
                 if self.store.is_postgres:
                     stmt = stmt.where(self.table.c.entity["schema"].astext == schema)
                 else:
-                    # SQLite JSON support - use json_extract function
                     stmt = stmt.where(
                         func.json_extract(self.table.c.entity, "$.schema") == schema
                     )
@@ -355,7 +343,7 @@ class Fragments(object):
     def get_sorted_ids(
         self, batch_size=10_000, schema=None, since=None, until=None, origin=None
     ) -> Generator[str, None, None]:
-        """Get sorted IDs, optionally filtered by schema or origin"""
+        """Get sorted ids, optionally filtered by schema or origin."""
         for batch in self.get_sorted_id_batches(
             batch_size, schema=schema, since=since, until=until, origin=origin
         ):
@@ -368,7 +356,7 @@ class Fragments(object):
         since: datetime | None = None,
         until: datetime | None = None,
     ) -> Statements:
-        """Iterate unsorted statements with its fragment origins"""
+        """Iterate unsorted statements with their fragment origins."""
         stmt = self.table.select()
         entity_ids = ensure_list(entity_ids)
         if len(entity_ids) == 1:

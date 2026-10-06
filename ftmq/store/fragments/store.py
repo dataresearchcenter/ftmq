@@ -6,8 +6,7 @@ from ftmq.store.fragments.utils import NULL_ORIGIN
 
 
 class Store(object):
-    """A database containing multiple tables that represent
-    FtM-store datasets."""
+    """A database holding one table per FtM-store dataset."""
 
     PREFIX = "ftm"
 
@@ -17,7 +16,6 @@ class Store(object):
             try:
                 import psycopg  # noqa: F401
 
-                # Use psycopg3 dialect for better performance and compatibility
                 if database_uri.startswith("postgresql://"):
                     return database_uri.replace(
                         "postgresql://", "postgresql+psycopg://", 1
@@ -27,8 +25,7 @@ class Store(object):
                         "postgres://", "postgresql+psycopg://", 1
                     )
             except ImportError:
-                # Fall back to psycopg2 if psycopg3 is not available
-                pass
+                pass  # fall back to psycopg2
         return database_uri
 
     def __init__(
@@ -38,7 +35,6 @@ class Store(object):
     ):
         self.database_uri = self._adjust_psycopg3_uri(database_uri)
 
-        # Configure connection pooling for psycopg3
         config.setdefault("pool_size", 1)
         if self.database_uri.startswith("postgresql+psycopg://"):
             config.setdefault("max_overflow", 5)

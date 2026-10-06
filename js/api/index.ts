@@ -42,10 +42,7 @@ export default class Api {
     return await this.get(`entities/${id}`, opts, undefined, retrieve);
   }
 
-  /**
-   * Fetch entities for a query. Pass `retrieve.q` to run full-text search over
-   * the same query (routes `/entities` to `ftmq.search`, relevance-ranked).
-   */
+  /** Fetch entities for a query (`retrieve.q` runs a full-text search). */
   async getEntities(
     query: Query = new Query(),
     retrieve: IRetrieveParams = {},
@@ -58,7 +55,6 @@ export default class Api {
     query: Query = new Query(),
     retrieve: IRetrieveParams = {},
   ): Promise<IEntityDatum[]> {
-    // chain requests via `offset` to paginate through all results.
     const limit = query.limit ?? 100;
     let offset = query.offset ?? 0;
     let entities: IEntityDatum[] = [];
@@ -69,7 +65,7 @@ export default class Api {
       );
       entities = [...entities, ...res.results];
       if (!res.next || res.results.length === 0) return entities;
-      offset += res.results.length;
+      offset += res.results.length; // the api may clamp the limit
     }
   }
 
@@ -92,8 +88,7 @@ export default class Api {
     throw new Error(errorMsg);
   }
 
-  // build the request url params from a Query (flat aleph, or `rql=` for a
-  // nested tree) plus the retrieve params (flags + `q`) and the api key
+  // the query (see `Query.toRequestParams`), retrieve params and api key
   private params(
     query?: Query,
     retrieve: IRetrieveParams = {},
@@ -108,7 +103,7 @@ export default class Api {
     for (const [key, value] of Object.entries(retrieve)) {
       if (value !== undefined) params.set(key, String(value));
     }
-    // the api key is only accessible on the server and bumps the page limit
+    // server-side only: the api key lifts the public limits
     if (this.api_key) params.set("api_key", this.api_key);
     return params;
   }
@@ -135,7 +130,7 @@ export default class Api {
   }
 }
 
-// arbitrary typed fetchers that just take a full url
+// typed fetchers for a full url
 async function fetcher(url: string, opts: RequestInit = {}): Promise<any> {
   const res = await fetch(url, opts);
   if (res.ok) {

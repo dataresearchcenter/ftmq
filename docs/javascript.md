@@ -1,8 +1,8 @@
 # Javascript
 
-`@dataresearchcenter/ftmq` is a TypeScript client for the [ftmq api](./api.md). It provides a composable `Query` that mirrors the Python [`ftmq.Query`](./query.md) with the same semantics and the same serialization surfaces, so a client app can build queries, parse them back out of a url, and talk to the api, all with one query model shared across both languages.
+`@dataresearchcenter/ftmq` is a TypeScript client for the [ftmq api](./api.md). Its `Query` mirrors the Python [`ftmq.Query`](./query.md) with the same semantics and serialization surfaces, so a client app can build queries, parse them back out of a url, and send them to the api.
 
-The followthemoney data model itself (entities, schemata, property types) is not reimplemented here: it comes from [`@opensanctions/followthemoney`](https://github.com/opensanctions/followthemoney), which the client returns raw entity data (`IEntityDatum`) compatible with.
+The followthemoney model is not reimplemented: the client returns raw entity data (`IEntityDatum`) compatible with [`@opensanctions/followthemoney`](https://github.com/opensanctions/followthemoney).
 
 ## Install
 
@@ -10,7 +10,7 @@ The followthemoney data model itself (entities, schemata, property types) is not
 npm install @dataresearchcenter/ftmq @opensanctions/followthemoney
 ```
 
-The package ships ES modules; `@opensanctions/followthemoney` is only needed to hydrate returned entity data into rich `Entity` proxies (see [Working with results](#working-with-results)).
+The package ships ES modules. `@opensanctions/followthemoney` is only needed to hydrate results into `Entity` proxies (see [Working with results](#working-with-results)).
 
 ## Quick start
 
@@ -25,10 +25,10 @@ const query = new Query()
   .slice(0, 25);
 
 const result = await api.getEntities(query);
-console.log(result.total, result.entities.length);
+console.log(result.total, result.results.length);
 ```
 
-The constructor takes the api base url and an optional api key. The key is sent server-side only and lifts the public pagination cap:
+The optional second constructor argument is an api key (server-side only), which lifts the public pagination cap:
 
 ```ts
 const api = new Api("https://api.example.org", process.env.FTMQ_API_KEY);
@@ -36,7 +36,7 @@ const api = new Api("https://api.example.org", process.env.FTMQ_API_KEY);
 
 ## The Query
 
-`Query` is built from four node constructors, mirroring the Python grammar. Each takes an object of `field[__comparator]=value` lookups:
+Four node constructors, as in Python, each taking an object of `field[__comparator]: value` lookups:
 
 | Node | Targets | Example |
 |---|---|---|
@@ -45,7 +45,7 @@ const api = new Api("https://api.example.org", process.env.FTMQ_API_KEY);
 | `G` | a property-type group (`countries`, `dates`, `entities`, ...) | `G({ countries: "de" })` |
 | `C` | a context field (`origin`, ...) | `C({ origin: "crawl" })` |
 
-Nodes compose into arbitrary boolean trees with the free functions `and`, `or`, `not` (or the equivalent `.and()` / `.or()` / `.not()` methods):
+Nodes compose with the free functions `and`, `or`, `not` (or the `.and()` / `.or()` / `.not()` methods):
 
 ```ts
 import { Query, M, P, G, or, not } from "@dataresearchcenter/ftmq";
@@ -58,11 +58,11 @@ const query = new Query()
   .slice(0, 25); // offset, offset + limit
 ```
 
-`.where()` AND-combines its nodes (chained `.where()` also ANDs); `.slice(start, stop)` sets offset / limit; `.orderBy(P(name), { ascending })` sorts by a single property, addressed by reference like an aggregation field (only properties are sortable; the server rejects anything else); the request spells it `sort=properties.<name>`.
+`.where()` AND-combines its nodes (chained calls also AND); `.slice(start, stop)` sets offset / limit; `.orderBy(P(name), { ascending })` sorts by a single property (sent as `sort=properties.<name>`; the server rejects any other field).
 
 ### Comparators
 
-Any lookup key may carry a `__<comparator>` suffix (the default is equals): `gt` / `gte` / `lt` / `lte` (ranges), `like` / `ilike` (substring), `startswith` / `endswith`, `in` / `not_in` (lists), `not`, and `null` (presence):
+Any lookup key takes a `__<comparator>` suffix (default equals): `gt` / `gte` / `lt` / `lte`, `like` / `ilike`, `startswith` / `endswith`, `in` / `not_in`, `not`, and `null` (presence):
 
 ```ts
 P({ amountEur__gte: 1000 });
@@ -72,13 +72,11 @@ G({ entities: "some-entity-id" }); // reverse lookup (any edge pointing here)
 P({ deathDate__null: true }); // entities without a deathDate
 ```
 
-Validity of schema / property / group names is not checked client-side; the api rejects an invalid query with a 400.
+Schema / property / group names are not validated client-side; the api answers an invalid query with a 400.
 
 ### Aggregations
 
-Aggregations ride on the entities query: add `A(...)` nodes and read the response `metrics` (ungrouped) and `facets` (grouped). Slice to `limit=0` (via `.slice(0, 0)`) to fetch only the aggregations, no entities.
-
-An aggregation addresses a field by *reference*: the same `M` / `P` / `G` / `C` markers, called with a bare field name instead of `field: value` lookups (plus `Year()`). Fields are keyed by their wire spelling in the response, as in a url.
+Add `A(...)` nodes and read the response `metrics` (ungrouped) and `facets` (grouped); `.slice(0, 0)` returns only the aggregations. Fields are references (`M` / `P` / `G` / `C` called with a bare field name, plus `Year()`), keyed in the response by their wire spelling.
 
 ```ts
 import { Query, M, P, A, Year } from "@dataresearchcenter/ftmq";
@@ -92,18 +90,16 @@ const page = await api.getEntities(query.slice(0, 25));
 page.metrics; // ungrouped: { "properties.amountEur": { sum: ... } }
 page.facets; // grouped: { year: { values: [{ value, label, count, metrics }], total } }
 
-// rank the buckets by a metric instead of by entity count
-query.orderFacets({ count: M("id"), ascending: true });
-// and set how many buckets a facet returns (default 20)
-query.facetSize(Year(), 5);
+// rank buckets by a metric instead of entity count, and set the bucket count (default 20)
+const ranked = query.orderFacets({ count: M("id"), ascending: true }).facetSize(Year(), 5);
 
 // aggregations only: slice to limit 0 (no entities)
-const { facets, metrics } = await api.getEntities(query.slice(0, 0));
+const { facets, metrics } = await api.getEntities(ranked.slice(0, 0));
 ```
 
 ## Parsing urls into a Query
 
-Every serialization surface round-trips, so a client app can reconstruct a `Query` from an incoming url:
+Every surface round-trips, so an app can rebuild a `Query` from a url:
 
 ```ts
 // e.g. from a browser location or a link
@@ -117,7 +113,7 @@ await api.getEntities(next);
 
 ## Serialization surfaces
 
-A `Query` serializes to the same four surfaces as the Python `ftmq.Query`:
+The same four surfaces as the Python `ftmq.Query`:
 
 ```ts
 query.toDict(); // lossless nested tree (round-trips any query)
@@ -126,7 +122,7 @@ query.toString(); // Aleph url query string
 query.toRql(); // RQL string (carries an arbitrarily nested tree + aggregations)
 ```
 
-A query produced in Python parses in the TypeScript client and vice versa. The sorted-key surfaces (`toParams` / `toString`) are byte-for-byte identical across languages; `toDict` / `toRql` are order-independent (they parse back to the same query, but child ordering is not guaranteed to match). The client picks the wire format itself: a flat query is sent as Aleph params, a nested one as `rql=`.
+Queries parse across languages. `toParams` / `toString` are byte-identical to Python; `toDict` / `toRql` parse back to the same query but may order children differently. The client sends a flat query as Aleph params and a nested one as `rql=`.
 
 ## Client methods
 
@@ -139,9 +135,9 @@ A query produced in Python parses in the TypeScript client and vice versa. The s
 | `getEntitiesAll(query?, retrieve?)` | `/entities` (paginated) |
 | `autocomplete(q)` | `/autocomplete` |
 
-`retrieve` carries the non-query request params: the response-shaping flags `{ nested, featured, dehydrate, dehydrate_nested, stats }` plus an optional `q` full-text search term (which routes the query to `ftmq.search`). An unauthenticated `limit` is capped to the public maximum; pass an api key to exceed it.
+`retrieve` holds the non-query params: the flags `{ nested, featured, dehydrate, dehydrate_nested, stats }` and an optional full-text search term `q`. Without an api key, `limit` is capped to the public maximum.
 
-The response matches the OpenAleph api v2 envelope: `results`, `total`, `total_type`, `page`, `pages`, `limit`, `offset`, `next`, `previous`, `facets`, `metrics`, `filters`, `query_q`, plus the ftmq extensions `query` (the canonical `toDict`) and `stats`.
+The response is the OpenAleph api v2 envelope: `results`, `total`, `total_type`, `page`, `pages`, `limit`, `offset`, `next`, `previous`, `facets`, `metrics`, `filters`, `query_q`, plus the ftmq extensions `query` (the canonical `toDict`) and `stats`.
 
 ```ts
 const page = await api.getEntities(query, { stats: true });
@@ -160,7 +156,7 @@ const { candidates } = await api.autocomplete("jan");
 
 ## Working with results
 
-The client returns plain `IEntityDatum` objects. To get a rich entity proxy (caption, typed property access, ...) hydrate them with the upstream model:
+Hydrate the plain `IEntityDatum` objects into entity proxies with the upstream model:
 
 ```ts
 import { Model, defaultModel } from "@opensanctions/followthemoney";

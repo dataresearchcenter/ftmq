@@ -16,8 +16,7 @@ settings = Settings()
 
 
 class SearchDefaultGroup(DefaultCmdTyperGroup):
-    """`ftmq search "jane doe"` routes the bare query to the `search` command;
-    a bare `ftmq search` shows the help (via `no_args_is_help`)."""
+    """Route `ftmq search <q>` to the `search` command; no args shows the help."""
 
     default_cmd_name = "search"
     insert_default_if_no_args = False

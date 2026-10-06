@@ -75,8 +75,7 @@ class EntitySearchResult(BaseModel):
         countries: Iterable[str] | None = None,
         **kwargs: Any,
     ) -> EntityModel:
-        # only include properties the schema actually has (e.g. an interval
-        # schema like `Payment` has no `name`)
+        # only properties the schema has (an interval like `Payment` has no `name`)
         properties = {"name": list(names), "country": list(countries or [])}
         schema_props = model[schema].properties
         return EntityModel(

@@ -5,9 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def get_db_url() -> str:
-    """
-    Try to align with NK setting if it's sqlite
-    """
+    """The nomenklatura db url if it is sqlite, else a local `ftmq_search.db`."""
     parsed = urlparse(settings.DB_URL)
     if "sqlite" in parsed.scheme:
         return settings.DB_URL

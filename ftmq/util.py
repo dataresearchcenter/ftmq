@@ -31,22 +31,17 @@ def make_dataset(name: str | None = DEFAULT_DATASET) -> Dataset:
 
 
 def ensure_dataset(ds: str | Dataset | None = None) -> Dataset:
-    # not cached: datasets compare by name, so a cache could hand back an equal
-    # dataset with other members (see `get_scope_dataset`)
+    # not cached: equal (same-named) datasets may differ in their members
     return ds if isinstance(ds, Dataset) else make_dataset(ds)
 
 
 @cache
 def get_scope_dataset(*names: str) -> Dataset:
-    """A store's read scope over `names`: a single dataset is its own scope,
-    several are wrapped in a synthetic `ftmq_scope` collection.
-
-    The collection name must differ from every member: followthemoney
-    identifies datasets by name, and a collection sharing a member's name
-    would absorb that member and drop it from `leaf_names`.
-    """
+    """Get a store's read scope over `names`: a single dataset is its own scope,
+    several are wrapped in a synthetic `ftmq_scope` collection."""
     if len(names) == 1:
         return make_dataset(names[0])
+    # a collection named like a member would absorb that member
     ds = Dataset({"name": SCOPE_DATASET, "datasets": names})
     ds.children = {make_dataset(n) for n in names}
     return ds
@@ -58,14 +53,7 @@ def make_entity(
     default_dataset: str | Dataset | None = None,
 ) -> E:
     """
-    Create a `Entity` from a json dict.
-
-    The input ``data`` dict is **not** mutated. The underlying
-    ``ValueEntity.__init__`` (and ``EntityProxy.__init__``) destructively
-    pop their well-known fields (``caption``, ``datasets``, ``referents``,
-    ``first_seen``, ``last_seen``, ``last_change``, ``statements``) off
-    the dict they are handed, so this helper hands them a shallow copy
-    instead.
+    Create an `Entity` from a json dict. The input `data` is not mutated.
 
     Args:
         data: followthemoney data dict that represents entity data.
@@ -78,9 +66,7 @@ def make_entity(
     etype = entity_type or ValueEntity
     if data.get("id") is None:
         raise ValueError("Entity has no ID.")
-    # Defensive shallow copy: ValueEntity / EntityProxy / StatementEntity
-    # all destructively pop top-level fields off the input dict during
-    # construction. Callers don't expect their input to be consumed.
+    # the entity constructors pop fields off the dict they are given
     data = dict(data)
     if etype == EntityProxy:
         return EntityProxy.from_dict(data)
@@ -103,7 +89,7 @@ def ensure_entity(
     default_dataset: str | Dataset | None = None,
 ) -> E:
     """
-    Ensure input data to be specified `Entity` type
+    Ensure input data to be of the given `Entity` type.
 
     Args:
         data: entity or data
@@ -134,8 +120,8 @@ def apply_dataset(entity: E, dataset: str | Dataset, replace: bool | None = Fals
 @cache
 def get_country_name(code: str) -> str:
     """
-    Get the (english) country name for the given 2-letter iso code via
-    [rigour.territories](https://rigour.followthemoney.tech/territories/)
+    Get the (english) country name for a 2-letter iso code via
+    [rigour.territories](https://rigour.followthemoney.tech/territories/).
 
     Examples:
         >>> get_country_name("de")
@@ -161,7 +147,7 @@ def get_country_name(code: str) -> str:
 def get_country_code(value: Any, splitter: str | None = ",") -> str | None:
     """
     Get the 2-letter iso country code for an arbitrary country name via
-    [rigour.territories](https://rigour.followthemoney.tech/territories/)
+    [rigour.territories](https://rigour.followthemoney.tech/territories/).
 
     Examples:
         >>> get_country_code("Germany")
@@ -175,7 +161,7 @@ def get_country_code(value: Any, splitter: str | None = ",") -> str | None:
 
     Args:
         value: Any input that will be [cleaned][ftmq.util.clean_string]
-        splitter: Character to use to get text tokens to find country name for
+        splitter: Split the value into tokens to look up if it doesn't match
 
     Returns:
         The iso code or `None`
@@ -202,7 +188,7 @@ def join_slug(
     max_len: int = 255,
 ) -> str | None:
     """
-    Create a stable slug from parts with optional validation
+    Create a stable slug from parts.
 
     Examples:
         >>> join_slug("foo", "bar")
@@ -217,12 +203,11 @@ def join_slug(
         "a-very-5c156cf9"
 
     Args:
-        *parts: Multiple (ordered) parts to compute the slug from
-        prefix: Add a prefix to the slug
+        *parts: Ordered parts to compute the slug from
+        prefix: Prefix for the slug
         sep: Parts separator
-        strict: Ensure all parts are not `None`
-        max_len: Maximum length of the slug. If it exceeds, the returned value
-            will get a computed hash suffix
+        strict: Return `None` if any part is empty or `None`
+        max_len: Maximum length; a longer slug is cut and gets a hash suffix
 
     Returns:
         The computed slug or `None` if validation fails
@@ -247,7 +232,7 @@ def join_slug(
 
 def get_year_from_iso(value: Any) -> int | None:
     """
-    Extract the year from a iso date string or `datetime` object.
+    Extract the year from an iso date string or `datetime` object.
 
     Examples:
         >>>  get_year_from_iso(None)
@@ -278,7 +263,7 @@ def get_year_from_iso(value: Any) -> int | None:
 
 def clean_string(value: Any) -> str | None:
     """
-    Convert a value to `None` or a sanitized string without linebreaks
+    Convert a value to a sanitized string without linebreaks, or `None` if empty.
 
     Examples:
         >>> clean_string(" foo\n bar")
@@ -308,8 +293,7 @@ def clean_string(value: Any) -> str | None:
 
 def clean_name(value: Any) -> str | None:
     """
-    Clean a value and only return it if it is a "name" in the sense of, doesn't
-    contain exclusively of special chars
+    Clean a value and return it only if it doesn't consist of special chars only.
 
     Examples:
         >>> clean_name("  foo\n Bar")
@@ -331,9 +315,7 @@ def clean_name(value: Any) -> str | None:
 
 def make_fingerprint(value: Any) -> str | None:
     """
-    Create a stable but simplified string or `None` from input that can be used
-    to generate ids (to mimic `fingerprints.generate` which is unstable for IDs
-    as its algorithm could change)
+    Create a stable, simplified string from input to generate ids from.
 
     Examples:
         >>> make_fingerprint("Mrs. Jane Doe")
@@ -363,56 +345,52 @@ def make_fingerprint(value: Any) -> str | None:
 
 
 def entity_fingerprints(entity: EntityProxy) -> set[str]:
-    """Get the set of entity name fingerprints, latinized if the alphabet allows
-    it and with org / person tags removed depending on entity schema"""
+    """Get the entity's name fingerprints, latinized if possible and with org /
+    person tags removed depending on its schema."""
     return make_fingerprints(*entity.names, schemata={entity.schema})
 
 
 def make_fingerprints(*names: str, schemata: set[Schema] | None = None) -> set[str]:
-    """Get the set of name fingerprints, latinized if the alphabet allows
-    it and with org / person tags removed depending on given schemata"""
+    """Get the name fingerprints, latinized if possible and with org / person
+    tags removed depending on the given schemata."""
     # FIXME private import
     schemata = schemata or {model["LegalEntity"]}
     fps: set[str] = set()
     for schema in schemata:
         fps.update(set(_normalize_names(schema, names)))
-    # add latinized if appropriate
     return {latinize_text(fp) if can_latinize(fp) else fp for fp in fps}
 
 
 def make_string_id(*values: Any) -> str | None:
     """
-    Compute a hash id based on values
+    Compute a hash id based on values.
 
     Args:
         *values: Parts to compute id from that will be
             [cleaned][ftmq.util.clean_name]
 
     Returns:
-        The computed hash id or `None` if a parts cleaned value is `None`
+        The computed hash id or `None` if a part's cleaned value is `None`
     """
     return make_entity_id(*map(clean_name, values))
 
 
 def make_fingerprint_id(*values: Any) -> str | None:
     """
-    Compute a hash id based on values fingerprints
+    Compute a hash id based on the values' fingerprints.
 
     Args:
         *values: Parts to compute id from that will be
             [fingerprinted][ftmq.util.make_fingerprint]
 
     Returns:
-        The computed hash id or `None` if a parts fingerprinted value is `None`
+        The computed hash id or `None` if a part's fingerprint is `None`
     """
     return make_entity_id(*map(make_fingerprint, values))
 
 
 def get_dehydrated_entity(e: Entity) -> Entity:
-    """
-    Reduce an Entity to only its property dict that is needed to compute the
-    caption.
-    """
+    """Reduce an entity to the properties needed to compute its caption."""
     properties: SDict = {}
     for prop in e.schema.caption:
         values = [e.caption] if e.caption else e.get(prop)[:1]
@@ -424,9 +402,7 @@ def get_dehydrated_entity(e: Entity) -> Entity:
 
 
 def get_featured_entity(e: Entity) -> Entity:
-    """
-    Reduce an Entity with only its featured properties
-    """
+    """Reduce an entity to its caption and featured properties."""
     featured = get_dehydrated_entity(e)
     for prop in e.schema.featured:
         featured.add(prop, e.get(prop))
@@ -445,7 +421,7 @@ SELECT_ANNOTATED = "__annotated__"
 
 
 def get_name_symbols(schema: Schema, *names: str) -> set[Symbol]:
-    """Get the rigour names symbols for the given schema and list of names"""
+    """Get the rigour name symbols for the given schema and names."""
     type_tag = schema_type_tag(schema)
     if type_tag in (NameTypeTag.UNK, NameTypeTag.OBJ):
         return set()
@@ -456,7 +432,7 @@ def get_name_symbols(schema: Schema, *names: str) -> set[Symbol]:
 
 
 def get_symbols(entity: EntityProxy) -> set[Symbol]:
-    """Get the rigour names symbols for the given entity"""
+    """Get the rigour name symbols for the given entity."""
     if not entity.schema.is_a("LegalEntity"):
         return set()
     names = entity.get_type_values(registry.name, matchable=True)
@@ -464,8 +440,7 @@ def get_symbols(entity: EntityProxy) -> set[Symbol]:
 
 
 def inline_symbols(entity: EntityProxy) -> None:
-    """Get the rigour names symbols for the given entity and write them to `indexText`"""
-    # clean up old symbols from indexText:
+    """Write the entity's rigour name symbols to `indexText`, replacing old ones."""
     for text in entity.pop("indexText"):
         if not text.startswith(SELECT_SYMBOLS):
             entity.add("indexText", text)
@@ -474,14 +449,14 @@ def inline_symbols(entity: EntityProxy) -> None:
 
 
 def select_data(e: EntityProxy, prefix: str) -> StrGenerator:
-    """Select arbitrary stored data in `indexText` identified by given prefix"""
+    """Select data stored in `indexText` under the given prefix."""
     for text in e.get("indexText", quiet=True):
         if text.startswith(prefix):
             yield text.replace(prefix, "").strip()
 
 
 def select_symbols(e: EntityProxy) -> set[str]:
-    """Select stored symbols in `indexText`"""
+    """Select the symbols stored in `indexText`."""
     symbols: set[str] = set()
     for data in select_data(e, SELECT_SYMBOLS):
         symbols.update(data.split(","))
@@ -489,7 +464,7 @@ def select_symbols(e: EntityProxy) -> set[str]:
 
 
 def select_annotations(e: EntityProxy) -> set[str]:
-    """Select stored annotations in `indexText`"""
+    """Select the annotations stored in `indexText`."""
     return {s for s in select_data(e, SELECT_ANNOTATED)}
 
 
@@ -497,9 +472,8 @@ def iso_datetime(v: str | datetime | None) -> datetime | None:
     """
     Parse an ISO datetime string into an aware UTC `datetime`.
 
-    Like `rigour.time.iso_datetime` but keeps microseconds. The value is
-    parsed with `datetime.fromisoformat`; a naive value is assumed to be
-    UTC, an explicit offset is converted to UTC.
+    A naive value is assumed to be UTC, an offset is converted to UTC.
+    Unlike `rigour.time.iso_datetime`, microseconds are kept.
 
     Examples:
         >>> iso_datetime("2024-01-15T10:30:00")
@@ -510,7 +484,7 @@ def iso_datetime(v: str | datetime | None) -> datetime | None:
         None
 
     Args:
-        v: An ISO datetime string or `None`
+        v: An ISO datetime string, a `datetime` or `None`
 
     Returns:
         An aware datetime in UTC, or `None` for empty input
@@ -529,11 +503,8 @@ def datetime_iso(v: datetime | str | None, default_now: bool = False) -> str | N
     """
     Ensure a UTC ISO datetime string from an arbitrary value.
 
-    A naive `datetime` is assumed to be UTC, an aware one is converted to
-    UTC; a string is passed through unchanged. Empty input stays `None` –
-    nullable fields (tombstone markers, optional seen-timestamps) must not
-    get fabricated values – unless `default_now=True` explicitly asks for
-    the current timestamp.
+    A naive `datetime` is assumed to be UTC, an aware one is converted to UTC; a
+    string is passed through unchanged.
 
     Examples:
         >>> datetime_iso(datetime(2024, 1, 15, 10, 30))
@@ -545,8 +516,8 @@ def datetime_iso(v: datetime | str | None, default_now: bool = False) -> str | N
 
     Args:
         v: A `datetime`, an ISO string, or `None`
-        default_now: Return the current UTC timestamp for empty input
-            (instead of `None`)
+        default_now: Return the current UTC timestamp for empty input instead
+            of `None`
 
     Returns:
         The ISO datetime string, or `None`

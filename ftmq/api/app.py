@@ -53,10 +53,7 @@ log.info("Ftm store: %s" % settings.store_uri)
 )
 def dataset_list(request: Request) -> Catalog:
     """
-    Show metadata for catalog (as described in
-    [followthemoney.Dataset](https://followthemoney.tech))
-
-    This is basically a list of the available dataset within this api instance.
+    The catalog: metadata of all datasets in this api instance.
     """
     return views.dataset_list(request)
 
@@ -67,8 +64,7 @@ def dataset_list(request: Request) -> Catalog:
 )
 def dataset_detail(request: Request, dataset: Datasets) -> Dataset:
     """
-    Show metadata for given dataset (as described in
-    [followthemoney.Dataset](https://followthemoney.tech))
+    Metadata of a single dataset.
     """
     return views.dataset_detail(request, dataset)
 
@@ -100,35 +96,22 @@ def entities(
     authenticated: Annotated[bool, Depends(get_authenticated)],
 ) -> EntitiesResponse:
     """
-    Retrieve a paginated list of entities based on filter criteria.
+    Retrieve a paginated list of entities, filtered with the Aleph / OpenAleph
+    grammar. `nested=true` inlines adjacent entities, `featured` / `dehydrate`
+    reduce the returned properties.
 
-    Optionally inline (nest) adjacent entities.
+    ## filtering
 
-    Entities can be "dehydrated", that means only their featured properties are
-    returned. This is e.g. useful for static site builders to reduce the data
-    amount.
+    * dataset: `filter:dataset=my_dataset&filter:dataset=another_dataset`
+    * schema: `filter:schema=Company`, or `filter:schemata=LegalEntity` to
+      include descendants
+    * [property](https://followthemoney.tech/explorer/):
+      `filter:properties.country=de`
+    * property-type group: `filter:group.countries=de`,
+      `filter:group.entities=<id>` (reverse lookup)
+    * context column: `filter:context.origin=<origin>`
 
-    Filtering uses the Aleph / OpenAleph filter grammar.
-
-    ## dataset scope
-
-    Limit entities filter to one or more datasets from the catalog:
-
-    `/entities?filter:dataset=my_dataset&filter:dataset=another_dataset`
-
-    ## filter by schema and properties
-
-    `/entities?filter:schema=Company&filter:properties.country=de`
-
-    Use `filter:schemata=` for schema is-a matching including descendants
-    (e.g. `filter:schemata=LegalEntity` includes companies, people, ...).
-
-    Filtering works for all [FollowTheMoney](https://followthemoney.tech/explorer/)
-    properties via `filter:properties.<name>=`, property-type groups via
-    `filter:group.<name>=` (e.g. `filter:group.countries=de`,
-    `filter:group.entities=<id>` for reverse lookups), context columns via
-    `filter:context.<name>=` (e.g. `filter:context.origin=`), and comparator
-    prefixes:
+    Comparators:
 
     * range: `filter:gte:properties.date=2023`, `filter:lt:properties.amountEur=1000`
     * substring: `filter:ilike:properties.name=jane`
@@ -136,26 +119,30 @@ def entities(
     * negation: `exclude:properties.jurisdiction=eu`
     * absence: `empty:properties.deathDate=`
 
+    Nested boolean filters (`or`, negated groups) go in an
+    [RQL](https://github.com/pjwerneck/pyrql) `rql=` param, which replaces the
+    flat filters (`sort` / `limit` / `offset` still apply):
+
+        ?rql=or(eq(schema,Person),eq(group.countries,de))
+
+    ## projection
+
+    `select=properties.name&select=group.countries` returns only these
+    properties; filters, sorting and aggregations still see the whole entity.
+
     ## sorting
 
-    `?sort=properties.{prop}` or `?sort=properties.{prop}:desc`
-
-    [Numeric](https://followthemoney.tech/explorer/types/number/)
-    property types are read as numbers before sorting; the first value of a
-    multi-valued property is the sorting value. The entity property dict
-    itself stays uncast (all properties are multi-valued strings).
+    `sort=properties.<name>` or `sort=properties.<name>:desc`. Numeric
+    properties sort as numbers; a multi-valued property sorts by its first value.
 
     ## pagination
 
-    `?limit=100&offset=200`
+    `limit=100&offset=200`
 
     ## aggregations
 
-    Aggregations ride on the same query. Request metrics and optionally group
-    them by a property (`properties.<name>`), a property-type group
-    (`group.countries`, `group.names`, ...), a context column
-    (`context.<name>`) or a field (`id`, `dataset`, `schema`, `year`) - the
-    same spelling as in `filter:`:
+    `metric:<func>=<field>` (`min`, `max`, `sum`, `avg`, `count`), optionally
+    grouped by `facet=<field>`. Fields take the `filter:` spelling, plus `year`:
 
         ?metric:sum=properties.amountEur&metric:count=id&facet=year
 
@@ -164,28 +151,25 @@ def entities(
         ?facet=group.countries
         ?metric:count=id&facet=group.countries
 
-    Grouped metrics come back as `facets` (buckets of `value`, `label`,
-    entity `count` and their `metrics`), ungrouped ones as `metrics`. Buckets
-    rank by entity count, or by a metric via `facet_sort` (`:asc` optional); a
-    facet returns its top 20, or `facet_size:<field>=N` (at most 50), and its
-    `total` counts all its distinct values:
+    Grouped metrics come back as `facets` (buckets of `value`, `label`, `count`,
+    `metrics`), ungrouped ones as `metrics`. Buckets rank by entity count, or by a
+    metric via `facet_sort=<func>:<field>[:asc]`. A facet returns its top 20
+    buckets (`facet_size:<field>=N`, at most 50); its `total` counts all distinct
+    values:
 
         ?metric:sum=properties.amountEur&facet=properties.beneficiary
         &facet_sort=sum:properties.amountEur&facet_size:properties.beneficiary=5
 
-    Set `limit=0` to return only the aggregations (plus `total` / `stats`), no
-    entities:
+    `limit=0` returns only the aggregations (plus `total` / `stats`):
 
         ?filter:schema=Payment&metric:sum=properties.amountEur&limit=0
 
     ## searching
 
-    A `q` term routes the query to full-text search via `ftmq.search`
-    (relevance-ranked, dehydrated hits), combined with the same filters:
+    A `q` term runs a full-text search (relevance-ranked, dehydrated hits) with
+    the same filters:
 
         ?q=jane+doe&filter:dataset=my_dataset&filter:group.countries=de
-
-    Autocomplete on entity names is at `/autocomplete?q=<term>`.
     """
     return views.entity_list(request, retrieve_params, authenticated=authenticated)
 
@@ -204,16 +188,10 @@ def detail_entity(
     retrieve_params: Annotated[RetrieveParams, Depends()],
 ) -> EntityResponse | RedirectResponse | ErrorResponse:
     """
-    Retrieve a single entity.
+    Retrieve a single entity, optionally with adjacent entities inlined.
 
-    Optionally inline (nest) adjacent entities.
-
-    If the requested entity was merged into another entity, a redirect to the
-    new api endpoint is returned with additional headers to allow client side
-    logic:
-
-        `x-entity-id` - the new entity id
-        `x-entity-schema` - the new entity schema
+    An entity merged into another one redirects there, with the target's
+    `x-entity-id` and `x-entity-schema` headers.
     """
     return views.entity_detail(request, entity_id, retrieve_params)
 
@@ -227,6 +205,6 @@ def detail_entity(
 )
 def autocomplete(request: Request, q: str) -> AutocompleteResponse:
     """
-    Simple autocomplete by names
+    Autocomplete entity names.
     """
     return views.autocomplete(request, q)

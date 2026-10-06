@@ -61,9 +61,7 @@ class DatasetStats(BaseModel):
 
     @property
     def years(self) -> tuple[int | None, int | None]:
-        """
-        Return min / max year extend
-        """
+        """Return the min / max year of the coverage."""
         return get_year_from_iso(self.start), get_year_from_iso(self.end)
 
 
@@ -78,9 +76,7 @@ class Collector:
         self.end = set()
 
     def collect(self, proxy: Entity) -> None:
-        # the buckets of the sql store (`store/sql.py:THINGS` / `INTERVALS`):
-        # a schema that is both (`Event`, ...) counts in each, one that is
-        # neither (`Page`, `Mention`, ...) only in `entity_count`
+        # the sql store's buckets: `Event` counts in both, `Page` only in the total
         self.entity_count += 1
         if proxy.schema.is_a("Thing"):
             self.things[proxy.schema.name] += 1
@@ -110,11 +106,7 @@ class Collector:
         return data.model_dump(mode="json")
 
     def apply(self, proxies: Entities) -> Entities:
-        """
-        Generate coverage from an input stream of proxies
-        This returns a generator again, so actual collection of coverage stats
-        will happen if the actual generator is executed
-        """
+        """Collect coverage lazily while passing the proxies through."""
         for proxy in proxies:
             self.collect(proxy)
             yield proxy
@@ -133,27 +125,10 @@ def compile_stats(
     date_range: tuple[Any, Any] | None = None,
     entity_count: int | None = None,
 ) -> DatasetStats:
-    """Compile a :class:`DatasetStats` from pre-computed aggregate result rows.
+    """Compile `DatasetStats` from pre-computed `(group, count)` aggregate rows.
 
-    Agnostic of how the counts were obtained (a store's group-by sub-queries,
-    per-partition scans, ...): callers pass the grouped results and this folds
-    them into a :class:`DatasetStats` through a :class:`Collector`. This is the
-    computation the SQL store's ``stats`` runs inline, factored out so
-    partitioned backends can compile per-partition stats and merge them.
-
-    Args:
-        things: ``(schema, count)`` rows for Thing-bucket schemata.
-        intervals: ``(schema, count)`` rows for Interval-bucket schemata.
-        things_countries: ``(country, count)`` rows for Things.
-        intervals_countries: ``(country, count)`` rows for Intervals.
-        date_range: ``(start, end)`` coverage bounds, or ``None``.
-        entity_count: Distinct entity count; falls back to
-            ``things.total + intervals.total`` when ``None``, which misses
-            the schemata in neither bucket (``Page``, ``Mention``, ...) and
-            counts the ones in both (``Event``, ...) twice.
-
-    Returns:
-        The compiled :class:`DatasetStats`.
+    Without `entity_count`, things + intervals is used, which is not a distinct
+    count (schemata in both buckets count twice, those in neither not at all).
     """
     c = Collector()
     c.things = Counter(dict(things))

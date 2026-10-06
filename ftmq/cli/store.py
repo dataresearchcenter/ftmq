@@ -25,7 +25,7 @@ def cli_store_list_datasets(
     ] = "-",
 ) -> None:
     """
-    List datasets within a store
+    List the datasets of a store.
     """
     with ErrorHandler():
         store = get_store(input_uri)
@@ -44,7 +44,7 @@ def cli_store_iterate(
     ] = "-",
 ) -> None:
     """
-    Iterate all entities from in to out
+    Iterate all entities of a store.
     """
     with ErrorHandler():
         store = get_store(input_uri)

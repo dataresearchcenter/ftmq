@@ -20,12 +20,10 @@ log = get_logger(__name__)
 
 
 class KeepOpen(io.RawIOBase):
-    """Pass writes through to a handle that outlives this wrapper.
+    """Pass writes through to a handle without ever closing it.
 
-    The csv / pack statement writers wrap the output in a `TextIOWrapper`,
-    which closes what it wraps as soon as it is collected - tearing down a
-    shared stdout for whatever else runs in the same process. Closing the real
-    handle is `smart_open`'s job.
+    The statement writers' `TextIOWrapper` would close a shared stdout when
+    collected; closing the real handle is `smart_open`'s job.
     """
 
     def __init__(self, fh: IO[bytes]) -> None:
@@ -38,9 +36,7 @@ class KeepOpen(io.RawIOBase):
         return self.fh.write(data)
 
     def flush(self) -> None:
-        # the statement writers only flush their `TextIOWrapper`, never close
-        # it, so it flushes once more when it is finally collected - by then
-        # `smart_open` has long closed the handle underneath
+        # the `TextIOWrapper` flushes again when collected, after the handle closed
         if not self.fh.closed:
             self.fh.flush()
 
@@ -67,7 +63,7 @@ def smart_read_proxies(
     **store_kwargs: Any,
 ) -> Entities:
     """
-    Stream proxies from an arbitrary source
+    Stream proxies from a file-like source or a store.
 
     Example:
         ```python
@@ -95,6 +91,7 @@ def smart_read_proxies(
     Args:
         uri: File-like uri or store uri or multiple uris
         query: Filter `Query` object
+        entity_type: The entity class to read into (file-like sources only)
         **store_kwargs: Pass through configuration to statement store
 
     Yields:
@@ -108,10 +105,8 @@ def smart_read_proxies(
 
     store = smart_get_store(uri, **store_kwargs)
     if store is not None:
-        # the *default* view: `view()` without a scope falls back to the
-        # store's explicit `dataset`, which for a store opened without one is
-        # the "default" writer scope - so a store uri without `dataset=` would
-        # read back nothing (see `Store.scope`)
+        # `view()` would read only the "default" dataset of a store opened
+        # without `dataset=`
         view = store.default_view()
         yield from view.query(query)
         return
@@ -130,7 +125,7 @@ def smart_write_proxies(
     **store_kwargs: Any,
 ) -> int:
     """
-    Write a stream of proxies (or data dicts) to an arbitrary target.
+    Write a stream of proxies (or data dicts) to a file-like target or a store.
 
     Example:
         ```python
@@ -182,7 +177,7 @@ def smart_read_statements(
     uri: Uri, format: str = CSV, **store_kwargs: Any
 ) -> Statements:
     """
-    Stream raw statements from a store or a statement stream file.
+    Stream raw statements from a store (SQL family only) or a statement stream file.
 
     Example:
         ```python
@@ -201,8 +196,7 @@ def smart_read_statements(
     Yields:
         A generator of `followthemoney.Statement` instances
     """
-    # not a generator function: a store that can't dump its statements has to
-    # say so before the caller has written a header into its output
+    # not a generator: a store that can't dump has to raise before any output
     store = smart_get_store(uri, **store_kwargs)
     if store is not None:
         return store.statements(store_kwargs.get("dataset"))
@@ -225,13 +219,9 @@ def smart_write_statements(
     """
     Write a stream of statements to a store or a statement stream file.
 
-    A statement is written as it comes in: its `canonical_id` is preserved
-    verbatim, never re-derived from the target store's linker (see
-    [`PreservingLinker`][ftmq.store.base.PreservingLinker]), so a stream that
-    was resolved with `nomenklatura apply-statements` stays resolved. For a
-    SQL-family store the write is an upsert keyed on the statement id, so
-    loading a resolved dump back into the store it came from updates those rows
-    in place.
+    The `canonical_id` of each statement is kept as is, not re-derived from the
+    store's linker (see [`PreservingLinker`][ftmq.store.base.PreservingLinker]).
+    SQL-family stores upsert on the statement id, so a dump loads back in place.
 
     Example:
         ```python

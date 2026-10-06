@@ -1,6 +1,4 @@
-"""
-SQlite FTS5
-"""
+"""SQLite FTS5 search store."""
 
 from functools import cache
 from typing import Any, Iterable
@@ -164,10 +162,7 @@ class SQliteStore(BaseStore):
             self.flush()
 
     def _term_clause(self, term: FilterTerm) -> ColumnElement[bool]:
-        """The predicate for one filter term: `schema` is a plain column, the
-        other indexed fields are `#`-joined arrays matched by substring. A term
-        without values matches nothing (as an empty `IN` does), or everything
-        when negated."""
+        """The predicate for one term; fields but `schema` are `#`-joined arrays."""
         if not term.values:
             return true() if term.negated else false()
         values = sorted(term.values)

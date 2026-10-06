@@ -15,11 +15,9 @@ from sqlalchemy.exc import (
 )
 from sqlalchemy.sql.expression import insert, update
 
-# We have to cast null fragment values to some text to make the
-# UniqueConstraint work
+# null fragments get a text value so the unique constraint applies
 DEFAULT_FRAGMENT = "default"
-# dialects with a native upsert, keyed by `dialect.name`. sqlite has
-# `ON CONFLICT DO UPDATE` since 3.24, with the same interface as postgres
+# dialects with a native upsert (`ON CONFLICT DO UPDATE`), by `dialect.name`
 UPSERTS = {"postgresql": postgresql_upsert, "sqlite": sqlite_upsert}
 EXCEPTIONS = (
     DatabaseError,
@@ -67,12 +65,7 @@ class BulkLoader(object):
             log.warning("Entity has no ID!")
 
     def _store_values(self, conn, values):
-        """Insert-or-update one row at a time, for dialects without upsert.
-
-        A conflict on (id, origin, fragment) must not abort the whole batch:
-        a single already known row would otherwise swallow the new rows next
-        to it in the same buffer.
-        """
+        """Update-or-insert one row at a time, for dialects without upsert."""
         table = self.dataset.table
         for value in values:
             stmt = update(table)

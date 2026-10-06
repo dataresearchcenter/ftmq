@@ -35,12 +35,7 @@ export type Params = Record<string, string[]>;
 const sortedStrings = (value: unknown): string[] =>
   (value as string[]).map((v) => String(v)).sort(byString);
 
-/**
- * Map a filter field to a `(family, ftmq-key)` pair. Field names are the same on
- * both halves of the grammar, so this is `refFromWire` plus the upstream key
- * aliases and `schemata`, which is an is-a predicate rather than a field a
- * projection could read. Field validity is not checked here (server-side).
- */
+/** A filter field as `[family, key]`: `refFromWire` plus Aleph meta keys. */
 export function resolveField(rest: string): [Family, string] {
   if (rest in ALEPH_META) return ["M", ALEPH_META[rest]];
   const ref = refFromWire(rest);
@@ -168,13 +163,7 @@ export function aggregationsToParams(aggs: Agg[]): Params {
   return params;
 }
 
-/**
- * Rebuild aggregation specs from `metric:` / `facet` params.
- *
- * A `facet` with no `metric:` alongside it groups an entity count - the
- * idiomatic Aleph facet. Dropping it instead would discard the param in
- * silence and answer with empty facets.
- */
+/** Specs from `metric:` / `facet` params (a bare `facet` counts entities). */
 export function paramsToAggregations(items: Params): Agg[] {
   const groups: Ref[] = [...new Set(items.facet ?? [])]
     .sort(byString)
@@ -194,10 +183,7 @@ export function paramsToAggregations(items: Params): Agg[] {
   return aggs;
 }
 
-/**
- * Project a `Query.select` projection to `select=` params. Fields are spelled
- * exactly as the filter keys are (`properties.<name>`, `group.<name>`).
- */
+/** Project a `Query.select` projection to `select=` params. */
 export function selectionToParams(refs: Ref[]): Params {
   const fields = refs.map((ref) => ref.wire).sort(byString);
   return fields.length ? { select: fields } : {};

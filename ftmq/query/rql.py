@@ -1,18 +1,16 @@
 """
 [RQL](https://github.com/pjwerneck/pyrql) (Resource Query Language) bridge.
 
-RQL is a URL-friendly query language of nestable named operators - e.g.
-`and(eq(schema,Person),or(eq(properties.name,jane),eq(countries,de)))` - which
-maps directly onto the ftmq `Expr` tree (`and`/`or`/`not` + comparison leaves).
-Unlike the flat Aleph param grammar, RQL expresses arbitrary nesting, so this is
-the way to carry a full `M & (P | G)` tree through a single string. It also
-carries aggregations: RQL's native `sum` / `min` / `max` / `mean` / `count` and
-`aggregate(...)` operators map onto ftmq `A` nodes, side by side with the filter
-under a top-level `and`.
+RQL nests named operators, e.g.
+`and(eq(schema,Person),or(eq(properties.name,jane),eq(group.countries,de)))`, so
+unlike the flat Aleph params it carries any `& | ~` tree. Aggregations map to
+RQL's `sum` / `min` / `max` / `mean` / `count` / `aggregate(...)` and the
+projection to `select(...)`, side by side with the filter under a top-level
+`and`.
 
-Field names use the shared wire spelling (`properties.<name>`, `group.<name>`,
-`context.<name>`, bare meta fields and `year`); a bare name that matches none of
-those is treated as an FtM property.
+Fields use the shared wire spelling (`properties.<name>`, `group.<name>`,
+`context.<name>`, bare meta fields and `year`); any other bare name is read as a
+property.
 """
 
 from __future__ import annotations
@@ -22,15 +20,11 @@ from collections import defaultdict
 from typing import Any, Iterable
 
 with warnings.catch_warnings():
-    # pyrql builds its grammar at import time with pyparsing's camelCase api,
-    # which is deprecated - not actionable for consumers, so don't leak it
+    # pyrql builds its grammar on import with pyparsing's deprecated camelCase api
     warnings.simplefilter("ignore", DeprecationWarning)
     import pyrql  # type: ignore[import-untyped]
 
-# pyrql also calls the deprecated camelCase api on every parse/unparse. A
-# per-call `catch_warnings()` block mutates process-global state and is not
-# thread-safe (`Query.from_rql` runs per-request in the API), so install one
-# targeted module filter instead.
+# pyrql warns on every parse too; catch_warnings per call is not thread-safe
 warnings.filterwarnings(
     "ignore", category=DeprecationWarning, module=r"pyrql\.|pyparsing\."
 )
@@ -57,8 +51,7 @@ RQL_COMPARATORS = {
     "contains": "like",
 }
 
-# ftmq comparator -> RQL operator (the expressible subset; `null`, `startswith`,
-# `endswith`, `notlike`, `notilike` have no RQL equivalent)
+# the expressible subset (`null`, `startswith`, ... have no RQL operator)
 TO_RQL_OPERATORS = {v: k for k, v in RQL_COMPARATORS.items() if k != "contains"}
 
 # RQL aggregate operator -> ftmq function (RQL calls the average `mean`)
@@ -69,12 +62,9 @@ RQL_FUNCTIONS = {
     "mean": "avg",
     "count": "count",
 }
-# ftmq function -> RQL operator
 TO_RQL_FUNCTIONS = {v: k for k, v in RQL_FUNCTIONS.items()}
-# operator names that introduce an aggregation rather than a filter
 AGG_OPERATORS = set(RQL_FUNCTIONS) | {"aggregate"}
 
-# the RQL projection operator, carrying a `Query.select` field list
 SELECT_OPERATOR = "select"
 
 
@@ -82,8 +72,7 @@ def _resolve_rql_field(field: str) -> tuple[str, str]:
     try:
         return _resolve_field(field)
     except QueryError:
-        # a bare name that is not meta / group / context / `properties.` is
-        # treated as a property; validity is checked when the leaf is built
+        # any other bare name is a property, validated when the leaf is built
         return "P", field
 
 
@@ -127,11 +116,7 @@ def _metric_aggs(node: dict[str, Any], groups: tuple[Ref, ...]) -> list[Agg]:
 
 
 def _node_aggs(node: dict[str, Any]) -> list[Agg]:
-    """One RQL aggregate node -> `Agg` specs.
-
-    `aggregate(g1, ..., f1(p), ...)` groups the trailing metric calls by the
-    leading field names; a bare metric call (`sum(p)`) is ungrouped.
-    """
+    """One `sum(p)` or `aggregate(group, ..., sum(p), ...)` node -> `Agg` specs."""
     if node["name"] == "aggregate":
         groups = tuple(
             ref_from_wire(str(a)) for a in node["args"] if not isinstance(a, dict)
@@ -149,13 +134,7 @@ def _node_selection(node: dict[str, Any]) -> tuple[Ref, ...]:
 
 
 def parse_rql(value: str) -> tuple[Expr | None, set[Agg], tuple[Ref, ...]]:
-    """Parse an RQL query string into a filter `Expr`, aggregation specs and a
-    field projection.
-
-    Filter operators (`and` / `or` / `not` + comparisons) build the tree; the
-    aggregate operators (`sum` / `min` / `max` / `mean` / `count` / `aggregate`)
-    build the aggregations, and RQL's own `select(...)` the projection. At the
-    top level they sit side by side under `and`.
+    """Parse an RQL string into a filter tree, aggregation specs and a projection.
 
     Raises:
         QueryError: If the RQL uses an unsupported operator or field.
@@ -212,11 +191,7 @@ def expr_to_rql(expr: Expr) -> dict[str, Any]:
 
 
 def _aggs_to_rql(aggs: Iterable[Agg]) -> list[dict[str, Any]]:
-    """Aggregation specs -> RQL metric / `aggregate` nodes.
-
-    Ungrouped metrics become bare `sum(prop)` calls; metrics that share a `by`
-    are batched into one `aggregate(groups..., funcs...)` node.
-    """
+    """Agg specs -> bare `sum(p)` nodes, plus one `aggregate(...)` per shared `by`."""
     ungrouped: list[dict[str, Any]] = []
     grouped: dict[tuple[Ref, ...], list[dict[str, Any]]] = defaultdict(list)
     for agg in sorted(aggs, key=lambda a: (a.groups, a.func, a.key)):
@@ -236,11 +211,7 @@ def to_rql(
     aggs: Iterable[Agg] = (),
     selection: Iterable[Ref] = (),
 ) -> str:
-    """Serialize a filter tree, aggregation specs and a field projection to an
-    RQL query string.
-
-    Filters, aggregations and the `select(...)` projection sit side by side
-    under a top-level `and`.
+    """Serialize a filter tree, aggregation specs and a projection to an RQL string.
 
     Raises:
         QueryError: If a filter leaf uses a comparator with no RQL equivalent

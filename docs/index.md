@@ -10,13 +10,11 @@
 
 # ftmq
 
-This library provides methods to query and filter entities formatted as [Follow The Money](https://followthemoney.tech) data, either from a json file/stream or using a statement-based store backend from [nomenklatura](https://github.com/opensanctions/nomenklatura).
+`ftmq` queries and filters [Follow The Money](https://followthemoney.tech) entities from json files / streams or from a statement-based [nomenklatura](https://github.com/opensanctions/nomenklatura) store.
 
-It also provides a `Query` class that can be used in other libraries to work with SQL store queries or api queries.
+Its `ftmq.Query` is the backend-agnostic query object of the [OpenAleph](https://openaleph.org) ecosystem: it filters FtM streams and stores, compiles to SQL, and converts to and from OpenAleph API params.
 
-`ftmq.Query` is the central query hub of the [OpenAleph](https://openaleph.org) ecosystem: one backend-agnostic query object that filters FtM streams and stores, translates to SQL, and bridges to the OpenAleph API.
-
-To get familiar with the _Follow The Money_ ecosystem, you can have a look at [this pad here](https://pad.investigativedata.org/s/0qKuBEcsM#).
+New to Follow The Money? See [this introduction](https://pad.investigativedata.org/s/0qKuBEcsM#).
 
 ## Installation
 
@@ -37,9 +35,8 @@ cat entities.ftm.json | ftmq -q 'filter:schema=Company&filter:properties.country
 ```python
 from ftmq import Query, M, P, G, smart_read_proxies
 
-# Legal entities in the `companies` dataset that are based in Germany, or in
-# Austria and incorporated since 2020, but never the dissolved ones, return the
-# 5 most recent incorporated ones:
+# legal entities in `companies` based in Germany, or in Austria and incorporated
+# since 2020, not dissolved: the 5 most recently incorporated
 q = Query().where(
     M(dataset="companies"),
     M(schemata="LegalEntity"),
@@ -47,9 +44,8 @@ q = Query().where(
     ~P(status__ilike="%dissolved%"),
 ).order_by(P("incorporationDate"), ascending=False)[:5]
 
-for proxy in smart_read_proxies("s3://data/entities.ftm.json"):
-    if q.apply(proxy):
-        yield proxy
+for proxy in smart_read_proxies("s3://data/entities.ftm.json", query=q):
+    print(proxy.caption)
 ```
 
 ## Support
