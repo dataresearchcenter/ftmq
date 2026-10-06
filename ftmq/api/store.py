@@ -23,8 +23,7 @@ def get_store_datasets() -> set[str]:
     try:
         return set(get_store().scope.leaf_names)
     except Exception as e:
-        # never make the catalog (and with it the app's import) depend on the
-        # store being reachable - an unconfigured catalog degrades to empty
+        # the catalog is built at import: an unreachable store must not fail it
         log.error(f"Cannot read datasets from store: `{e}`", store=settings.store_uri)
         return set()
 
@@ -33,11 +32,8 @@ def get_store_datasets() -> set[str]:
 def get_catalog() -> Catalog:
     """The catalog of queryable datasets, reconciled with the store.
 
-    `settings.catalog` *describes* datasets, but the store *decides* which
-    exist. A name present in the store and missing from the catalog is added
-    as a bare dataset, so a catalog naming something else - or no catalog at
-    all - can never leave the store's own datasets un-queryable (the dataset
-    filter validates against this catalog).
+    A dataset in the store but missing from `settings.catalog` is added as a
+    bare entry, so every stored dataset is queryable.
     """
     catalog = Catalog()
     if settings.catalog is not None:
@@ -66,11 +62,9 @@ def get_dataset(name: str) -> Dataset:
 
 @cache
 def get_store(dataset: str | None = None) -> Store:
-    # a read-only api only needs the merge decisions, not the judgement
-    # history: `resolver_uri` may be a sql database or a json edge dump.
-    # Unset, the store falls back to a resolver table in its own database.
+    # unset, the store falls back to a resolver table in its own database
     linker = get_linker(settings.resolver_uri) if settings.resolver_uri else None
-    # scoped by name: the store expects a runtime dataset, not the catalog model
+    # scoped by name, not by the catalog model
     return _get_store(uri=settings.store_uri, dataset=dataset, linker=linker)
 
 

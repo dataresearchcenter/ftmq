@@ -6,7 +6,7 @@ import { AND, combine, Expr, FAMILIES, OR } from "./nodes.js";
 import { refFromWire, type Ref } from "./refs.js";
 import { byString } from "./util.js";
 
-// --- the self-contained RQL codec (pyrql-compatible `{name, args}` AST) ------
+// a self-contained, pyrql-compatible RQL codec over the `{name, args}` AST
 
 export type RqlArg = string | RqlNode | RqlArg[];
 export interface RqlNode {
@@ -17,11 +17,7 @@ export interface RqlNode {
 const isNode = (arg: RqlArg): arg is RqlNode =>
   typeof arg === "object" && !Array.isArray(arg);
 
-/**
- * Parse an RQL string into a `{name, args}` AST. Values are taken verbatim
- * (already url-decoded by the URL layer), matching pyrql's unencoded output; a
- * tuple `(a,b)` is represented as an array.
- */
+/** Parse RQL into a `{name, args}` AST (values verbatim, tuples as arrays). */
 export function parseRql(input: string): RqlNode | null {
   const text = input.trim();
   if (!text) return null;
@@ -76,7 +72,7 @@ export function unparseRql(node: RqlNode): string {
   return `${node.name}(${node.args.map(arg).join(",")})`;
 }
 
-// --- the tree <-> RQL bridge (mirrors ftmq.query.rql) ------------------------
+// the tree <-> RQL bridge, mirrors ftmq.query.rql
 
 const RQL_COMPARATORS: Record<string, string> = {
   eq: "eq",
@@ -135,8 +131,7 @@ function rqlLeaf(op: string, args: RqlArg[]): Expr {
     [family, key] = resolveField(field);
   } catch (error) {
     if (!(error instanceof QueryError)) throw error;
-    // RQL convenience (mirrors the Python side): a bare name that is not a
-    // known field spelling is a property
+    // as in Python: an unknown bare name is a property
     [family, key] = ["P", field];
   }
   if (comparator === "in" || comparator === "not_in") {
@@ -204,8 +199,6 @@ export function exprToRql(expr: Expr): RqlNode {
   return body;
 }
 
-// --- aggregations <-> RQL ----------------------------------------------------
-
 function metricAggs(node: RqlNode, groups: Ref[]): Agg[] {
   const func = RQL_FUNCTIONS[node.name];
   if (func === undefined) {
@@ -265,11 +258,11 @@ function aggsToRql(aggs: Agg[]): RqlNode[] {
   return nodes;
 }
 
-/** Parse an RQL query string into a filter `Expr` and aggregation specs. */
 function nodeSelection(node: RqlNode): Ref[] {
   return node.args.map((arg) => refFromWire(String(arg)));
 }
 
+/** Parse an RQL query into a filter, aggregation specs and a projection. */
 export function parseRqlQuery(value: string): [Expr | null, Agg[], Ref[]] {
   const data = parseRql(value);
   if (!data) return [null, [], []];
@@ -301,10 +294,7 @@ export function parseRqlQuery(value: string): [Expr | null, Agg[], Ref[]] {
   return [rqlToExpr(data), aggs, selection];
 }
 
-/**
- * Serialize a filter tree, aggregation specs and a field projection to an RQL
- * query string.
- */
+/** Serialize a filter tree, aggregation specs and a projection to RQL. */
 export function toRql(
   expr: Expr | null,
   aggs: Agg[] = [],

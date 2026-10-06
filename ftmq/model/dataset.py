@@ -24,7 +24,7 @@ class Dataset(BaseModel, _DatasetModel):
     uri: str | None = None
 
     def iterate(self) -> Entities:
-        from ftmq.io import smart_read_proxies  # FIXME
+        from ftmq.io import smart_read_proxies  # FIXME circular import
 
         for resource in self.resources:
             if resource.mime_type == FTM and resource.url:

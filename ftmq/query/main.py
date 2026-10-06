@@ -62,7 +62,6 @@ class Sort:
     """A single-property ordering: `Sort(P("date"))`."""
 
     def __init__(self, ref: Ref, ascending: bool = True) -> None:
-        # only properties are sortable for now
         if not isinstance(ref, PropRef):
             raise QueryError(
                 f"Invalid sort field: `{getattr(ref, 'wire', ref)}` - only a "
@@ -72,15 +71,7 @@ class Sort:
         self.ascending = ascending
 
     def apply(self, entity: EntityProxy) -> tuple[Any, ...]:
-        """Compute the sort key for an entity.
-
-        Args:
-            entity: The entity to read the sort values from.
-
-        Returns:
-            A tuple of the entity's values for the sort property (a numeric
-            property is cast to numbers).
-        """
+        """The entity's values of the sort property, numeric ones as numbers."""
         values: list[Any] = list(self.ref.values(entity))
         if self.ref.is_numeric:
             values = [registry.number.to_number(v) for v in values]
@@ -100,15 +91,13 @@ class Sort:
 
     @classmethod
     def deserialize(cls, value: str) -> Self:
-        """Rebuild from [`serialize`][ftmq.query.main.Sort.serialize] output."""
+        """Rebuild from `serialize` output."""
         ascending = not value.startswith("-")
         return cls(ref_from_wire(value.removeprefix("-")), ascending=ascending)
 
 
 class Query:
-    """
-    A filter over FtM entities, built from composable `M` / `P` / `G` / `C`
-    nodes.
+    """A query over FtM entities: a filter tree of `M` / `P` / `G` / `C` nodes.
 
     Examples:
         ```python
@@ -161,8 +150,7 @@ class Query:
         self.facet_sizes: dict[Ref, int] = dict(sorted((facet_sizes or {}).items()))
 
     def __getitem__(self, value: Any) -> Self:
-        """
-        Implement list-like slicing. No negative values allowed.
+        """Slice like a list; no negative values or steps.
 
         Examples:
             >>> q[1]
@@ -173,7 +161,7 @@ class Query:
             # next 10 elements
 
         Returns:
-            The updated `Query` instance
+            The updated `Query` instance.
         """
         if isinstance(value, int):
             if value < 0:
@@ -186,8 +174,7 @@ class Query:
         raise NotImplementedError
 
     def __bool__(self) -> bool:
-        """
-        Detect if any filter, ordering or slicing is defined
+        """Whether anything is set: filter, aggregation, projection, sort or slice.
 
         Examples:
             >>> bool(Query())
@@ -198,13 +185,7 @@ class Query:
         return bool(self.to_dict())
 
     def __hash__(self) -> int:
-        """
-        Generate a unique key of the current state, useful for caching.
-
-        Like any Python object this is a within-process hash (not stable
-        across processes); `hash_data` normalizes ordering so equal queries
-        hash equal.
-        """
+        """A within-process cache key; equal queries hash equal."""
         return hash(hash_data(self.to_dict()))
 
     def _chain(self, **kwargs: Any) -> Self:
@@ -220,17 +201,13 @@ class Query:
         data.update(kwargs)
         return self.__class__(**data)
 
-    # --- filter accessors (tree-walking collectors) ------------------------
-
     @property
     def _leaves(self) -> list[Leaf]:
         return list(self.q.iter_leaves()) if self.q else []
 
     @property
     def limit(self) -> int | None:
-        """
-        The current limit (inferred from a slice)
-        """
+        """The limit, inferred from the slice."""
         if self.slice is None:
             return None
         start, stop = self.slice.start, self.slice.stop
@@ -240,34 +217,25 @@ class Query:
 
     @property
     def offset(self) -> int | None:
-        """
-        The current offset (inferred from a slice)
-
-        A start-less slice (`q[:10]`) reports offset `0`, so it serializes and
-        round-trips identically to `q[0:10]`.
-        """
+        """The offset, inferred from the slice (`0` for `q[:10]`)."""
         if self.slice is None:
             return None
         return int(self.slice.start or 0)
 
     @property
     def sql(self) -> "Sql":
-        """
-        An adapter of this query for sql interfaces, against the default
-        nomenklatura statement table. For a custom / extended table pass a
-        [`SqlSource`][ftmq.query.sql.SqlSource] to [`compile`][ftmq.Query.compile] or
-        build `Sql(query, source)` directly.
+        """A [`Sql`][ftmq.query.sql.Sql] adapter against the default statement table.
+
+        For another table use [`compile`][ftmq.Query.compile].
         """
         return Sql(self)
 
     def compile(self, source: "SqlSource | None" = None) -> "Select[Any]":
-        """
-        Compile this query to a SQLAlchemy `Select` of statements against a
-        [`SqlSource`][ftmq.query.sql.SqlSource] (a store's table descriptor).
+        """Compile to a SQLAlchemy `Select` of statements.
 
         Args:
-            source: The SQL source to compile against (default: the base
-                nomenklatura statement table).
+            source: The [`SqlSource`][ftmq.query.sql.SqlSource] to compile against
+                (default: the nomenklatura statement table).
 
         Returns:
             The statements `Select`.
@@ -276,9 +244,7 @@ class Query:
 
     @property
     def dataset_names(self) -> set[str]:
-        """
-        The names of the current filtered datasets
-        """
+        """The dataset names any filter leaf refers to, ignoring polarity."""
         names: set[str] = set()
         for f in self._leaves:
             if isinstance(f, DatasetLeaf):
@@ -287,11 +253,9 @@ class Query:
 
     @property
     def schemata_names(self) -> set[str]:
-        """
-        The names of the current filtered schemas
+        """The schema names any filter leaf refers to, ignoring polarity.
 
-        Exact `schema` leaves contribute their name; `schemata` (is-a) leaves
-        expand to the schema plus its non-abstract descendants.
+        A `schemata` (is-a) leaf expands to its non-abstract descendants.
         """
         names: set[str] = set()
         for f in self._leaves:
@@ -301,11 +265,8 @@ class Query:
                 names.update(ensure_list(f.value))
         return names
 
-    # --- serialization -----------------------------------------------------
-
     def to_dict(self) -> dict[str, Any]:
-        """
-        Lossless nested-tree representation of the current object.
+        """Serialize to a lossless nested dict.
 
         Example:
             ```python
@@ -362,13 +323,14 @@ class Query:
         )
 
     def to_params(self) -> dict[str, list[str]]:
-        """
-        Project to an Aleph-style filter param dict (`filter:` / `exclude:` /
-        `empty:` keys, `metric:` / `facet` / `facet_sort` / `facet_size:`
-        aggregation keys, plus `sort` / `limit` / `offset`).
+        """Serialize to an Aleph-style param dict.
 
-        Raises `QueryError` for queries outside the flat Aleph-expressible
-        subset (cross-field OR, negated groups).
+        Keys: `filter:` / `exclude:` / `empty:`, the aggregation keys (`metric:`,
+        `facet`, `facet_sort`, `facet_size:`), `select`, `sort`, `limit`, `offset`.
+
+        Raises:
+            QueryError: For a query outside the flat Aleph subset (cross-field
+                OR, negated groups).
         """
         params = expr_to_params(self.q)
         if self.aggregations:
@@ -423,10 +385,7 @@ class Query:
         )
 
     def to_string(self) -> str:
-        """
-        Project to an Aleph URL query string, e.g.
-        `filter:properties.name=Jane&filter:schemata=LegalEntity`.
-        """
+        """Serialize to an Aleph URL query string: `filter:properties.name=Jane&...`."""
         return params_to_string(self.to_params())
 
     @classmethod
@@ -438,9 +397,7 @@ class Query:
     def from_rql(cls, value: str) -> Self:
         """Build a `Query` from an [RQL](https://github.com/pjwerneck/pyrql) string.
 
-        Unlike the flat Aleph grammar, RQL expresses arbitrary `& | ~` nesting,
-        e.g. `and(eq(schema,Person),or(eq(properties.name,jane),eq(countries,de)))`,
-        and carries aggregations via its `sum` / `aggregate(...)` operators.
+        Carries arbitrary `& | ~` nesting, aggregations and the projection.
         """
         if not value:
             return cls()
@@ -448,22 +405,19 @@ class Query:
         return cls(q=expr, aggregations=aggregations, selection=selection)
 
     def to_rql(self) -> str:
-        """Serialize the filter tree and aggregations to an
-        [RQL](https://github.com/pjwerneck/pyrql) string.
+        """Serialize to an [RQL](https://github.com/pjwerneck/pyrql) string.
 
-        RQL is the only string surface that preserves arbitrary `& | ~` nesting
-        (unlike the flat Aleph params) and carries aggregations losslessly, so it
-        is the way to hand a full query to another HTTP-like connector. Raises
-        `QueryError` for a comparator with no RQL equivalent (`null`,
-        `startswith`, `endswith`, ...).
+        The only string surface preserving arbitrary `& | ~` nesting; carries
+        aggregations and the projection, but no sort or slice.
+
+        Raises:
+            QueryError: For a comparator with no RQL equivalent (`null`,
+                `startswith`, `endswith`, ...).
         """
         return serialize_rql(self.q, self.aggregations, self.selection)
 
-    # --- building ----------------------------------------------------------
-
     def where(self, *nodes: Expr) -> Self:
-        """
-        AND another set of `M` / `P` / `G` / `C` nodes into the current `Query`.
+        """AND nodes into the filter tree.
 
         Example:
             ```python
@@ -472,11 +426,11 @@ class Query:
             ```
 
         Args:
-            *nodes: `M` / `P` / `G` / `C` nodes (optionally composed with
-                `&`/`|`/`~`)
+            *nodes: `M` / `P` / `G` / `C` nodes, optionally composed with
+                `&` / `|` / `~`.
 
         Returns:
-            The updated `Query` instance
+            The updated `Query` instance.
         """
         new = combine(*nodes)
         if new is None:
@@ -497,20 +451,21 @@ class Query:
         return self._chain(sort=Sort(ref, ascending=ascending))
 
     def aggregate(self, *nodes: A) -> Self:
-        """Add aggregation projections to the query.
+        """Add aggregation projections.
 
         Example:
             ```python
-            from ftmq import Query, M, A
+            from ftmq import Query, M, P, A
 
             q = Query().where(M(schema="Payment")).aggregate(
-                A(sum="amountEur", by="beneficiary"),
-                A(avg="amountEur"),
+                A(sum=P("amountEur"), by=P("beneficiary")),
+                A(avg=P("amountEur")),
             )
             ```
 
         Args:
-            *nodes: `A` nodes, e.g. `A(sum="amountEur", by="beneficiary")`.
+            *nodes: [`A`][ftmq.A] nodes, e.g.
+                `A(sum=P("amountEur"), by=P("beneficiary"))`.
 
         Returns:
             The updated `Query` instance.
@@ -521,9 +476,9 @@ class Query:
         return self._chain(aggregations=aggs)
 
     def order_facets(self, *, ascending: bool = False, **func: Ref) -> Self:
-        """Rank facet buckets by a grouped metric, descending by default:
-        `order_facets(sum=P("amountEur"))`. Also picks the buckets kept by
-        the SQL top-N cap.
+        """Rank facet buckets by a grouped metric: `order_facets(sum=P("amountEur"))`.
+
+        Descending by default; also decides which buckets the facet size keeps.
 
         Args:
             ascending: Rank the smallest values first.
@@ -538,8 +493,7 @@ class Query:
         return self._chain(facet_sort=make_facet_order(name, ref, ascending))
 
     def facet_size(self, ref: Ref, size: int) -> Self:
-        """Set how many buckets a facet returns (the top ones, see
-        [`order_facets`][ftmq.Query.order_facets]).
+        """Set how many (top) buckets a facet returns.
 
         Args:
             ref: A facet of the query, e.g. `P("beneficiary")`.
@@ -555,19 +509,11 @@ class Query:
         return self.facet_sizes.get(ref, DEFAULT_FACET_SIZE)
 
     def select(self, *refs: Ref) -> Self:
-        """Restrict the properties the matching entities are read with.
+        """Restrict which properties the matching entities are read with.
 
-        A projection, not a filter: it never changes *which* entities match,
-        only which of their statements are read. On a statement store it
-        compiles to a `prop` / `prop_type` predicate on the statement fetch, so
-        a query for a document's `title` does not drag its `bodyText` across
-        the wire; in memory the assembled entity is pruned to the same fields.
-
-        The entity always comes back, even with none of the selected
-        properties set (its `id` statement is always read), so a projection
-        cannot silently drop a match. Its `caption` and its edges are
-        incomplete by construction - a projected entity is a view of an entity,
-        not the entity.
+        A projection, not a filter: it never changes which entities match. An
+        entity holding none of the selected properties still comes back; caption
+        and edges of a projected entity may be incomplete.
 
         Example:
             ```python
@@ -584,8 +530,7 @@ class Query:
             The updated `Query` instance.
 
         Raises:
-            QueryError: For a ref of any other family - a meta or context ref
-                names a per-row column, not which rows to read.
+            QueryError: For a ref of any other family.
         """
         for ref in refs:
             if not isinstance(ref, (PropRef, GroupRef)):
@@ -596,12 +541,7 @@ class Query:
         return self._chain(selection=set(self.selection) | set(refs))
 
     def _project(self, entity: EntityProxy) -> EntityProxy:
-        """Prune an entity to the selected properties (the in-memory half of
-        [`select`][ftmq.Query.select]).
-
-        Returns the entity untouched when nothing drops; otherwise a clone, so
-        the caller's entity is never mutated.
-        """
+        """Prune an entity to the selected properties, on a clone if anything drops."""
         drop = [
             prop
             for prop in entity.iterprops()
@@ -615,27 +555,23 @@ class Query:
         return clone
 
     def get_aggregator(self) -> Aggregator:
-        """Build an in-memory `Aggregator` from the query's aggregation specs.
+        """Build a fresh in-memory aggregator for the query's aggregations.
 
         Returns:
-            A fresh accumulator over this query's aggregations.
+            The [`Aggregator`][ftmq.query.aggregations.Aggregator].
         """
         return Aggregator(self.aggregations, self.facet_sizes, self.facet_sort)
 
-    # --- execution ---------------------------------------------------------
-
     def apply(self, entity: EntityProxy) -> bool:
-        """
-        Test if a entity matches the current `Query` instance.
-        """
+        """Whether an entity matches the filter tree."""
         if self.q is None:
             return True
         return self.q.apply(entity)
 
     def apply_iter(self, entities: EntityProxies) -> EntityProxies:
-        """
-        Apply the current `Query` instance to a generator of entities and return
-        a generator of filtered entities
+        """Filter, sort, slice, aggregate and project a stream of entities.
+
+        Aggregation results are collected into `self.aggregator`.
 
         Example:
             ```python
@@ -646,7 +582,7 @@ class Query:
             ```
 
         Yields:
-            A generator of `EntityProxy` or a sub-type
+            The matching entities.
         """
         if not self:
             yield from entities
@@ -663,6 +599,6 @@ class Query:
             self.aggregator = self.get_aggregator()
             entities = self.aggregator.apply(cast(Any, entities))
         if self.selection:
-            # last: filtering, sorting and aggregating all read the full entity
+            # last, so filters, sort and aggregations read the full entity
             entities = (self._project(e) for e in entities)
         yield from entities

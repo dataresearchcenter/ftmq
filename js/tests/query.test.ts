@@ -41,8 +41,7 @@ const canon = (value: unknown): string =>
       : v,
   );
 
-// recursively sort `and`/`or` child arrays so tree ordering does not matter
-// (TS orders by JSON, Python by banal.hash_data)
+// sort `and` / `or` children recursively: TS and Python order trees differently
 function norm(value: any): any {
   if (Array.isArray(value)) return value.map(norm);
   if (value && typeof value === "object") {
@@ -61,7 +60,7 @@ function norm(value: any): any {
   return value;
 }
 
-// --- cross-language parity: every Python fixture round-trips through the TS Query
+// cross-language parity: every Python fixture round-trips through the TS Query
 for (const c of cases) {
   test(`parity: ${c.name}`, () => {
     const fromDict = Query.fromDict(c.dict);
@@ -73,8 +72,7 @@ for (const c of cases) {
       // serialize byte-parity (sorted keys / values)
       assert.deepEqual(fromDict.toParams(), c.params, "toParams");
       assert.equal(fromDict.toString(), c.string, "toString");
-      // parse parity against Python's re-parsed dict (params is lossy for
-      // per-metric aggregation grouping, identically in both languages)
+      // parity against Python's re-parsed dict (params lose per-metric groups)
       assert.deepEqual(
         norm(Query.fromParams(c.params).toDict()),
         norm(c.params_dict),
@@ -89,8 +87,7 @@ for (const c of cases) {
 
     if (c.rql !== null) {
       const expected = norm(c.rql_dict);
-      // rql child order follows tree order (not canonicalized), so parity is
-      // functional: our rql output and Python's both parse to the same tree.
+      // rql child order is not canonical: compare the parsed trees
       assert.deepEqual(
         norm(Query.fromRql(fromDict.toRql()).toDict()),
         expected,
@@ -105,7 +102,6 @@ for (const c of cases) {
   });
 }
 
-// --- TS-internal behaviour
 test("builder composes a nested tree", () => {
   const q = new Query()
     .where(M({ schema: "Person" }))
@@ -189,8 +185,7 @@ test("a repeated condition is held once", () => {
     new Query().where(a.or(b)).toDict(),
   );
 
-  // a leaf keys on its canonical form, so alternatives spelled in another
-  // order are the same condition
+  // `__in` alternatives in another order are the same condition
   const leaves = (query: Query) => [...(query.q as any).iterLeaves()].length;
   assert.equal(
     leaves(
@@ -228,15 +223,14 @@ test("a family marker with a bare field name builds a reference", () => {
   assert.equal(M("dataset").wire, "dataset");
   assert.equal(C("origin").wire, "context.origin");
   assert.equal(Year().wire, "year");
-  // `topics` is both a property and a property-type group - a name alone
-  // cannot say which, the marker can
+  // `topics` is both a property and a group: the marker disambiguates
   assert.equal(P("topics").wire, "properties.topics");
   assert.equal(G("topics").wire, "group.topics");
   assert.throws(() => M("nope"), QueryError);
 });
 
-// mirrors `test_aggregate_params` in tests/test_query.py - a surface that
-// cannot round-trip through a fixture, since `toParams` always emits a metric
+// mirrors `test_aggregate_params` in tests/test_query.py; no fixture, since
+// `toParams` always emits a metric
 test("a bare facet groups an entity count", () => {
   const q = Query.fromParams({ facet: ["dataset"] });
   assert.deepEqual(

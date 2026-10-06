@@ -1,6 +1,4 @@
-"""
-Tantivy store
-"""
+"""Tantivy search store."""
 
 import multiprocessing
 import os
@@ -104,8 +102,7 @@ class TantivyStore(BaseStore):
                     )
 
     def parse_query(self, q: str, query: Query | None = None) -> tantivy.Query | None:
-        """Compile the search term and the query's filters into a tantivy
-        query, or `None` if the filters can't match anything (an empty `in`)."""
+        """The tantivy query for `q` and the filters, or `None` if they can't match."""
         stmt = q
         for term in get_filters(query):
             if not term.values:

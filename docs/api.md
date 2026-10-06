@@ -1,4 +1,4 @@
-`ftmq.api` exposes a followthemoney statement store (and the [`ftmq.search`](./search.md) full-text index) as a read-only [FastAPI](https://fastapi.tiangolo.com/) application.
+`ftmq.api` serves a followthemoney statement store (and the [`ftmq.search`](./search.md) full-text index) as a read-only [FastAPI](https://fastapi.tiangolo.com/) application.
 
 ## Install
 
@@ -8,17 +8,17 @@ pip install ftmq[api]
 
 ## End-to-end setup
 
-This walks through serving a followthemoney entities file as a fully featured api instance, including full-text search, entirely from the command line. Start with an `entities.ftm.json` file (one entity json object per line).
+Serve an `entities.ftm.json` file (one entity json object per line) with full-text search, from the command line.
 
 ### 1. Apply a dataset
 
-The api serves entities scoped by dataset, so make sure every entity carries the dataset name you want to publish it under. If your entities already have proper datasets applied, skip this step.
+The api scopes entities by dataset. Skip this if your entities already carry the right datasets.
 
 ```bash
 cat entities.ftm.json | ftmq apply-dataset -d my_dataset --replace-dataset -o entities.my_dataset.ftm.json
 ```
 
-`--replace-dataset` drops any datasets already present on the entities (including the implicit `default` assigned to raw entities); without the flag, `my_dataset` is added alongside them.
+`--replace-dataset` drops existing datasets (including the implicit `default`); without it, `my_dataset` is added alongside them.
 
 ### 2. Load the statement store
 
@@ -26,21 +26,21 @@ cat entities.ftm.json | ftmq apply-dataset -d my_dataset --replace-dataset -o en
 ftmq -i entities.my_dataset.ftm.json -o sqlite:///ftm.store
 ```
 
-Any [ftmq store backend](./stores.md) works as the target (`sqlite://`, `postgresql://`, `leveldb://`, ...); a sqlite file is the simplest to start with.
+Any [ftmq store backend](./stores.md) works (`sqlite://`, `postgresql://`, `leveldb://`, ...).
 
 ### 3. Build the search index
 
-Full-text search (`/entities?q=`) and `/autocomplete` are backed by a [`ftmq.search`](./search.md) index. Transform the entities into search documents and index them:
+Full-text search (`/entities?q=`) and `/autocomplete` need a [`ftmq.search`](./search.md) index:
 
 ```bash
 cat entities.my_dataset.ftm.json | ftmq search transform | ftmq search --uri sqlite:///ftm.store index
 ```
 
-The index can live in the same sqlite database as the statement store (as here) or anywhere else (`tantivy://` for larger datasets).
+The index can share the store's sqlite database (as here) or live elsewhere (`tantivy://` for larger datasets).
 
 ### 4. Describe the catalog
 
-A catalog document adds metadata (titles, descriptions, publishers) to the datasets. Create a `catalog.json`:
+An optional `catalog.json` adds dataset metadata (titles, descriptions, publishers):
 
 ```json
 {
@@ -50,11 +50,11 @@ A catalog document adds metadata (titles, descriptions, publishers) to the datas
 }
 ```
 
-The catalog is optional: the *store* decides what is queryable. A dataset present in the store but missing from the catalog is served with a bare name (a warning is logged). `filter:dataset=` accepts every name the store holds and rejects anything else with a 422 listing the available names.
+The *store* decides what is queryable: a dataset in the store but not in the catalog is served with a bare name (a warning is logged). `filter:dataset=` rejects names the store doesn't hold with a 422 listing the available ones.
 
 ### 5. Configure and run
 
-Point the api at the store, the search index and the catalog, then run it with [granian](https://github.com/emmett-framework/granian) (included in the `api` extra):
+Run with [granian](https://github.com/emmett-framework/granian) (included in the `api` extra):
 
 ```bash
 export FTMQ_API_STORE_URI=sqlite:///ftm.store
@@ -63,9 +63,9 @@ export FTMQ_API_CATALOG=./catalog.json
 granian --interface asgi ftmq.api.app:app
 ```
 
-`FTMQ_API_STORE_URI` defaults to nomenklatura's `NOMENKLATURA_DB_URL`, and `FTMQ_SEARCH_URI` defaults to that same database when it is sqlite, so with the single-file layout above every variable is optional (without `FTMQ_API_CATALOG` the catalog is derived from the store). The catalog and stores are read once at process start: after changing data, restart the server.
+`FTMQ_API_STORE_URI` defaults to nomenklatura's `NOMENKLATURA_DB_URL`, and `FTMQ_SEARCH_URI` to the same database when it is sqlite, so for this single-file layout every variable is optional (without `FTMQ_API_CATALOG` the catalog is derived from the store). Catalog and stores are read once at process start: restart the server after changing data.
 
-For production, use several workers: `granian --interface asgi --workers 4 ftmq.api.app:app`. Routes run in the server's thread pool, so a worker also serves concurrent requests while others wait on the store; that pays off for I/O-bound backends (lake, postgres), while for CPU-bound work more workers scale better than threads. Any other ASGI server (uvicorn, hypercorn, ...) works as well.
+For production, run several workers (`granian --interface asgi --workers 4 ftmq.api.app:app`). Routes run in a thread pool, which helps I/O-bound backends (lake, postgres); for CPU-bound work add workers. Any other ASGI server (uvicorn, hypercorn, ...) works as well.
 
 ### 6. Verify
 
@@ -81,11 +81,11 @@ curl -s "localhost:8000/entities?q=jane+doe&filter:dataset=my_dataset"
 curl -s "localhost:8000/autocomplete?q=jan"
 ```
 
-The interactive ReDoc documentation is served at [`localhost:8000/`](http://localhost:8000).
+ReDoc documentation is served at [`localhost:8000/`](http://localhost:8000).
 
 ### Multiple datasets
 
-One api instance serves any number of datasets. Apply each dataset name to its source file, load everything into the same store and search index, and list all datasets in the catalog:
+Apply each dataset name to its source file, load everything into the same store and search index, and list all datasets in the catalog:
 
 ```bash
 cat dataset1.ftm.json | ftmq apply-dataset -d dataset1 --replace-dataset -o entities.dataset1.ftm.json
@@ -108,7 +108,7 @@ cat entities.dataset1.ftm.json entities.dataset2.ftm.json | ftmq search transfor
 }
 ```
 
-Requests span all datasets by default; scope them with one or more `filter:dataset=` params (for listing and `?q=` search alike, an unknown dataset returns a 422):
+Requests span all datasets; scope them with one or more `filter:dataset=` params (an unknown dataset returns a 422):
 
 ```bash
 curl -s "localhost:8000/catalog"                     # per-dataset statistics
@@ -118,7 +118,7 @@ curl -s "localhost:8000/entities?filter:dataset=dataset1&filter:schema=Payment&m
 curl -s "localhost:8000/entities?q=jane+doe&filter:dataset=dataset1"
 ```
 
-Remember that the dataset list is frozen at process start (from the catalog document): adding a dataset means updating the catalog, loading its data and restarting the server.
+The dataset list is fixed at process start: a new dataset needs its data loaded (and catalog entry, if any) and a restart.
 
 ## Endpoints
 
@@ -133,7 +133,7 @@ Remember that the dataset list is frozen at process start (from the catalog docu
 
 ## Query dialect
 
-The api speaks the Aleph / OpenAleph filter grammar, the same [`Query.from_params`](./query.md) surface used across the ftmq ecosystem:
+The api speaks the Aleph / OpenAleph filter grammar ([`Query.from_params`](./query.md)):
 
 ```bash
 /entities?filter:dataset=my_dataset&filter:schema=Payment
@@ -152,24 +152,24 @@ The api speaks the Aleph / OpenAleph filter grammar, the same [`Query.from_param
 /entities?q=jane+doe&filter:dataset=my_dataset&filter:group.countries=de
 ```
 
-Aggregations ride on the entities query: add `metric:<func>=<field>` (and `facet=<field>` to group them). Ungrouped aggregations are returned in the response `metrics`, grouped ones in `facets`; set `limit=0` to get only those (plus `total`), no results.
+Aggregations ride on the entities query: `metric:<func>=<field>`, grouped by `facet=<field>`. Ungrouped ones are returned in `metrics`, grouped ones in `facets`; `limit=0` returns only those (plus `total`).
 
-`metric:` and `facet` take the same field spelling as `filter:`: `properties.<name>` for a property, `group.<name>` for a property-type group, `context.<name>` for a context column; meta fields and `year` are bare. The response keys the metrics the same way. A `facet` on its own groups an entity count: `?facet=group.countries` is short for `?metric:count=id&facet=group.countries`, and `metric:count=id` agrees with the response `total`.
+`metric:` and `facet` use the `filter:` field spelling (`properties.<name>`, `group.<name>`, `context.<name>`, bare meta fields and `year`), and the response keys metrics the same way. A bare `facet` groups an entity count: `?facet=group.countries` is short for `?metric:count=id&facet=group.countries`, and `metric:count=id` equals the response `total`.
 
-Each facet bucket carries its entity `count` and the requested metrics within it, under `metrics` and keyed as the top-level `metrics` (`{field: {func: value}}`). Buckets are ranked by entity count; `facet_sort=<func>:<field>[:asc]` ranks them by one of the requested metrics instead (descending by default). Each facet returns its top 20 buckets, or `facet_size:<field>=N` (at most `FTMQ_API_MAX_FACET_SIZE`, 50, unless the request carries the `api_key`); the facet's `total` counts all its distinct values.
+Each facet bucket carries its entity `count` and the requested metrics under `metrics` (`{field: {func: value}}`). Buckets are ranked by entity count, or by a metric with `facet_sort=<func>:<field>[:asc]` (descending by default). Each facet returns its top 20 buckets, or `facet_size:<field>=N` (at most `FTMQ_API_MAX_FACET_SIZE`, 50, unless the request carries the `api_key`); the facet's `total` counts all its distinct values.
 
 ```bash
 /entities?filter:schema=Payment&metric:sum=properties.amountEur&facet=properties.beneficiary&facet_sort=sum:properties.amountEur&limit=0
 ```
 
-For nested boolean trees that the flat grammar cannot express (a cross-field `OR`, a negated group), pass a full [RQL](./query.md) string via `rql=`. It overrides the flat filter params, while `sort` / `limit` / `offset` still apply, and it also carries aggregations:
+For nested trees (a cross-field `OR`, a negated group) pass an [RQL](./query.md#rql) string via `rql=`. It overrides the flat filter params and can carry aggregations; `sort` / `limit` / `offset` still apply:
 
 ```bash
 /entities?rql=and(eq(schema,Person),or(eq(group.countries,de),eq(group.countries,at)))
 /entities?rql=aggregate(year,sum(properties.amountEur))&limit=0
 ```
 
-Retrieve flags shape the response: `nested` (inline adjacent entities), `featured`, `dehydrate`, `dehydrate_nested`, `stats`. A request with `api_key=<FTMQ_API_BUILD_API_KEY>` may exceed the public `limit` cap (useful for static site builders).
+Response flags: `nested` (inline adjacent entities), `featured`, `dehydrate`, `dehydrate_nested`, `stats`. A request with `api_key=<FTMQ_API_BUILD_API_KEY>` may exceed the public `limit` cap (e.g. for static site builds).
 
 ## Response
 
@@ -197,11 +197,9 @@ Retrieve flags shape the response: `nested` (inline adjacent entities), `feature
 }
 ```
 
-`results` are the entities (each `id` / `caption` / `schema` / `properties` / `datasets`); `total_type` is always `eq` (exact counts). Grouped aggregations land in `facets` (Aleph value/count buckets), ungrouped in `metrics`. `query` (the canonical [`Query.to_dict`](./query.md)) and `stats` (dataset statistics, with `stats=1`) are ftmq extensions Aleph clients can ignore.
+`total_type` is always `eq` (exact counts). `query` (the canonical [`Query.to_dict`](./query.md)) and `stats` (dataset statistics, with `stats=1`) are ftmq extensions Aleph clients can ignore.
 
 ### Migrating from ftmq-api 3.x
-
-Old params map to the current grammar:
 
 | ftmq-api 3.x | ftmq.api |
 |---|---|
@@ -218,14 +216,22 @@ Old params map to the current grammar:
 | `page=3&limit=100` | `offset=200&limit=100` |
 | `aggSum=amountEur&aggGroups=year` | `metric:sum=properties.amountEur&facet=year` |
 
-The `/similar` endpoint was removed. `/aggregate` and `/search` are merged into `/entities`: request aggregations on the entities query (`limit=0` for aggregations only) and pass `?q=<term>` for full-text search. The response `query` field echoes the canonical query serialization, and pagination urls use `offset`.
+`/similar` is removed; `/aggregate` and `/search` are merged into `/entities` (aggregation params, `?q=<term>`). Pagination urls use `offset`.
 
 ## Settings
 
-Environment variables use the `FTMQ_API_` prefix (see [`Settings`][ftmq.api.settings.Settings]): `FTMQ_API_CATALOG` (catalog uri, required for multi-dataset instances), `FTMQ_API_STORE_URI` (defaults to nomenklatura's `NOMENKLATURA_DB_URL`), `FTMQ_API_RESOLVER_URI` (deduplication decisions: a sql database with a `resolver` table or a json edge dump; defaults to the store's own database - it expects an already resolved store, see below), `FTMQ_API_DEFAULT_LIMIT` (public pagination cap, default 100), `FTMQ_API_MAX_FACET_SIZE` (public facet size cap, default 50), `FTMQ_API_BUILD_API_KEY` (unset by default, so no request exceeds the cap), `FTMQ_API_MIN_SEARCH_LENGTH`, `FTMQ_API_ALLOWED_ORIGIN`, `FTMQ_API_INFO_TITLE` / `FTMQ_API_INFO_DESCRIPTION_URI` (ReDoc landing page). The search store location comes from `FTMQ_SEARCH_URI` (defaults to the nomenklatura database when it is sqlite).
+Environment variables use the `FTMQ_API_` prefix (see [`Settings`][ftmq.api.settings.Settings]):
 
-Deduplication: `FTMQ_API_RESOLVER_URI` gives the api the merge decisions, which it uses to map a requested id to its canonical one - so `/entities/{referent_id}` serves the merged entity. It does **not** merge the data: the api expects a store whose statements already carry the canonical id (see [merged entities](./stores.md#merged-entities-resolver--linker) for how to resolve a store). Point it at an unresolved store and only id lookups behave, while filters, counts, aggregations and search still return the cluster members separately.
+- `FTMQ_API_CATALOG` - catalog uri (optional, adds dataset metadata)
+- `FTMQ_API_STORE_URI` - defaults to nomenklatura's `NOMENKLATURA_DB_URL`
+- `FTMQ_API_RESOLVER_URI` - deduplication decisions: a sql database with a `resolver` table or a json edge dump; defaults to the store's database
+- `FTMQ_API_DEFAULT_LIMIT` - public pagination cap, default 100
+- `FTMQ_API_MAX_FACET_SIZE` - public facet size cap, default 50
+- `FTMQ_API_BUILD_API_KEY` - unset by default, so no request exceeds the caps
+- `FTMQ_API_MIN_SEARCH_LENGTH`, `FTMQ_API_ALLOWED_ORIGIN`
+- `FTMQ_API_INFO_TITLE` / `FTMQ_API_INFO_DESCRIPTION_URI` - ReDoc landing page
+- `FTMQ_SEARCH_URI` - the search store (defaults to the nomenklatura database when it is sqlite)
 
-Caching: set `FTMQ_API_USE_CACHE=1` and point `FTMQ_API_CACHE_URI` at any [anystore](https://docs.investigraph.dev/lib/anystore) backend (a redis, a filesystem path, ...). Responses are cached keyed by request url.
+Deduplication: the resolver maps a requested id to its canonical one, so `/entities/{referent_id}` serves the merged entity. It does **not** merge the data: the store's statements must already carry the canonical id (see [merged entities](./stores.md#merged-entities-resolver-linker)). Against an unresolved store only id lookups work; filters, counts, aggregations and search return the cluster members separately.
 
-The catalog, stores and views are cached at process start: changing the catalog or the underlying data requires a restart.
+Caching: set `FTMQ_API_USE_CACHE=1` and point `FTMQ_API_CACHE_URI` at any [anystore](https://docs.investigraph.dev/lib/anystore) backend (redis, a filesystem path, ...). Responses are cached by request url.

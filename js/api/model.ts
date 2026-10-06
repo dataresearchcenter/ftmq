@@ -1,10 +1,5 @@
-// ftmq-specific dataset & catalog metadata models, adapted from the Python
-// `ftmq.model` (Catalog / Dataset / DatasetStats).
-//
-// The followthemoney data model itself (Entity, Model, Schema, Property,
-// PropertyType, ...) lives in `@opensanctions/followthemoney`; these
-// dataset / catalog / statistics concepts are NOT part of that package and are
-// kept here.
+// ftmq dataset / catalog / stats models (Python `ftmq.model`), which are not
+// part of `@opensanctions/followthemoney`.
 
 export interface IPublisher {
   readonly name: string;
@@ -35,7 +30,7 @@ export interface ICoverage {
   readonly schedule?: string | null;
 }
 
-// --- statistics (ftmq.model.stats.DatasetStats) ---
+// mirrors ftmq.model.stats.DatasetStats
 
 export interface ICountry {
   readonly code: string;
@@ -65,7 +60,7 @@ export interface IDatasetStats {
   readonly countries: string[];
 }
 
-// --- dataset / catalog (ftmq.model.dataset) ---
+// mirrors ftmq.model.dataset
 
 export type TContentType = "documents" | "structured" | "mixed";
 

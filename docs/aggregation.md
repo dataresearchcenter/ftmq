@@ -1,8 +1,8 @@
-An aggregation computes a metric (`min`, `max`, `sum`, `avg` or `count`) over the entities a [`Query`](./query.md) matches, optionally grouped by another field. Aggregations are a *projection*, not a filter: they do not compose with the `& | ~` boolean tree, so an `A` node is not passed to `where()` but to `aggregate()`, alongside `order_by()` and slicing.
+An aggregation computes `min`, `max`, `sum`, `avg` or `count` over the entities a [`Query`](./query.md) matches, optionally grouped by another field. It is a projection, not a filter: an `A` node does not compose with `& | ~` and is passed to `aggregate()`, not to `where()`.
 
 ## Field references
 
-An aggregation addresses a field with the same `M` / `P` / `G` / `C` markers the [filter families](./query.md) use, called with a bare field name instead of `field=value`. The result is a *reference*: the same field, no condition.
+A field is addressed with the same `M` / `P` / `G` / `C` markers the [filter families](./query.md) use, called with a bare field name instead of `field=value`:
 
 ```python
 from ftmq import M, P, G, C, Year
@@ -14,11 +14,11 @@ C("origin")         # a context / storage column
 Year()              # the year of any date-typed value (derived from `dates`)
 ```
 
-Bare strings are not accepted - a field is always addressed through its family marker (`P("topics")` is the property, `G("topics")` the group).
+Bare strings are rejected (`P("topics")` is the property, `G("topics")` the group).
 
 ## The `A` node
 
-`A` mirrors the keyword style of the filter families: each keyword is an aggregation function and its value is the reference (or references) to aggregate. `by=` groups the result by one or more references.
+Each keyword is an aggregation function, its value the reference (or references) to aggregate; `by=` groups by one or more references.
 
 ```python
 from ftmq import Query, M, P, G, A, Year
@@ -31,15 +31,15 @@ A(min=P("date"), max=P("date"))              # several functions in one node
 A(count=M("id"), by=[G("countries"), Year()])
 ```
 
-The functions are `min`, `max`, `sum`, `avg` and `count` (`count` is over *distinct* values).
+`count` counts distinct values.
 
 !!! note "Numbers"
 
-    `min` / `max` / `sum` / `avg` over a numeric property return numbers, not strings. In memory the values are read through followthemoney's number parser (values that do not parse are skipped); the SQL backends `CAST` the stored value, which must be in the canonical number format - store writers normalize values on write, and an existing store is migrated with [`ftmq statements cast-types`](./cli.md#statements). A store holding a display-formatted (`"324,687.00"`) or unparsable amount reads wrong on sqlite and raises on postgres / duckdb. `count` counts distinct raw values.
+    `min` / `max` / `sum` / `avg` over a numeric property return numbers. In memory values are parsed with followthemoney's number parser; the SQL backends cast the stored value, and a value that isn't in the canonical number format (e.g. `"324,687.00"`) reads as `NULL` and drops out. Store writers normalize values on write; migrate an existing store with [`ftmq statements cast-types`](./cli.md#statements).
 
 ## Adding aggregations to a query
 
-`Query.aggregate()` is variadic and additive: pass several `A` nodes in one call, or chain calls.
+`Query.aggregate()` takes several `A` nodes, and chained calls accumulate:
 
 ```python
 q = (
@@ -55,7 +55,7 @@ q = q.aggregate(A(count=M("id")))     # chaining accumulates
 
 ## Running an aggregation
 
-Aggregations run on any backend and return the same result. On a [store view](./stores.md):
+Every backend returns the same result. On a [store view](./stores.md):
 
 ```python
 from ftmq.store import get_store
@@ -64,14 +64,14 @@ view = get_store("sqlite:///followthemoney.store").default_view()
 result = view.aggregations(q)
 ```
 
-In memory, the query collects its aggregations as a side effect of iterating; read the result off the query afterwards:
+In memory, aggregations are collected while iterating; read them off the query afterwards:
 
 ```python
 _ = list(q.apply_iter(entities))
 result = q.aggregator.result
 ```
 
-The result is a nested mapping of `function -> field -> value`, with a `groups` sub-mapping for any grouped aggregation, fields keyed by their wire spelling:
+The result maps `function -> field -> value`, with a `groups` sub-mapping for grouped aggregations; fields are keyed by their wire spelling:
 
 ```python
 {
@@ -86,31 +86,31 @@ The result is a nested mapping of `function -> field -> value`, with a `groups` 
 
 ## Serialization
 
-Aggregations round-trip through [`Query.to_dict`][ftmq.Query.to_dict] / [`from_dict`][ftmq.Query.from_dict] as a flat list of specs - `[{"func": "sum", "field": "properties.amountEur", "by": ["year"]}, ...]` - fields spelled as on the wire, `by` omitted when ungrouped.
+In [`Query.to_dict`][ftmq.Query.to_dict] / [`from_dict`][ftmq.Query.from_dict] aggregations are a flat spec list: `[{"func": "sum", "field": "properties.amountEur", "by": ["year"]}, ...]` (`by` omitted when ungrouped).
 
-A reference uses the wire spelling shared with the filter grammar: `properties.<name>` for a property, `group.<name>` for a property-type group, `context.<name>` for a context column; meta fields and `year` are bare. `filter:group.countries=de` and `facet=group.countries` address the same dimension.
+Fields use the filter wire spelling: `properties.<name>`, `group.<name>`, `context.<name>`; meta fields and `year` are bare. `filter:group.countries=de` and `facet=group.countries` address the same dimension.
 
-[RQL](./query.md#rql) carries them losslessly in a single string via its metric operators (`sum`, `min`, `max`, `mean`, `count`) and the `aggregate(groups..., funcs...)` grouping operator, side by side with the filter; per-node grouping is preserved exactly.
+[RQL](./query.md#rql) carries them losslessly via `sum`, `min`, `max`, `mean`, `count` and the `aggregate(groups..., funcs...)` grouping operator, next to the filter:
 
 ```python
 q = Query().where(M(schema="Payment")).aggregate(A(count=M("id"), by=P("beneficiary")))
 q.to_rql()   # "and(eq(schema,Payment),aggregate(properties.beneficiary,count(id)))"
 ```
 
-In URL params ([`to_params`][ftmq.Query.to_params] / [`to_string`][ftmq.Query.to_string], back via `from_params` / `from_string`), each spec becomes a `metric:<function>=<field>` param and each grouped field a `facet=<field>` param.
+In URL params ([`to_params`][ftmq.Query.to_params] / [`to_string`][ftmq.Query.to_string], back via `from_params` / `from_string`) each spec becomes `metric:<function>=<field>` and each grouped field `facet=<field>`:
 
 ```python
 q = Query().aggregate(A(sum=P("amountEur"), by=P("beneficiary")))
 q.to_string()   # "facet=properties.beneficiary&metric:sum=properties.amountEur"
 ```
 
-`facet` groups apply across all metrics: a query whose metrics carry *different* groups collapses to their union on the way out, and every metric is grouped by every facet on the way back in. A `facet` without any `metric:` groups an entity count: `?facet=group.countries` parses as `A(count=M("id"), by=G("countries"))`.
+Facets apply to all metrics: metrics with different groups collapse to their union on the way out, and every metric is grouped by every facet on the way in. A `facet` without a `metric:` groups an entity count: `?facet=group.countries` parses as `A(count=M("id"), by=G("countries"))`.
 
 ### Ranking facet buckets
 
-Buckets are ranked by entity count. [`order_facets`][ftmq.Query.order_facets] ranks them by one of the query's grouped metrics instead (descending unless `ascending=True`), spelled `facet_sort=<func>:<field>[:asc]` in URL params and in `to_dict`.
+Buckets are ranked by entity count. [`order_facets`][ftmq.Query.order_facets] ranks them by one of the query's grouped metrics instead (descending unless `ascending=True`); wire spelling `facet_sort=<func>:<field>[:asc]` in URL params and `to_dict`.
 
-Each facet keeps its top 20 buckets in that ranking, ties broken by value, on every backend. [`facet_size`][ftmq.Query.facet_size] sets another number per facet, spelled `facet_size:<field>=N` in URL params and `{"facet_size": {field: N}}` in `to_dict`; neither has an RQL operator.
+Each facet keeps its top 20 buckets, ties broken by value, on every backend. [`facet_size`][ftmq.Query.facet_size] sets another size per facet: `facet_size:<field>=N` in URL params, `{"facet_size": {field: N}}` in `to_dict`. Neither has an RQL operator.
 
 ```python
 q = Query().aggregate(A(sum=P("amountEur"), by=P("beneficiary")))
@@ -118,7 +118,7 @@ q = q.order_facets(sum=P("amountEur")).facet_size(P("beneficiary"), 5)
 q.to_string()   # "facet=properties.beneficiary&facet_size:properties.beneficiary=5&facet_sort=sum%3Aproperties.amountEur&metric:sum=properties.amountEur"
 ```
 
-The metric has to be a grouped aggregation, and a facet size a facet, of the query; otherwise a [`QueryError`][ftmq.QueryError] is raised.
+The metric must be a grouped aggregation, and the facet size a facet, of the query; otherwise a [`QueryError`][ftmq.QueryError] is raised.
 
 ## Reference
 

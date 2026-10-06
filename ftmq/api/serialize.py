@@ -1,7 +1,4 @@
-"""
-serialization data models as seen in
-https://github.com/opensanctions/yente/
-"""
+"""Api response models, modelled on [yente](https://github.com/opensanctions/yente/)."""
 
 import math
 from collections import defaultdict
@@ -29,8 +26,7 @@ class EntityResponse(EntityModel):
 
 
 def with_bucket_counts(query: Query) -> Query:
-    """Add an entity count per facet, so every bucket has its `count`, and the
-    facet's distinct values, its `total`.
+    """Add the counts behind each facet bucket's `count` and the facet's `total`.
 
     Args:
         query: The request query.
@@ -70,9 +66,10 @@ def _bucket(value: str, count: int) -> dict[str, Any]:
 
 
 def build_facets(aggregations: AggregatorResult, query: Query) -> dict[str, Any]:
-    """Grouped aggregations as Aleph `facets` with buckets of
-    `{value, label, count, metrics: {field: {func: value}}}`, ranked by the
-    query's `facet_sort` metric, else by entity count.
+    """The grouped aggregations as Aleph `facets`.
+
+    Buckets are `{value, label, count, metrics: {field: {func: value}}}`, ranked
+    by the query's `facet_sort` metric, else by entity count.
 
     Args:
         aggregations: The computed aggregations, with bucket counts.
@@ -108,7 +105,7 @@ def build_facets(aggregations: AggregatorResult, query: Query) -> dict[str, Any]
 
 
 def build_filters(query: Query) -> dict[str, list[str]]:
-    """The applied positive filters as `{field: [values]}` (empty for nested queries)."""
+    """The positive filters as `{field: [values]}` (empty for nested queries)."""
     try:
         params = query.to_params()
     except QueryError:
@@ -137,7 +134,7 @@ class EntitiesResponse(BaseModel):
     metrics: dict[str, Any] = {}
     filters: dict[str, list[str]] = {}
     query_q: str | None = None
-    # ftmq extensions (additive; Aleph clients ignore extra keys)
+    # ftmq extensions to the Aleph envelope
     query: dict[str, Any] = {}
     stats: DatasetStats | None = None
     links: dict[str, str] = {}

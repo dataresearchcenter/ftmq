@@ -5,8 +5,7 @@ export const PROPERTIES_PREFIX = "properties.";
 export const GROUP_PREFIX = "group.";
 export const CONTEXT_PREFIX = "context.";
 
-// meta fields addressable as a reference (`schemata` is an is-a predicate, not
-// a field a projection could read)
+// meta fields a ref can address (`schemata` is an is-a predicate, not a field)
 export const META_FIELDS = new Set([
   "id",
   "entity_id",
@@ -18,17 +17,7 @@ export const META_FIELDS = new Set([
 // the year dimension is derived from date-typed values, not a column
 export type RefFamily = Family | "Y";
 
-/**
- * A field reference: a leaf without a value.
- *
- * Names *where* to read - a followthemoney property, a property-type group, a
- * meta column, a context column - without saying what to match. Built by the
- * same `M` / `P` / `G` / `C` constructors as a filter leaf, called with a bare
- * field name, and projected over by an aggregation (`A`).
- *
- * Mirrors `ftmq.query.refs`. As everywhere in this package, field names are not
- * validated here - the server does that.
- */
+/** A field reference (a leaf without a value), mirroring `ftmq.query.refs`. */
 export class Ref {
   readonly family: RefFamily;
   readonly key: string;
@@ -54,14 +43,7 @@ export class Ref {
 /** The year dimension: `A({ count: M("id"), by: Year() })`. */
 export const Year = (): Ref => new Ref("Y", "year");
 
-/**
- * Resolve a wire spelling back into a ref - the single place a string becomes a
- * field reference (URL params, RQL, `toDict` keys).
- *
- * The family is encoded in the spelling: `properties.<name>`, `group.<name>`,
- * `context.<name>`; meta fields and `year` are bare. Field names themselves
- * are not validated here (server-side).
- */
+/** Parse a wire spelling (see `Ref.wire`) into a ref. */
 export function refFromWire(value: string): Ref {
   if (value.startsWith(PROPERTIES_PREFIX)) {
     return new Ref("P", value.slice(PROPERTIES_PREFIX.length));

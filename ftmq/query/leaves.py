@@ -1,18 +1,11 @@
 """
-Leaf conditions for the ftmq query language, split by the statement-table
-column they target:
+Leaf conditions, one family per statement-table column they target:
 
-- meta leaves (`M`): `dataset`, `schema` (exact), `schemata` (is-a),
-  `id` / `entity_id` / `canonical_id`.
-- the property leaf (`P`): a specific FtM property (the `prop` column).
-- the group leaf (`G`): a followthemoney property-type group (the `prop_type`
-  column, keyed by `registry.groups`: `names`, `dates`, `countries`, `entities`,
-  ...).
-- the context leaf (`C`): a provenance / storage column such as `origin`,
-  `fragment` or `first_seen` (read from `entity.context` in-memory).
-
-`Leaf` handles comparator matching and value casting; its subclasses add the
-per-family entity access plus correct `null` (present/absent) semantics.
+- `M` (meta): `dataset`, `schema` (exact), `schemata` (is-a), `id` / `entity_id` /
+  `canonical_id`.
+- `P`: a followthemoney property (the `prop` column).
+- `G`: a property-type group (the `prop_type` column, keyed by `registry.groups`).
+- `C`: a context / storage column such as `origin`, `fragment` or `first_seen`.
 """
 
 from __future__ import annotations
@@ -43,15 +36,13 @@ from ftmq.query.refs import (
 class LeafDict(TypedDict):
     """Serialized form of a single [`Leaf`][ftmq.query.leaves.Leaf] condition."""
 
-    t: str  # family tag: "M" (meta) | "P" (property) | "G" (group)
+    t: str  # family tag: "M" | "P" | "G" | "C"
     f: str  # field / property / group name
     op: str  # comparator, e.g. "eq", "in", "gte", "null"
     v: "str | bool | list[str]"  # cast value (list for `in` / `not_in`)
 
 
-# the value comparators of the query grammar: their in-memory test, `(entity
-# value, leaf value)`, plus `null`, a presence check (see `Leaf.apply`); SQL
-# translation in `Sql.get_expression`
+# in-memory test per comparator, `(entity value, leaf value)`; `null` is in `apply`
 MATCHERS: dict[str, Callable[[Any, Any], Any]] = {
     "eq": lambda v, x: v == x,
     "not": lambda v, x: v != x,
@@ -71,39 +62,25 @@ MATCHERS: dict[str, Callable[[Any, Any], Any]] = {
 COMPARATORS: frozenset[str] = frozenset(MATCHERS) | {"null"}
 
 
-# the comparators that bound a value from one side. Two of them on the same
-# field are a range over *one* value, which is why they co-refer - see
-# `group_conjunction` below.
+# bounds on one field co-refer, see `group_conjunction`
 ORDERED_COMPARATORS: frozenset[str] = frozenset({"gt", "gte", "lt", "lte"})
 
 
 def group_conjunction(leaves: "Iterable[Leaf]") -> "list[list[Leaf]]":
     """Group the leaves of one AND node into the sets that co-refer.
 
-    The rule both evaluators follow: *conditions that could hold of one
-    statement row simultaneously must hold of the same row*. Within a
-    conjunction a field's leaves co-refer when there is exactly one of them, or
-    when they are all ordered comparators - a lower and an upper bound describe
-    a single value, so `P(date__gte=a) & P(date__lt=b)` is one date inside the
-    window rather than two unrelated dates.
-
-    Repeated equality / set / substring conditions keep their per-leaf reading
-    ("has each"), so `M(dataset="d1") & M(dataset="d2")` still selects entities
-    present in both datasets; they come back as separate single-leaf groups. A
-    field mixing the two kinds (`first_seen__gte=x & first_seen__not=y`) is
-    conservatively not joined either.
-
-    Expressing this once is what keeps the SQL compiler and the in-memory
-    evaluator from drifting - as with the tree canonicalization in
-    [`_normalize`][ftmq.query.nodes._normalize].
+    Conditions that could hold of one statement row must hold of the same row. A
+    field's leaves co-refer when they are all bounds (`gt` / `gte` / `lt` / `lte`),
+    so `P(date__gte=a) & P(date__lt=b)` is one date inside the window. Any other
+    repeated field keeps a per-leaf reading: `M(dataset="d1") & M(dataset="d2")`
+    is "in both datasets". Used by both the SQL and the in-memory evaluator.
 
     Args:
         leaves: The leaf children of one AND node.
 
     Returns:
-        One group per co-referring set, in the order the leaves were given (a
-        multi-leaf group holds bounds on one field; every other leaf is its own
-        group).
+        One group per co-referring set, in input order: a multi-leaf group holds
+            bounds on one field, every other leaf is its own group.
     """
     leaves = list(leaves)
     by_field: dict[tuple[str, str], list[Leaf]] = defaultdict(list)
@@ -126,21 +103,11 @@ def group_conjunction(leaves: "Iterable[Leaf]") -> "list[list[Leaf]]":
 
 
 def is_row_scoped(leaf: "Leaf") -> bool:
-    """Whether a leaf tests a column that describes *one statement row*.
+    """Whether a leaf tests a column describing one statement row.
 
-    The `C` columns (`origin`, `first_seen`, `bucket`, ...) plus `dataset`: a
-    row's value for them is a fact about that statement, so AND-ed conditions
-    on distinct ones co-refer. `schema` / `schemata` / `id` / `canonical_id`
-    are excluded - a row's value there is a partial observation of an
-    entity-wide fact (an entity merged across datasets carries `LegalEntity`
-    rows *and* `Person` ones), so they stay entity-level.
-
-    An absence test (`__null=True`) is excluded as well: it asks whether *no*
-    row carries the column, which no single row can answer.
-
-    `entity_id` is deliberately not row-scoped: in memory `EntityIdRef` reads
-    `entity.id` rather than the pre-resolution column, and co-referring it
-    would widen that existing divergence.
+    True for the `C` columns and `dataset`, so AND-ed conditions on distinct ones
+    co-refer. Entity-wide fields (`schema`, `schemata`, the ids) and absence tests
+    (`__null=True`) are not row-scoped.
     """
     if leaf.comparator == "null" and leaf.value:
         return False
@@ -148,14 +115,11 @@ def is_row_scoped(leaf: "Leaf") -> bool:
 
 
 def row_scoped_groups(groups: "list[list[Leaf]]") -> "list[list[Leaf]]":
-    """The groups of [`group_conjunction`][ftmq.query.leaves.group_conjunction]
-    whose conditions co-refer *across* fields - they address different columns
-    of one statement row.
+    """Select the groups that co-refer across fields (columns of one statement row).
 
-    A field that `group_conjunction` had to split (repeated equality) did not
-    co-refer with itself, so it must not co-refer with anything else either:
-    `M(dataset="d1") & M(dataset="d2")` stays two conditions even next to a
-    `C(origin=..)` that would otherwise join them.
+    A field [`group_conjunction`][ftmq.query.leaves.group_conjunction] split
+    (repeated equality) is excluded, so `M(dataset="d1") & M(dataset="d2")` stays
+    two conditions next to a `C(origin=...)`.
 
     Args:
         groups: The output of `group_conjunction` for one AND node.
@@ -191,12 +155,11 @@ def parse_lookup(key: str) -> tuple[str, str]:
 
 
 class Leaf:
-    """A single condition: a comparator plus a cast value. Subclasses set
-    `family` and implement `values()` (the entity values to test) or override
-    `apply()`.
+    """A single condition: a comparator plus a cast value.
 
-    The comparator is validated upstream by
-    [`parse_lookup`][ftmq.query.leaves.parse_lookup]; here it is a plain string.
+    Subclasses set `family` / `key` and implement `values()` or override `apply()`.
+    The comparator is not validated here but by
+    [`parse_lookup`][ftmq.query.leaves.parse_lookup].
     """
 
     family: str = ""
@@ -207,9 +170,7 @@ class Leaf:
         self.value: Any = self.get_casted_value(value)
 
     def __hash__(self) -> int:
-        # over the canonical serialization, like `Expr.__hash__`: the family is
-        # part of a leaf's identity (`topics` is both a property and a
-        # property-type group), and an `in` value is order-normalized there
+        # the family is part of the identity: `topics` is a property and a group
         return hash(hash_data(self.field_dict()))
 
     def __eq__(self, other: Any) -> bool:
@@ -230,13 +191,13 @@ class Leaf:
         return str(value)
 
     def values(self, entity: EntityProxy) -> Iterator[str]:
-        """Yield the entity values this leaf tests against.
+        """Yield the entity values this leaf tests.
 
         Args:
             entity: The entity to read values from.
 
         Yields:
-            The relevant string values (property values, schema name, ...).
+            The string values (property values, schema name, ...).
         """
         raise NotImplementedError
 
@@ -248,12 +209,7 @@ class Leaf:
         return bool(matcher(value, self.value))
 
     def match_row(self, statement: Any) -> bool:
-        """Test this condition against a single statement row.
-
-        Only meaningful for a row-scoped leaf (see
-        [`is_row_scoped`][ftmq.query.leaves.is_row_scoped]); everything else
-        has no per-row value and never matches.
-        """
+        """Test against one statement row; only a row-scoped leaf ever matches."""
         return False
 
     def apply(self, entity: EntityProxy) -> bool:
@@ -263,28 +219,25 @@ class Leaf:
             entity: The entity to test.
 
         Returns:
-            `True` if any of the entity's values satisfy the comparator (or,
-            for the `null` comparator, the presence / absence check).
+            Whether any entity value satisfies the comparator (for `null`: the
+                presence / absence check).
         """
         if self.comparator == "null":
             present = any(True for _ in self.values(entity))
-            # value was cast to a bool by `get_casted_value`
+            # `self.value` is a bool here, cast by `get_casted_value`
             return (not present) if self.value else present
         return any(self.match(v) for v in self.values(entity))
 
     @property
     def wire(self) -> str:
-        """How this leaf's field is spelled on a string surface (Aleph params,
-        RQL). Ref-backed leaves defer to their ref, so a filter and an
-        aggregation over the same field are spelled identically."""
+        """The field's spelling on a string surface, shared with aggregations."""
         return self.key
 
     def field_dict(self) -> LeafDict:
         """Serialize this leaf to a family-tagged mapping.
 
         Returns:
-            The `{t, f, op, v}` [`LeafDict`][ftmq.query.leaves.LeafDict] used by
-            the query-tree serialization.
+            The `{t, f, op, v}` [`LeafDict`][ftmq.query.leaves.LeafDict].
         """
         value = self.value
         if isinstance(value, (set, frozenset)):
@@ -293,9 +246,11 @@ class Leaf:
 
 
 class RefLeaf(Leaf):
-    """A leaf whose field access is a [`Ref`][ftmq.query.refs.Ref]: the ref
-    validates the field name and reads the entity values, the leaf adds the
-    comparator. Aggregations project over the same refs."""
+    """A leaf reading its field through a [`Ref`][ftmq.query.refs.Ref].
+
+    The ref validates the field name and reads the values; the leaf adds the
+    comparator.
+    """
 
     ref: Ref
 
@@ -329,8 +284,7 @@ class SchemaLeaf(RefLeaf):
 
     def __init__(self, value: Any, comparator: str | None = None) -> None:
         super().__init__(value, comparator)
-        # validate real schema names for equality-style comparators (a
-        # `startswith`/`ilike` prefix is not expected to be a full schema)
+        # a `startswith` / `ilike` value is not expected to be a full schema name
         if self.comparator in ("eq", "in", "not", "not_in"):
             for name in ensure_list(value):
                 if model.get(name) is None:
@@ -338,8 +292,7 @@ class SchemaLeaf(RefLeaf):
 
 
 class SchemataLeaf(Leaf):
-    """`is-a` match: the entity's schema (or one of its ancestors) is the
-    queried schema, i.e. `model[X] in entity.schema.schemata`."""
+    """Is-a match: `model[X] in entity.schema.schemata`."""
 
     family, key = "M", "schemata"
 
@@ -358,8 +311,7 @@ class SchemataLeaf(Leaf):
 
     @property
     def names(self) -> set[str]:
-        """The concrete schemata matched: each one plus its non-abstract
-        descendants."""
+        """The concrete schemata matched, including non-abstract descendants."""
         names: set[str] = set()
         for schema in self.schemata:
             names.add(schema.name)
@@ -406,8 +358,8 @@ class PropertyLeaf(RefLeaf):
 
 
 class GroupLeaf(RefLeaf):
-    """A property-type group (the `prop_type` column). `entities` is the
-    reverse-lookup group."""
+    """A property-type group (the `prop_type` column); `entities` is the reverse
+    lookup."""
 
     family = "G"
 
@@ -419,13 +371,11 @@ class GroupLeaf(RefLeaf):
 
 
 class ContextLeaf(RefLeaf):
-    """A context field (the `C` family).
+    """A context / storage column (`origin`, `fragment`, `first_seen`, ...).
 
-    In-memory it reads `entity.context[key]` (always treated as multi-valued);
-    in SQL it maps to the same-named statement-table column. This is the general
-    form of provenance / storage fields - `origin`, and extra columns such as
-    `fragment`, `first_seen`, `bucket` - that are not followthemoney properties.
-    An entity without the key (or without a `context`) simply does not match.
+    In memory it reads the column off the entity's statements, else
+    `entity.context`; in SQL the same-named statement-table column. An entity
+    without the key does not match.
     """
 
     family = "C"
@@ -477,7 +427,7 @@ def make_leaf(family: str, key: str, value: Any) -> Leaf:
 
 
 def leaf_from_dict(data: LeafDict) -> Leaf:
-    """Reconstruct a leaf from its serialized [`LeafDict`][ftmq.query.leaves.LeafDict].
+    """Rebuild a leaf from its [`LeafDict`][ftmq.query.leaves.LeafDict].
 
     Args:
         data: The `{t, f, op, v}` mapping produced by

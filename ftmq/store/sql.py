@@ -31,9 +31,7 @@ class SQLQueryView(View, nk.SQLView):
     store: "SQLStore"
 
     def _sql(self, query: Query) -> Sql:
-        # the view scope compiles to an entity-level membership conjunct, so
-        # it composes with any dataset filters in the query - including
-        # `~` / `|` trees. An out-of-scope dataset filter matches nothing.
+        # the scope is an entity-level conjunct: out-of-scope datasets match nothing
         source = self.store.source
         if not self.external:
             # hide enrichment candidates, as nomenklatura's own views do
@@ -115,8 +113,7 @@ class SQLStore(Store, nk.SQLStore):
         return SqlSource(self.table)
 
     def statements(self, dataset: str | Dataset | None = None) -> Statements:
-        """The stored statement rows, streamed (see
-        [`Store.statements`][ftmq.store.base.Store.statements])."""
+        """The stored statement rows in scope (see `Store.statements`)."""
         scope = ensure_dataset(dataset) if dataset is not None else self.scope
         q = select(self.table).where(self.table.c.dataset.in_(scope.leaf_names))
         yield from self._iterate_stmts(q)

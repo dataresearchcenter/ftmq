@@ -672,7 +672,7 @@ def test_sql_coreference(coref_engine):
     def memberships(q: Query) -> int:
         return _literal(Sql(q, SqlSource(COREF)).canonical_ids).count("SELECT DISTINCT")
 
-    # --- joins: distinct row-scoped columns share a row ---------------------
+    # joins: distinct row-scoped columns share a row
     # the case that started this: an old crawl statement plus a fresh statement
     # of another origin is not a fresh crawl statement
     q = Query().where(C(origin="crawl"), C(first_seen__gte="2026-08-22"))
@@ -689,7 +689,7 @@ def test_sql_coreference(coref_engine):
         "pay-split",
     ]
 
-    # --- joins: bounds on one field describe one value ----------------------
+    # joins: bounds on one field describe one value
     window = Query().where(P(date__gte="2024-10"), P(date__lt="2024-11"))
     assert ids(window) == ["pay-hit"]
     assert memberships(window) == 2
@@ -706,13 +706,13 @@ def test_sql_coreference(coref_engine):
     assert ids(q) == ["doc-hit"]
     assert memberships(q) == 2
 
-    # --- no join: entity-wide facts ----------------------------------------
+    # no join: entity-wide facts
     # a merged entity's schema is the join over its rows, so a `Person` filter
     # must not be forced onto the same row as the origin filter
     assert ids(Query().where(C(origin="crawl"), M(schema="Person"))) == ["merged"]
     assert memberships(Query().where(C(origin="crawl"), M(schema="Person"))) == 3
 
-    # --- no join: repeated equality keeps set semantics ---------------------
+    # no join: repeated equality keeps set semantics
     # "present in both datasets", not "one statement in two datasets"
     assert ids(Query().where(M(dataset="d1")).where(M(dataset="d2"))) == ["merged"]
     # "has both origins", not "one statement with two origins"
@@ -724,28 +724,28 @@ def test_sql_coreference(coref_engine):
     q = Query().where(M(dataset="d1")).where(M(dataset="d2")).where(C(origin="crawl"))
     assert ids(q) == ["merged"]
 
-    # --- no join: different props never share a row -------------------------
+    # no join: different props never share a row
     assert ids(Query().where(P(title="a"), P(fileName="b"))) == ["doc-split"]
 
-    # --- a mixed-comparator group is conservatively not joined --------------
+    # a mixed-comparator group is conservatively not joined
     q = Query().where(C(first_seen__gte="2020-01-01"), C(first_seen__not="2026-08-22"))
     assert memberships(q) == 3
 
-    # --- OR never joins -----------------------------------------------------
+    # OR never joins
     assert (
         memberships(Query().where(C(origin="crawl") | C(first_seen__gte="2026"))) == 3
     )
 
-    # --- a negated conjunction negates the joined clause --------------------
+    # a negated conjunction negates the joined clause
     q = Query().where(~(C(origin="crawl") & C(first_seen__gte="2026-08-22")))
     assert "NOT IN" in _literal(Sql(q, SqlSource(COREF)).canonical_ids)
     assert "doc-hit" not in ids(q)
 
-    # --- an absence test stays an anti-join ---------------------------------
+    # an absence test stays an anti-join
     q = Query().where(C(origin__null=True), C(first_seen__gte="2020-01-01"))
     assert memberships(q) == 3
 
-    # --- the view scope stays its own conjunct ------------------------------
+    # the view scope stays its own conjunct
     # scoping selects entities; it must not require the *matching* statement to
     # live in a scoped dataset
     scoped = Sql(Query().where(C(origin="crawl")), SqlSource(COREF), scope=["d2"])

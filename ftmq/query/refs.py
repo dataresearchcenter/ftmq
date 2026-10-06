@@ -1,27 +1,15 @@
 """
 Field references: a leaf without a value.
 
-A [`Ref`][ftmq.query.refs.Ref] names *where* to read - a followthemoney
-property, a property-type group, a meta column, a context column - without
-saying what to match. It is what a filter leaf carries besides its comparator
-and value, and it is what an aggregation
-([`A`][ftmq.query.aggregations.A]) projects over:
+A [`Ref`][ftmq.query.refs.Ref] names where to read (a property, a property-type
+group, a meta or context column), reads its values off an entity and has one wire
+spelling ([`Ref.wire`][ftmq.query.refs.Ref.wire] /
+[`ref_from_wire`][ftmq.query.refs.ref_from_wire]):
 
 ```python
 Query().where(P(amountEur__gte=1000))      # a leaf: ref + comparator + value
 Query().aggregate(A(sum=P("amountEur")))   # an aggregation: just the ref
 ```
-
-Refs are built by the same family constructors as filter leaves, called with a
-positional field name instead of `field=value` lookups: `M("dataset")`,
-`P("amountEur")`, `G("countries")`, `C("origin")`, plus `Year()` for the
-date-derived year dimension.
-
-Every ref knows how to read its values off an entity (used by the in-memory
-evaluator, and by the filter leaves, which delegate here) and how it is spelled
-on the wire ([`Ref.wire`][ftmq.query.refs.Ref.wire] /
-[`ref_from_wire`][ftmq.query.refs.ref_from_wire]). The SQL side maps refs to
-columns in `ftmq.query.sql`, keeping sqlalchemy out of the query IR.
 """
 
 from __future__ import annotations
@@ -41,10 +29,6 @@ PROPERTIES_PREFIX = "properties."
 GROUP_PREFIX = "group."
 CONTEXT_PREFIX = "context."
 
-# valid followthemoney property names, and the subset whose values are numbers
-# (the ones an aggregation or sort reads through the number parser instead of
-# as strings). The single source for "is this prop numeric" - the SQL adapter
-# and the in-memory sort read this same set.
 PROP_NAMES: frozenset[str] = frozenset(p.name for p in model.properties)
 NUMERIC_PROPS: frozenset[str] = frozenset(
     p.name for p in model.properties if p.type == registry.number
@@ -55,8 +39,8 @@ NUMERIC_PROPS: frozenset[str] = frozenset(
 class Ref:
     """A reference to one field of one family.
 
-    Subclasses set `family` / `key` and implement `values()`; they are built
-    via the `M` / `P` / `G` / `C` constructors rather than directly.
+    Built via the `M` / `P` / `G` / `C` constructors called with a field name, or
+    `Year()`; subclasses set `family` / `key` and implement `values()`.
     """
 
     family: ClassVar[str] = ""
@@ -67,36 +51,21 @@ class Ref:
         raise NotImplementedError
 
     def row_value(self, statement: Any) -> str | None:
-        """This field's value on a single statement, `None` if it has none.
-
-        Only the row-scoped columns have one - the value of `schema` or `id` on
-        a row is a partial observation of an entity-wide fact, not a fact about
-        that row, so those stay `None` here (see
-        [`is_row_scoped`][ftmq.query.leaves.is_row_scoped]).
-        """
+        """This field's value on one statement row, `None` unless row-scoped."""
         return None
 
     def selects(self, prop: Property) -> bool:
-        """Whether a [`select`][ftmq.Query.select] projection on this ref keeps
-        the given property.
-
-        Only the families that address the statement's `prop` / `prop_type`
-        column can - `Query.select` rejects the others, so this stays `False`
-        for them. The in-memory counterpart of the row predicates
-        [`Sql.lookup`][ftmq.query.sql.Sql.lookup] returns.
-        """
+        """Whether a [`select`][ftmq.Query.select] on this ref keeps the property."""
         return False
 
     @property
     def is_numeric(self) -> bool:
-        """Whether the values are numbers (read through followthemoney's
-        number parser instead of as strings)."""
+        """Whether the values are read as numbers, not strings."""
         return False
 
     @property
     def wire(self) -> str:
-        """How this ref is spelled on a string surface (params, rql, dict keys,
-        CLI flags): the same spelling the filter grammar uses."""
+        """The spelling on every string surface (params, rql, dict keys, CLI)."""
         return self.key
 
     def __str__(self) -> str:
@@ -125,8 +94,7 @@ class MetaRef(Ref):
 
 
 class IdRef(MetaRef):
-    """The entity id. Aggregating it addresses *entities*, not the referent
-    ids in the `value` of a `prop = "id"` statement."""
+    """The entity id, not the referent ids in the value of a `prop = "id"` row."""
 
     key = "id"
 
@@ -194,8 +162,7 @@ class PropRef(Ref):
 
     @property
     def wire(self) -> str:
-        # the same `properties.` prefix the filter grammar uses, so a name that
-        # is both a property and a group (`topics`) stays addressable as either
+        # prefixed: `topics` is both a property and a group
         return f"{PROPERTIES_PREFIX}{self.key}"
 
 
@@ -232,10 +199,7 @@ class ContextRef(Ref):
         self.key = key
 
     def values(self, entity: EntityProxy) -> Iterator[str]:
-        # a statement entity carries the rows themselves, and its `context` slot
-        # is never populated - read the column off each statement, the way the
-        # SQL backends do. Only an entity without statements (a `ValueEntity`
-        # off a json stream) falls back to the aggregated context dict.
+        # a statement entity never populates `context`: read each row instead
         statements = getattr(entity, "statements", None)
         if statements is not None:
             seen: set[str] = set()
@@ -248,10 +212,7 @@ class ContextRef(Ref):
         context: dict[str, Any] = getattr(entity, "context", None) or {}
         values = context.get(self.key)
         if values is None:
-            # `ValueEntity` / `EntityProxy` pop the well-known provenance
-            # fields (`first_seen`, `last_seen`, `datasets`) into their own
-            # attributes instead of leaving them in `context`, so a field is
-            # addressable under one spelling either way
+            # provenance fields (`first_seen`, ...) live on attributes, not context
             attribute = getattr(entity, self.key, None)
             if not callable(attribute):
                 values = attribute
@@ -264,14 +225,12 @@ class ContextRef(Ref):
 
     @property
     def wire(self) -> str:
-        # context keys are open-ended (backends add their own columns), so they
-        # always carry the prefix rather than competing with the other families
+        # open-ended keys always carry the prefix
         return f"{CONTEXT_PREFIX}{self.key}"
 
 
 class YearRef(Ref):
-    """The year of any date-typed value - a dimension derived from the `dates`
-    group, not a column of its own."""
+    """The year of any date-typed value: derived from the `dates` group."""
 
     family = "Y"
     key = "year"
@@ -307,24 +266,20 @@ def make_meta_ref(key: str) -> MetaRef:
 
 
 def ref_from_wire(value: str) -> Ref:
-    """Resolve a wire spelling back into a ref - the single place a string
-    becomes a field reference, used by every string surface (URL params, RQL,
-    `to_dict` keys, CLI flags).
+    """Resolve a wire spelling into a ref, for every string surface.
 
-    The family is encoded in the spelling: `properties.<name>` for a property,
-    `group.<name>` for a property-type group, `context.<name>` for a context
-    column; a meta field (`id`, `entity_id`, `canonical_id`, `dataset`,
-    `schema`) and `year` are bare.
+    `properties.<name>`, `group.<name>` and `context.<name>` name their family; a
+    meta field (`id`, `entity_id`, `canonical_id`, `dataset`, `schema`) and `year`
+    are bare.
 
     Args:
-        value: A wire key such as `properties.amountEur`, `group.countries`,
-            `id`, `year` or `context.origin`.
+        value: E.g. `properties.amountEur`, `group.countries`, `id` or `year`.
 
     Returns:
         The resolved ref.
 
     Raises:
-        QueryError: If the spelling matches no field of any family.
+        QueryError: If the spelling matches no field.
     """
     if value.startswith(PROPERTIES_PREFIX):
         return PropRef(value[len(PROPERTIES_PREFIX) :])

@@ -1,6 +1,5 @@
 """
-Overwrite `ftm aggregate` with the possibility to merge via common parent
-schemata.
+Merge entities by id, optionally downgrading conflicting schemata to a common parent.
 """
 
 from typing import Iterable
@@ -38,13 +37,8 @@ def common_ancestor(s1: Schema, s2: Schema) -> Schema:
     raise InvalidData(f"No common ancestors: {s1}, {s2}")
 
 
-# `merge()` is the *downgrading* merge built on top of FollowTheMoney's native
-# entity merge. Downstream code (e.g. investigraph) may monkeypatch
-# `EntityProxy.merge` / `StatementEntity.merge` to delegate back into this
-# function so that every merge downgrades on schema conflict -- calling the
-# bound `.merge` here would then recurse infinitely. Capture the native
-# implementations at import time (before any such override is installed) and
-# always merge through them.
+# captured at import: downstream code (investigraph) may monkeypatch `.merge` to
+# delegate to `merge()` below, which would then recurse via the bound method
 _NATIVE_MERGE = {
     StatementEntity: StatementEntity.merge,
     EntityProxy: EntityProxy.merge,
@@ -66,8 +60,7 @@ def merge(p1: Entity, p2: Entity, downgrade: bool | None = False) -> Entity:
         return p1
     except InvalidData as e:
         if downgrade:
-            # try common schemata, this will probably "downgrade" entities
-            # as in, losing some schema specific properties
+            # merge as the common ancestor, losing schema specific properties
             schema = common_ancestor(p1.schema, p2.schema)
             p1_data = p1.to_full_dict()
             p1_data["schema"] = schema.name

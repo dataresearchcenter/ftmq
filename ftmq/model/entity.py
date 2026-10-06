@@ -37,8 +37,7 @@ class EntityModel(BaseModel):
         entity: Entity,
         adjacents: Iterable[Entity] | Mapping[str, "EntityModel"] | None = None,
     ) -> Self:
-        """Build from an entity, inlining the referenced `adjacents` (entities,
-        or models already built from them, keyed by id)."""
+        """Build from an entity, inlining `adjacents` (entities, or models by id)."""
         properties = dict(entity.properties)
         if adjacents:
             if not isinstance(adjacents, Mapping):
@@ -60,8 +59,7 @@ class EntityModel(BaseModel):
     def to_proxy(
         self, entity_type: Type[E] = ValueEntity, default_dataset: str | None = None
     ) -> E:
-        """Turn the payload into ``followthemoney.EntityProxy``. For this to
-        work, we first have to unnest resolved entity properties"""
+        """Turn the payload into an entity, un-nesting inlined entity properties."""
         schema = model[self.schema_]
         data = self.model_dump(by_alias=True)
         props = data.pop("properties", {})
@@ -75,14 +73,7 @@ class EntityModel(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def get_caption(cls, data: Any) -> Any:
-        """Derive ``caption`` from the entity proxy if not provided.
-
-        Uses ``ValueEntity.caption`` (the proxy property) which walks
-        the schema's full caption property list — e.g. ``fileName`` or
-        ``title`` for documents, ``identifier`` for things — and falls
-        back to the schema label if no caption property has a value.
-        The result is therefore always a non-empty string.
-        """
+        """Derive a missing `caption` from the entity, or the schema label."""
         if isinstance(data, dict):
             if data.get("caption") is None:
                 entity = make_entity(data)

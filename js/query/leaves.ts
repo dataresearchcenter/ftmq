@@ -96,10 +96,7 @@ export class Leaf {
     this.value = castValue(comparator, value);
   }
 
-  /**
-   * How this leaf's field is spelled on a string surface (Aleph params, RQL).
-   * The same spelling an aggregation over the same field uses (see `Ref`).
-   */
+  /** The field's spelling on string surfaces (params, RQL), as `Ref.wire`. */
   get wire(): string {
     if (this.family === "P") return `properties.${this.field}`;
     if (this.family === "G") return `group.${this.field}`;

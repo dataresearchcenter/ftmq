@@ -138,8 +138,6 @@ export class Query {
     });
   }
 
-  // --- building ------------------------------------------------------------
-
   /** AND another set of `M` / `P` / `G` / `C` nodes into the query. */
   where(...nodes: Expr[]): Query {
     const next = combine(nodes, AND);
@@ -188,19 +186,10 @@ export class Query {
     return this.chain({ facetSizes: { ...this.facetSizes, [ref.wire]: size } });
   }
 
-  /**
-   * Restrict the properties the matching entities are read with.
-   *
-   * A projection, not a filter: it never changes *which* entities match, only
-   * which of their properties come back. Takes `P` / `G` refs; the server
-   * rejects anything else (as everywhere in this package, field validation is
-   * server-side).
-   */
+  /** Project matching entities to the given `P` / `G` refs (not a filter). */
   select(...refs: Ref[]): Query {
     return this.chain({ selection: uniqueRefs([...this.selection, ...refs]) });
   }
-
-  // --- slice accessors -----------------------------------------------------
 
   get limit(): number | null {
     if (this.sliceRange === null) return null;
@@ -213,8 +202,6 @@ export class Query {
     if (this.sliceRange === null) return null;
     return this.sliceRange.start || 0;
   }
-
-  // --- leaf collectors -----------------------------------------------------
 
   private leafValues(
     predicate: (leaf: { family: string; field: string }) => boolean,
@@ -246,8 +233,6 @@ export class Query {
   get countries(): Set<string> {
     return this.leafValues((l) => l.family === "G" && l.field === "countries");
   }
-
-  // --- serialization -------------------------------------------------------
 
   toDict(): Record<string, any> {
     const data: Record<string, any> = {};
@@ -385,11 +370,7 @@ export class Query {
     return new Query({ q, aggregations, selection });
   }
 
-  /**
-   * URL params for an api request: the flat Aleph grammar when the filter is
-   * flat-expressible, otherwise an `rql=` filter tree. `sort` / `limit` /
-   * `offset` and aggregation params are always appended.
-   */
+  /** Api request params: flat Aleph params, or `rql=` for a nested tree. */
   toRequestParams(): URLSearchParams {
     let params: Params;
     try {

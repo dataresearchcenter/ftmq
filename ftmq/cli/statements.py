@@ -52,14 +52,11 @@ def cli_statements_cast_types(
     ] = False,
 ) -> None:
     """
-    Cast statement values into the canonical format of their property type
-    (`number`, `date`), moving the raw value into the `original_value` column.
+    Cast `number` and `date` statement values into their canonical format.
 
-    This is the format the read side (in particular the SQL backends) assumes,
-    as followthemoney doesn't normalize these types on write.
+    The raw value moves into `original_value`. The SQL backends expect this format.
     """
-    # argument validation stays outside `ErrorHandler`, which swallows the
-    # `typer.Exit` it would otherwise turn into an exit code of 0
+    # outside `ErrorHandler`, which would turn the `typer.Exit` into exit code 0
     types = list(type or DEFAULT_TYPES)
     input_format = _ensure_format(input_format)
     output_format = _ensure_format(output_format)
@@ -85,11 +82,9 @@ def cli_statements_read(
     ] = None,
 ) -> None:
     """
-    Dump the raw statements of a store into a statement stream.
+    Dump the raw statements of a store (SQL backends only) into a statement stream.
 
-    The rows come back as stored, external statements included and in no
-    particular order, so the dump loads back verbatim via `ftmq statements
-    write`. Only the SQL family of backends can do this.
+    The dump loads back verbatim via `ftmq statements write`.
     """
     output_format = _ensure_format(output_format)
     with ErrorHandler():
@@ -112,10 +107,8 @@ def cli_statements_write(
     """
     Load a statement stream into a store.
 
-    Each statement keeps the `canonical_id` it carries - it is never
-    re-derived from a resolver - so a stream stamped by `nomenklatura
-    apply-statements` stays resolved. A SQL store upserts on the statement id,
-    so loading a dump back into the store it came from updates it in place.
+    Each statement keeps its `canonical_id` (not re-derived from a resolver). A
+    SQL store upserts on the statement id, so a dump loads back in place.
     """
     input_format = _ensure_format(input_format)
     with ErrorHandler():

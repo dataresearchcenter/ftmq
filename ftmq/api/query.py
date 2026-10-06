@@ -13,7 +13,7 @@ from ftmq.query import Query
 
 @dataclass(frozen=True)
 class RetrieveParams:
-    """The response-shaping query params (a `Depends()` dependency)."""
+    """Response-shaping query params (a FastAPI `Depends()` dependency)."""
 
     nested: Annotated[
         bool, QueryField(description="Inline adjacent entities instead of their ids")
@@ -33,8 +33,7 @@ class RetrieveParams:
 
 
 def params_from_request(request: Request) -> dict[str, list[str]]:
-    """Collect the request query params as a dict of lists (starlette's
-    `QueryParams.items()` drops repeated keys)."""
+    """The request query params as a dict of lists, keeping repeated keys."""
     params: dict[str, list[str]] = defaultdict(list)
     for key, value in request.query_params.multi_items():
         params[key].append(value)
@@ -44,23 +43,15 @@ def params_from_request(request: Request) -> dict[str, list[str]]:
 def build_query(request: Request, authenticated: bool | None = False) -> Query:
     """Build a [`Query`][ftmq.Query] from a request's query params.
 
-    The flat filter grammar is the Aleph one (`filter:` / `exclude:` /
-    `empty:`, `sort`, `limit` / `offset`, `metric:<func>` / `facet`) parsed via
-    [`Query.from_params`][ftmq.Query.from_params]. An optional `rql=` param
-    carries a full nested [RQL][ftmq.Query.from_rql] filter tree (and, if
-    present, its aggregations and its `select` projection); it overrides the
-    flat filter grammar while `sort` / `limit` / `offset` keep coming from the
-    plain params.
-
-    Non-query params (`q`, `api_key`, retrieve flags) are ignored by the
-    parser. The limit is capped to `settings.default_limit` and each facet
-    size to `settings.max_facet_size`, unless the request is authenticated;
-    datasets are validated against the catalog.
+    The params are parsed via [`Query.from_params`][ftmq.Query.from_params]; an
+    optional `rql=` param ([`Query.from_rql`][ftmq.Query.from_rql]) replaces the
+    filter tree (and the aggregations / projection, if it carries any). Unless
+    authenticated, the limit is capped to `settings.default_limit` and each facet
+    size to `settings.max_facet_size`.
 
     Raises:
         HTTPException: 422 for a dataset not in the catalog.
-        QueryError: For invalid filter fields, values or RQL (handled as 400
-            upstream).
+        QueryError: For an invalid field, value or RQL string.
     """
     params = params_from_request(request)
     q = Query.from_params(params)

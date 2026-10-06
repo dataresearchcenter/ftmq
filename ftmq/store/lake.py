@@ -1,21 +1,6 @@
-"""
-https://openaleph.org/docs/lib/ftm-datalake/rfc/#basic-layout
+"""A deltalake statement store (parquet, partitioned by `PARTITION_BY`), via duckdb.
 
-A file-like "datalake" statement store based on parquet files and
-[deltalake](https://delta-io.github.io/delta-rs/)
-
-Backend has to be local filesystem, s3 or anything else compatible with
-`deltalake`
-
-Layout:
-    ```
-    ./data/
-        _delta_log/
-            [ix].json
-        bucket=[bucket]/  # things, intervals, documents, mentions
-            origin=[origin]/
-                [uid].parquet
-    ```
+Layout: https://openaleph.org/docs/lib/ftm-datalake/rfc/#basic-layout
 """
 
 from contextlib import contextmanager
@@ -151,16 +136,9 @@ ARROW_SCHEMA = pa.schema(
 
 
 class LakeStatement(Statement):
-    """A :class:`followthemoney.statement.Statement` extended with the lake
-    row field ``fragment`` – the supersession group key consumers key
-    merge-on-read semantics on (a later emission of the same ``(entity_id,
-    prop, fragment)`` replaces the earlier one). The empty string is the
-    "no fragment" sentinel everywhere – storage never holds NULL fragments.
+    """A `Statement` with the lake row field `fragment` (`""` for none, never NULL).
 
-    Identity semantics (``__eq__`` / ``__hash__`` by ``id``) are unchanged:
-    the same content under two fragments is the same statement id, but two
-    distinct storage rows. ``clone()`` returns a plain ``Statement`` and
-    drops the fragment – re-stamp via :meth:`from_statement` after cloning.
+    Identity stays by `id`; `clone()` returns a plain `Statement` without it.
     """
 
     __slots__ = ["fragment"]
@@ -171,26 +149,16 @@ class LakeStatement(Statement):
 
     @property
     def dedupe_key(self) -> str:
-        """Stable sort/dedupe key: ``id`` and ``fragment``, tab-joined.
-
-        The same content-addressed ``id`` under distinct fragments is
-        distinct storage rows, so anything deduplicating or keying
-        statements downstream must key on both. Tab-joining follows the
-        :class:`LakeWriter` batch-key idiom and sorts a non-fragment row
-        before fragment rows of the same id.
-        """
+        """Sort / dedupe key of a storage row: `id`, `origin` and `fragment`."""
         return f"{self.id}\t{self.origin or DEFAULT_ORIGIN}\t{self.fragment}"
 
     @classmethod
     def from_statement(
         cls, stmt: Statement, fragment: str | None = None
     ) -> "LakeStatement":
-        """Upgrade ``stmt`` to a :class:`LakeStatement`, stamping ``fragment``.
+        """Upgrade `stmt` to a `LakeStatement`, stamping `fragment` unless `None`.
 
-        ``None`` preserves the fragment of a passed ``LakeStatement`` (and
-        means non-fragment for a plain ``Statement``); pass a string –
-        including ``""`` – to set it explicitly. Plain statements are
-        copied, lake statements are stamped in place and returned as-is.
+        A plain statement is copied, a lake statement is stamped in place.
         """
         if isinstance(stmt, cls):
             if fragment is not None:
@@ -263,10 +231,7 @@ def storage_options() -> SDict:
 
 
 def setup_duckdb_storage(con: duckdb.DuckDBPyConnection | None = None) -> None:
-    """Create the s3 secret for the configured credentials on `con` (DuckDB's
-    default connection if omitted). Secrets are scoped to a database instance,
-    so this has to run on the connection that runs the queries. Without
-    credentials, DuckDB falls back to its default credential chain."""
+    """Create the s3 secret for the configured credentials on `con` (or the default)."""
     settings = storage_settings
     if not settings.secret:
         return
@@ -303,8 +268,7 @@ def get_schema_bucket(schema_name: str) -> str:
     return BUCKET_THING
 
 
-# the `bucket` partition is a function of the statement's schema, so a schema
-# filter prunes it (built once - the rule is a closure over `get_schema_bucket`)
+# `bucket` is a function of the schema, so a schema filter prunes it
 PRUNE: dict[str, PruneFn] = {"bucket": prune_by_schema(get_schema_bucket)}
 
 
@@ -322,21 +286,7 @@ def pack_statement(stmt: Statement, source: str | None = None) -> SDict:
 
 
 def statements_to_table(statements: Iterable[Statement]) -> pa.Table:
-    """Pack statements into an :data:`ARROW_SCHEMA` table, columnwise.
-
-    One pass over ``statements``, appending each field into its own list, then a
-    single :func:`pyarrow.table` call. Prefer this over mapping
-    :func:`pack_statement` when writing many statements at once.
-
-    ``source`` is left null: it is per-write provenance rather than statement
-    content, so writers set that column themselves.
-
-    Args:
-        statements: The statements to pack.
-
-    Returns:
-        A table with exactly :data:`ARROW_SCHEMA`.
-    """
+    """Pack statements into an `ARROW_SCHEMA` table columnwise, `source` left null."""
     ids: list[str | None] = []
     entity_ids: list[str | None] = []
     canonical_ids: list[str | None] = []
@@ -397,35 +347,18 @@ def statements_to_table(statements: Iterable[Statement]) -> pa.Table:
 
 
 ViewSqlBuilder = Callable[[DeltaTable], str]
-"""Returns the SELECT body for a view registered on the LakeStore
-connection. The body will be wrapped as ``CREATE OR REPLACE VIEW <name>
-AS <body>`` at connection-init time."""
+"""Builds the SELECT body of a view registered on the lake store's connection."""
 
 
 def default_view_sql(dt: DeltaTable) -> str:
-    """Default ``view_sqls`` builder for the ``statement`` view.
-
-    Returns a plain ``SELECT * FROM delta_scan('<uri>')`` so the view
-    surfaces the raw Delta rows. Consumers that want a deduped view
-    (e.g. ``ftm_lakehouse``) pass their own builder via the
-    :class:`LakeStore` ``view_sqls`` kwarg.
-
-    Single quotes in the URI are doubled to keep the SQL literal safe
-    (the URI is interpolated rather than bound because DuckDB's
-    ``delta_scan`` does not accept parameter binding for its path
-    argument).
-    """
+    """The default `statement` view: the raw delta rows."""
+    # `delta_scan` can't bind its path, so it is quoted inline
     table_uri = dt.table_uri.replace("'", "''")
     return f"SELECT * FROM delta_scan('{table_uri}')"
 
 
 class Row:
-    """Fake sqlalchemy row-like class yielded by :meth:`LakeStore._execute`.
-
-    Wraps a dict of column → value with both attribute and index access
-    so downstream code (built around sqlalchemy ``Row`` objects) keeps
-    working unchanged.
-    """
+    """A sqlalchemy `Row` lookalike (attribute and index access) for duckdb rows."""
 
     def __init__(self, data: SDict) -> None:
         for key, value in data.items():
@@ -441,8 +374,7 @@ class Row:
 class LakeStore(SQLStore):
     @property
     def source(self) -> SqlSource:
-        """The lake statement view, with schema-filter -> `bucket` partition
-        pruning and the view filter folded into every compiled query."""
+        """The lake statement view, with `bucket` pruning and the view filter."""
         return SqlSource(
             self.table,
             prune=PRUNE,
@@ -460,8 +392,7 @@ class LakeStore(SQLStore):
             nks.STATEMENT_TABLE: default_view_sql,
         }
         self._duckdb_config: dict[str, str] = kwargs.pop("duckdb_config", None) or {}
-        # fake it till you make it: this only feeds the (unused) sqlite engine
-        # and the resolver, queries run against duckdb over the delta table
+        # only feeds the unused sqlite engine and the resolver, queries use duckdb
         kwargs["uri"] = "sqlite:///:memory:"
         super().__init__(*args, **kwargs)
         self.table = TABLE
@@ -481,22 +412,7 @@ class LakeStore(SQLStore):
 
     @cached_property
     def _duckdb(self) -> duckdb.DuckDBPyConnection:
-        """Persistent DuckDB connection with all configured views registered.
-
-        The Delta extension is auto-installed / auto-loaded on first
-        ``delta_scan`` use thanks to the connection-level flags; no
-        explicit ``INSTALL`` / ``LOAD`` is needed. Views in
-        :attr:`_view_sqls` are registered at first access of this
-        property and persist for the lifetime of the ``LakeStore``.
-
-        DuckDB connections are not thread-safe; callers must use
-        :meth:`cursor` to get a thread-isolated child connection that
-        shares the catalog and registered views.
-
-        The session timezone is forced to UTC – DuckDB otherwise renders
-        TIMESTAMPTZ in the host timezone, leaking local-time datetimes to
-        consumers. Set GLOBAL so :meth:`cursor` sessions inherit it.
-        """
+        """The shared duckdb connection (UTC, views registered); query via `cursor`."""
         config = {
             "autoinstall_known_extensions": "true",
             "autoload_known_extensions": "true",
@@ -514,13 +430,7 @@ class LakeStore(SQLStore):
 
     @contextmanager
     def cursor(self) -> Iterator[duckdb.DuckDBPyConnection]:
-        """Yield a thread-isolated cursor on :attr:`_duckdb`.
-
-        Use as ``with store.cursor() as cur:`` for any synchronous
-        query. Generators that need the cursor alive while streaming
-        must pin it in their closure so it isn't closed before
-        consumption finishes.
-        """
+        """Yield a thread-isolated cursor on the shared duckdb connection."""
         cur = self._duckdb.cursor()
         try:
             yield cur
@@ -528,12 +438,7 @@ class LakeStore(SQLStore):
             cur.close()
 
     def _apply_filters(self, q: Select) -> Select:
-        """Hook for subclasses to inject additional WHERE clauses.
-
-        Called before every query execution. Override to add partition
-        filters, tenant scoping, etc. The default implementation is a
-        no-op — filters return the query unchanged.
-        """
+        """Hook for subclasses to add WHERE clauses before every query (no-op)."""
         return q
 
     def _execute(self, q: Select, stream: bool = True) -> Generator[Any, None, None]:
@@ -613,16 +518,14 @@ class LakeWriter(nk.Writer):
             if origin:
                 stmt.origin = origin
             self.add_statement(stmt, source=source)
-        # we check here instead of in `add_statement` as this will keep entities
-        # together in the same parquet files
+        # flush per entity, not per statement, to keep an entity in one file
         if len(self.batch) >= self.BATCH_STATEMENTS:
             self.flush()
 
     def _build_table(self) -> pa.Table:
         keys = sorted(self.batch)
         table = statements_to_table(self.batch[key][0] for key in keys)
-        # `source` is per statement, not per statement content – set the whole
-        # column at once instead of threading it through the packer
+        # `source` is per write, not statement content, so it's set as one column
         sources = [self.batch[key][1] for key in keys]
         return table.set_column(
             ARROW_SCHEMA.get_field_index("source"),
@@ -677,16 +580,7 @@ class LakeWriter(nk.Writer):
         bucket: str | None = None,
         origin: str | None = None,
     ) -> None:
-        """
-        Optimize the storage: Z-Ordering and compacting
-
-        Args:
-            vacuum: Run vacuum after optimization
-            vacuum_keep_hours: Retention hours for vacuum
-            dataset: Filter optimization to specific dataset partition
-            bucket: Filter optimization to specific bucket partition
-            origin: Filter optimization to specific origin partition
-        """
+        """Z-order and compact the storage, optionally per partition and vacuumed."""
         base_filters: FilterConjunctionType = []
         if dataset is not None:
             base_filters.append(("dataset", "=", dataset))

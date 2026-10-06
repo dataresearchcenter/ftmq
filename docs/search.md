@@ -1,20 +1,18 @@
-`ftmq.search` provides simple full-text search stores for [Follow The Money](https://followthemoney.tech) entities. Entities are transformed into flat search documents (names, fingerprints, countries, dates and a text blob) that are indexed into a search backend for shallow retrieval by keyword, with optional [`Query`](./query.md) filtering by dataset, schema and country.
+`ftmq.search` provides simple full-text search stores for [Follow The Money](https://followthemoney.tech) entities. Entities are flattened into search documents (names, fingerprints, countries, dates and a text blob) for keyword search, optionally filtered by a [`Query`](./query.md) on dataset, schema and country.
 
-Two backends are implemented: SQLite [FTS5](https://www.sqlite.org/fts5.html) (no extra dependencies) and [Tantivy](https://github.com/quickwit-oss/tantivy), persistent or in-memory. For a full-featured Elasticsearch based search stack, look into [openaleph-search](https://openaleph.org) or [yente](https://www.opensanctions.org/docs/yente/).
+Backends: SQLite [FTS5](https://www.sqlite.org/fts5.html) (no extra dependencies) and [Tantivy](https://github.com/quickwit-oss/tantivy), persistent or in-memory. For a full Elasticsearch stack, see [openaleph-search](https://openaleph.org) or [yente](https://www.opensanctions.org/docs/yente/).
 
 ## Install
 
-The tantivy backend needs the `search` extra:
+The tantivy backend needs the `search` extra (SQLite FTS5 works with a plain install):
 
 ```bash
 pip install ftmq[search]
 ```
 
-The SQLite FTS5 backend works with a plain `ftmq` install.
-
 ## Command line
 
-The store uri is passed via `--uri` or the `FTMQ_SEARCH_URI` environment variable. `sqlite:///...` selects the FTS5 backend, `tantivy://<path>` a persistent Tantivy index and `memory:///` an in-memory Tantivy index.
+The store uri comes from `--uri` or `FTMQ_SEARCH_URI`: `sqlite:///...` (FTS5), `tantivy://<path>` (persistent Tantivy) or `memory:///` (in-memory Tantivy).
 
 Transform an entity stream into search documents:
 
@@ -54,16 +52,16 @@ for result in store.autocomplete("jan"):
     print(result.id, result.name)
 ```
 
-Search results are `EntitySearchResult` objects carrying a shallow `EntityModel` (id, caption, names, countries) and the match score; `result.to_proxy()` converts back to an `EntityProxy`.
+Results are `EntitySearchResult` objects with the match score and a shallow `EntityModel` (id, caption, names, countries); `result.to_proxy()` converts back to an `EntityProxy`.
 
 ### Query filters
 
-A search document holds three filterable fields: `datasets`, `schema` and `countries`. A [`Query`](./query.md) passed to `search()` is compiled into that subset by `ftmq.search.store.base.get_filters`, which drops filters on any other field (a property, an id) and keeps the rest as a flat list of ANDed terms.
+Only `datasets`, `schema` and `countries` are filterable. `ftmq.search.store.base.get_filters` compiles the `Query` into a flat list of ANDed terms on those fields and drops filters on any other field (a property, an id).
 
-Negation is honoured: `M(dataset__not="x")` or `~M(dataset="x")` (Aleph `exclude:dataset=x`) excludes Entities of that dataset, and a same-field `OR` folds into a single term. A filter shape the index cannot express raises a `QueryError`.
+Negation works: `M(dataset__not="x")` or `~M(dataset="x")` (Aleph `exclude:dataset=x`) excludes that dataset's entities, and a same-field `OR` folds into one term. A shape the index cannot express raises a `QueryError`.
 
-Note that a negated filter on a multi-valued field means "holds none of these values" here (as `exclude:` does in the [Aleph param grammar](./query.md)), while the in-memory and SQL evaluators read `not` as "holds a value other than this one". For the single-valued `schema` field both readings agree.
+On a multi-valued field a negated filter means "holds none of these values" (as Aleph `exclude:` does), while the in-memory and SQL evaluators read `not` as "holds a value other than this one". For the single-valued `schema` both agree.
 
 ## Settings
 
-Environment variables use the `FTMQ_SEARCH_` prefix: `FTMQ_SEARCH_URI` (store uri, defaults to the nomenklatura sqlite database if configured, else `sqlite:///ftmqs.db`), `FTMQ_SEARCH_SQL_TABLE_NAME` (table name for the FTS5 backend, default `ftmqs`), `FTMQ_SEARCH_YAML_URI` / `FTMQ_SEARCH_JSON_URI` (load a store configuration document).
+Environment variables use the `FTMQ_SEARCH_` prefix: `FTMQ_SEARCH_URI` (store uri; defaults to the nomenklatura database if it is sqlite, else `sqlite:///ftmq_search.db`), `FTMQ_SEARCH_SQL_TABLE_NAME` (FTS5 table name, default `ftmq_search`), `FTMQ_SEARCH_YAML_URI` / `FTMQ_SEARCH_JSON_URI` (load a store configuration document).

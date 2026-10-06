@@ -1,18 +1,11 @@
 """
-Aggregations for the ftmq query language.
+Aggregations: a projection over the matched entities, not a filter.
 
-An aggregation is a *projection* over the matched entities (a SELECT-list /
-GROUP BY concern), not a filter predicate: the `A` node does not compose with
-the `& | ~` boolean tree the `M`/`P`/`G`/`C` filter nodes build. It is declared
-with [`Query.aggregate`][ftmq.Query.aggregate], parallel to `where()` and
-`order_by()`.
-
-`A(sum=P("amountEur"), by=P("beneficiary"))` builds one immutable
-[`Agg`][ftmq.query.aggregations.Agg] spec per `func=<ref>` pair, where the
-field is a [`Ref`][ftmq.query.refs.Ref] built by the same `M` / `P` / `G` / `C`
-markers as a filter leaf. [`Aggregator`][ftmq.query.aggregations.Aggregator] is
-the in-memory accumulator that runs those specs over a stream of entities; the
-SQL backend reads the same specs (see `ftmq.query.sql`).
+[`A`][ftmq.query.aggregations.A] builds one immutable
+[`Agg`][ftmq.query.aggregations.Agg] spec per `func=<ref>` pair and is passed to
+[`Query.aggregate`][ftmq.Query.aggregate].
+[`Aggregator`][ftmq.query.aggregations.Aggregator] runs the specs in memory; the
+SQL backend compiles the same specs.
 """
 
 from __future__ import annotations
@@ -35,18 +28,17 @@ Values: TypeAlias = list[Value]
 
 AggregatorResult: TypeAlias = dict[str, Any]
 
-# the aggregation functions this module implements (see `reduce_values`)
 FUNCTIONS: frozenset[str] = frozenset({"min", "max", "sum", "avg", "count"})
-# buckets per facet unless the query says otherwise (Aleph's default)
+# buckets per facet (Aleph's default)
 DEFAULT_FACET_SIZE = 20
 
 
 @dataclass(frozen=True)
 class Agg:
-    """An immutable aggregation spec: a function over a field reference,
-    optionally grouped by others. Built via the
-    [`A`][ftmq.query.aggregations.A] node or
-    [`Query.aggregate`][ftmq.Query.aggregate]."""
+    """An immutable aggregation spec: a function over a ref, optionally grouped.
+
+    Built via [`A`][ftmq.query.aggregations.A].
+    """
 
     func: str
     ref: Ref
@@ -59,11 +51,7 @@ class Agg:
 
 
 def make_agg(func: str, ref: Ref, groups: Iterable[Ref] = ()) -> Agg:
-    """Validate and build a single [`Agg`][ftmq.query.aggregations.Agg] spec.
-
-    Groups are sorted (by wire spelling), so two specs over the same fields
-    compare and serialize identically regardless of input order.
-    """
+    """Validate and build an `Agg` spec; groups are sorted, so their order is moot."""
     if func not in FUNCTIONS:
         raise QueryError(
             f"Invalid aggregation function: `{func}` - one of "
@@ -77,7 +65,9 @@ def make_agg(func: str, ref: Ref, groups: Iterable[Ref] = ()) -> Agg:
 @dataclass(frozen=True)
 class FacetOrder:
     """Ranks facet buckets by a grouped metric instead of by entity count.
-    Wire spelling: `<func>:<field>[:asc]`."""
+
+    Wire spelling: `<func>:<field>[:asc]`.
+    """
 
     func: str
     ref: Ref
@@ -140,10 +130,7 @@ def groupers(aggs: Iterable[Agg]) -> set[Ref]:
 
 
 def _ensure_ref(ref: Ref) -> Ref:
-    """Aggregations address fields by reference, not by name: the family a
-    bare string belongs to is exactly what the `M` / `P` / `G` / `C` markers
-    carry (and what a name alone cannot - `topics` is both a property and a
-    property-type group)."""
+    """Reject a bare field name: only a `Ref` says which family it means."""
     if isinstance(ref, Ref):
         return ref
     raise QueryError(
@@ -172,14 +159,9 @@ def reduce_values(func: str, values: Values) -> Value | None:
 class A:
     """An aggregation projection node: `A(sum=P("amountEur"), by=P("beneficiary"))`.
 
-    Each keyword is an aggregation function (`min`, `max`, `sum`, `avg`,
-    `count`) whose value is the field reference (or references) to aggregate;
-    `by=` groups by one or more references. Fields are addressed with the same
-    `M` / `P` / `G` / `C` markers the filter families use, called with a bare
-    field name (plus `Year()`), so an aggregation says which family it means
-    instead of leaving it to be guessed from the name. Unlike the filter nodes,
-    `A` is not a boolean leaf - it does not compose with `& | ~`; pass it to
-    [`Query.aggregate`][ftmq.Query.aggregate].
+    Each keyword is a function (`min`, `max`, `sum`, `avg`, `count`) over one or
+    more refs; `by=` groups by one or more refs. It does not compose with
+    `& | ~`; pass it to [`Query.aggregate`][ftmq.Query.aggregate].
 
     Examples:
         ```python
@@ -206,11 +188,9 @@ class A:
 
 
 class Aggregator:
-    """In-memory accumulator: runs a set of [`Agg`][ftmq.query.aggregations.Agg]
-    specs over an entity stream.
+    """In-memory accumulator running [`Agg`][ftmq.query.aggregations.Agg] specs.
 
-    A fresh instance per run holds all mutable state, so applying the same
-    query twice never double-counts (the specs themselves are immutable).
+    Holds all mutable state, so use a fresh instance per run.
     """
 
     def __init__(
@@ -227,7 +207,7 @@ class Aggregator:
         self._grouped: dict[Agg, dict[Ref, dict[str, Values]]] = defaultdict(
             lambda: defaultdict(lambda: defaultdict(list))
         )
-        # the entities per group value, to rank the buckets by
+        # entity ids per group value, to rank buckets by count
         self._entities: dict[Ref, dict[str, set[str | None]]] = defaultdict(
             lambda: defaultdict(set)
         )
@@ -256,8 +236,7 @@ class Aggregator:
             yield proxy
 
     def _top(self, group: Ref) -> list[str]:
-        """The kept values of `group`: its top buckets by entity count, or by
-        the facet sort metric, ties by value (as the SQL backends rank)."""
+        """Top buckets of `group` by entity count or facet sort, ties by value."""
         order = self.order
         ranking = next(
             (a for a in self.aggs if order and order.orders(a) and group in a.groups),
@@ -277,9 +256,11 @@ class Aggregator:
 
     @property
     def result(self) -> AggregatorResult:
-        """The reduced result, keyed by the wire spelling of each field:
-        `{func: {field: value}, "groups": {group: {func: {field: {group_value:
-        value}}}}}` (empties removed), each group capped to its top buckets."""
+        """The reduced result, keyed by the wire spelling of each field.
+
+        `{func: {field: value}, "groups": {group: {func: {field: {bucket: value}}}}}`,
+        empties removed, each group capped to its top buckets.
+        """
         res: Any = defaultdict(dict)
         groups: Any = defaultdict(lambda: defaultdict(dict))
         top = {group: self._top(group) for group in self._groupers}
@@ -297,9 +278,7 @@ class Aggregator:
 
 
 def aggregations_to_dict(aggs: Iterable[Agg]) -> list[dict[str, Any]]:
-    """Serialize aggregation specs to the query `to_dict` shape: one
-    `{"func": ..., "field": ..., "by": [...]}` mapping per spec (fields spelled
-    as on the wire, `by` omitted when ungrouped), deterministically ordered."""
+    """Serialize specs to sorted `{"func", "field", "by"?}` dicts (wire spellings)."""
     specs: list[dict[str, Any]] = []
     for agg in sorted(aggs, key=lambda a: (a.func, a.key, a.groups)):
         spec: dict[str, Any] = {"func": agg.func, "field": agg.key}
@@ -310,8 +289,7 @@ def aggregations_to_dict(aggs: Iterable[Agg]) -> list[dict[str, Any]]:
 
 
 def aggregations_from_dict(data: Iterable[dict[str, Any]]) -> set[Agg]:
-    """Rebuild aggregation specs from the output of
-    [`aggregations_to_dict`][ftmq.query.aggregations.aggregations_to_dict]."""
+    """Rebuild specs from the output of `aggregations_to_dict`."""
     return {
         make_agg(
             spec["func"],

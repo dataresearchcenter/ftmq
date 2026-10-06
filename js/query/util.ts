@@ -2,8 +2,7 @@
 export const byString = (a: string, b: string): number =>
   a < b ? -1 : a > b ? 1 : 0;
 
-// a stable, key-sorted JSON serialization used to canonically order tree
-// children (so structurally equal trees serialize identically within TS)
+// key-sorted JSON, the canonical form tree children are ordered by
 export const canon = (value: unknown): string =>
   JSON.stringify(value, (_key, v) =>
     v && typeof v === "object" && !Array.isArray(v)

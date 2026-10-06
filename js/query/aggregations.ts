@@ -11,10 +11,7 @@ export const AGG_FUNCS = new Set<AggFunc>([
   "count",
 ]);
 
-/**
- * An immutable aggregation spec: a function over a field reference, optionally
- * grouped by others.
- */
+/** An immutable aggregation spec: a function over a ref, optionally grouped. */
 export class Agg {
   readonly func: AggFunc;
   readonly ref: Ref;
@@ -40,15 +37,7 @@ export class Agg {
   }
 }
 
-/**
- * An aggregation projection node:
- * `A({ sum: P("amountEur"), by: G("countries") })`.
- *
- * Fields are addressed with the same `M` / `P` / `G` / `C` markers the filter
- * families use, called with a bare field name (plus `Year()`), so an
- * aggregation says which family it means instead of leaving it to be guessed
- * from the name.
- */
+/** An aggregation node: `A({ sum: P("amountEur"), by: G("countries") })`. */
 export interface ANode {
   aggs: Agg[];
 }
@@ -80,11 +69,7 @@ export function uniqueAggs(aggs: Agg[]): Agg[] {
   return [...seen.values()];
 }
 
-/**
- * Serialize specs to the query `toDict` shape: one `{func, field, by?}`
- * mapping per spec (fields spelled as on the wire, `by` omitted when
- * ungrouped), deterministically ordered.
- */
+/** Serialize specs to the `toDict` shape: sorted `{func, field, by?}` items. */
 export function aggregationsToDict(aggs: Agg[]): Record<string, any>[] {
   const sorted = [...aggs].sort(
     (a, b) =>
@@ -114,10 +99,7 @@ export function aggregationsFromDict(data: Record<string, any>[]): Agg[] {
   );
 }
 
-/**
- * Ranks facet buckets by a grouped metric instead of by entity count.
- * Wire spelling: `<func>:<field>[:asc]`.
- */
+/** Ranks facet buckets by a grouped metric: `<func>:<field>[:asc]`. */
 export class FacetOrder {
   readonly func: AggFunc;
   readonly ref: Ref;

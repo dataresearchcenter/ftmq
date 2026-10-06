@@ -30,15 +30,7 @@ DEFAULT_ORIGIN = "default"
 
 
 def _memory_engine(url: str = "sqlite:///:memory:") -> Engine:
-    """A thread-safe in-memory sqlite engine.
-
-    One shared connection (``StaticPool``) reachable from any thread
-    (``check_same_thread=False``). nomenklatura's default factory omits both,
-    so under a threaded server (granian ``mt`` / the anyio threadpool) a
-    connection opened on one worker thread is closed on another and raises
-    ``sqlite3.ProgrammingError: SQLite objects created in a thread can only be
-    used in that same thread``. Mirrors the lakehouse ``SqlJournalStore``.
-    """
+    """An in-memory sqlite engine on one shared connection usable from any thread."""
     return create_engine(
         url, connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
@@ -47,13 +39,8 @@ def _memory_engine(url: str = "sqlite:///:memory:") -> Engine:
 def get_engine(uri: str | None = None) -> Engine:
     """The process-wide engine for a sql database uri.
 
-    nomenklatura's engine cache (one engine per url, `nomenklatura.db`),
-    except that an in-memory sqlite url gets a shared, thread-safe
-    `_memory_engine`: the resolver and the lake store's placeholder engine
-    run on one, so every store and resolver on that url sees the same
-    database, from any thread. Only sqlite `:memory:` urls: `check_same_thread`
-    is a sqlite connect arg, passing it to another driver (duckdb's in-memory
-    database) raises.
+    An in-memory sqlite url gets one shared, thread-safe engine, so every store
+    and resolver on it sees the same database.
 
     Args:
         uri: A sql database uri, defaults to `NOMENKLATURA_DB_URL`
@@ -78,9 +65,7 @@ def _sql_resolver(session: Session) -> Resolver[StatementEntity]:
 
 
 def _resolver_session(uri: str | None = None) -> Session:
-    """The session for a resolver table: the given sql database, or an
-    ephemeral in-memory one for any other uri (a duckdb / leveldb / lake store
-    keeps its resolver elsewhere)."""
+    """A session on the given sql database, or an ephemeral in-memory one."""
     engine = get_engine(uri) if uri and _is_sql_uri(uri) else _memory_engine()
     return Session(engine)
 
@@ -94,29 +79,23 @@ def get_resolver(uri: str | None = None) -> Resolver[StatementEntity]:
             in-memory table.
 
     Returns:
-        The resolver, with its decisions loaded. This is a cached object: it
-        keeps the cluster index in memory and nothing refreshes it, so a
-        process that needs another session's writes has to call
-        `load_into_memory()` itself.
+        The resolver, with its decisions loaded. Cached and never refreshed:
+            call `load_into_memory()` to see another session's writes.
     """
     resolver = _sql_resolver(_resolver_session(uri))
-    # a `Resolver` resolves nothing until its judgements are indexed - the
-    # constructor only sets up the table
+    # a fresh `Resolver` resolves nothing until its judgements are indexed
     resolver.load_into_memory()
     return resolver
 
 
 @cache
 def get_linker(uri: Uri) -> Linker[StatementEntity]:
-    """A read-only `Linker`: the merge decisions without the judgement history.
-
-    Use this where entities are only read (the api). The source is either a sql
-    database holding a nomenklatura `resolver` table, or an edge dump written
-    by `Resolver.dump()` / `nomenklatura dump-resolver` (json lines) - which
-    needs no database at all and can live anywhere anystore reads from.
+    """A read-only `Linker` (merge decisions only) for read paths such as the api.
 
     Args:
-        uri: A sql database uri, or a file-like uri of a json lines edge dump
+        uri: A sql database uri with a nomenklatura `resolver` table, or any
+            anystore uri of a json lines edge dump (`Resolver.dump()` /
+            `nomenklatura dump-resolver`)
 
     Returns:
         The linker. This is a cached object.
@@ -132,8 +111,7 @@ def get_linker(uri: Uri) -> Linker[StatementEntity]:
         if not line:
             continue
         edge = Edge.from_line(line)
-        # the dump has no deletion field, but `all_edges()` exports negative
-        # and unsure judgements as well - only positive ones merge
+        # the dump also holds negative and unsure judgements; only positive merge
         if edge.judgement == Judgement.POSITIVE and edge.deleted_at is None:
             linker.add(edge.source.id, edge.target.id)
             merges += 1
@@ -142,19 +120,12 @@ def get_linker(uri: Uri) -> Linker[StatementEntity]:
 
 
 class PreservingLinker(Linker[StatementEntity]):
-    """A linker that hands back the canonical id a statement already carries.
+    """A linker that answers with the canonical id a statement already carries.
 
-    Every backend writer stamps `canonical_id` from the store's linker
-    (`nomenklatura.store.sql.SQLWriter.add_statement` and its siblings), so a
-    store whose linker knows nothing collapses a resolved statement back onto
-    its entity id. Point the store at this linker instead and
-    [`preserve`][ftmq.store.base.PreservingLinker.preserve] a statement before
-    handing it to the writer: the stamping then reproduces what the statement
-    already says.
-
-    Any other id maps to itself - the memory and leveldb writers also resolve
-    entity-typed *values* through the linker for their inverted index, and
-    those must not be answered with the subject's canonical id.
+    Backend writers stamp `canonical_id` from the store's linker: point the store
+    at this one and [`preserve`][ftmq.store.base.PreservingLinker.preserve] each
+    statement before writing it to keep its canonical id. Any other id (such as
+    entity-typed values) maps to itself.
     """
 
     def __init__(self) -> None:
@@ -175,10 +146,8 @@ class PreservingLinker(Linker[StatementEntity]):
 def get_preserving_linker() -> PreservingLinker:
     """The process-wide [`PreservingLinker`][ftmq.store.base.PreservingLinker].
 
-    Cached because `get_store` keys its cache on the linker object: a fresh
-    instance per call would cache (and keep) a fresh store per call. Only one
-    statement is in flight at a time, so writing statement streams into two
-    stores concurrently from one process is not supported.
+    Cached, as `get_store` keys its cache on the linker. It tracks one statement
+    at a time, so concurrent statement writes into two stores are not supported.
     """
     return PreservingLinker()
 
@@ -203,9 +172,7 @@ Writer: TypeAlias = nk.Writer[Dataset, StatementEntity]
 
 
 class Store(nk.Store[Dataset, StatementEntity]):
-    """
-    Feature add-ons to `nomenklatura.store.Store`
-    """
+    """Feature add-ons to `nomenklatura.store.Store`."""
 
     def __init__(
         self,
@@ -214,59 +181,49 @@ class Store(nk.Store[Dataset, StatementEntity]):
         cast_types: bool = True,
         **kwargs,
     ) -> None:
-        """
-        Initialize a store. This should be called via
-        [`get_store`][ftmq.store.get_store]
+        """Initialize a store, use [`get_store`][ftmq.store.get_store] instead.
 
         Args:
             dataset: A `followthemoney.Dataset` instance to limit the scope to
-            linker: A `nomenklatura.Linker` instance with linked / deduped data
+            linker: A `nomenklatura.Linker` instance with linked / deduped data,
+                defaults to [`get_resolver`][ftmq.store.base.get_resolver]
             cast_types: Normalize statement values on write (see
                 [`ftmq.statements`][ftmq.statements])
         """
-        # An unscoped store (no explicit `dataset`) implicitly spans every
-        # dataset present in the backend. nomenklatura scopes a view to
-        # `dataset.leaf_names`, so without this the store would only surface
-        # entities literally tagged `dataset="default"`. Resolved lazily (see
-        # `scope`) so opening a store never queries the backend.
+        # without a `dataset` the store spans all datasets, resolved in `scope`
         self._implicit_scope = dataset is None
         self.cast_types = cast_types
-        # only the SQL family passes a `uri` (its engine is already built from
-        # it); nomenklatura's stores don't take one
+        # only the SQL family passes a `uri`; nomenklatura's stores don't take one
         uri = kwargs.pop("uri", None)
         linker = linker or get_resolver(uri)
         super().__init__(dataset=ensure_dataset(dataset), linker=linker, **kwargs)
 
     def writer(self, *args: Any, **kwargs: Any) -> Writer:
-        """The backend writer, normalizing statement values on the way in.
+        """The backend writer, casting statement values on write.
 
-        Values are cast into the canonical format of their property type (see
-        [`ftmq.statements`][ftmq.statements]); values that don't parse are
-        passed through unchanged (`ftmq statements cast-types --drop-invalid`
-        cleans those out of an existing dump). Disable with the store's
-        `cast_types=False`.
+        Values are cast into their property type's canonical format (see
+        [`ftmq.statements`][ftmq.statements]), values that don't parse pass
+        through unchanged. Disable with the store's `cast_types=False`.
         """
         return self.casting_writer(super().writer(*args, **kwargs))
 
     def casting_writer(self, writer: Writer) -> Writer:
-        """Rebless a backend writer so it casts statement values on write (see
-        [`writer`][ftmq.store.base.Store.writer]). A store that builds its
-        writer itself has to route it through here."""
+        """Rebless a backend writer so it casts statement values on write.
+
+        A store that builds its writer itself has to route it through here.
+        """
         if self.cast_types:
             cls: type[Any] = type(writer)
             writer.__class__ = _casting_writer(cls)
         return writer
 
     def get_scope(self) -> Dataset:
-        """
-        Return implicit `Dataset` computed from current datasets in store
-        """
+        """Return the implicit `Dataset` spanning all datasets in the store."""
         raise NotImplementedError
 
     @property
     def scope(self) -> Dataset:
-        """The effective read scope: the store's explicit `dataset`, or all
-        datasets present in the backend when it was opened without one."""
+        """The read scope: the explicit `dataset`, or all datasets in the store."""
         return self.get_scope() if self._implicit_scope else self.dataset
 
     view_class: type["View"]
@@ -278,18 +235,12 @@ class Store(nk.Store[Dataset, StatementEntity]):
         return self.view(self.scope, external)
 
     def statements(self, dataset: str | Dataset | None = None) -> Statements:
-        """
-        Iterate the raw statements in this store, as they are stored.
+        """Iterate the raw statements in this store, as they are stored.
 
-        Unlike [`iterate`][ftmq.store.base.Store.iterate], which reads
-        *entities*, this yields the stored rows unchanged - assembling an
-        entity rewrites entity-typed values to their canonical ids and
-        synthesizes its own `id` statement, so a dump taken that way would
-        carry statement ids that aren't in the store and would load back as new
-        rows instead of updating the existing ones. External statements are
-        included; the order is unspecified.
-
-        Only the SQL family of backends implements this.
+        Unlike [`iterate`][ftmq.store.base.Store.iterate] (entity assembly
+        rewrites values and synthesizes an `id` statement), a dump of these
+        loads back onto its own rows. Includes external statements, unordered.
+        SQL family only.
 
         Args:
             dataset: `Dataset` instance or name to limit scope to
@@ -300,8 +251,7 @@ class Store(nk.Store[Dataset, StatementEntity]):
         raise NotImplementedError
 
     def iterate(self, dataset: str | Dataset | None = None) -> StatementEntities:
-        """
-        Iterate all the entities, optional filter for a dataset.
+        """Iterate all the entities, optionally limited to a dataset.
 
         Args:
             dataset: `Dataset` instance or name to limit scope to
@@ -317,14 +267,10 @@ class Store(nk.Store[Dataset, StatementEntity]):
 
 
 class View(nk.View[Dataset, StatementEntity]):
-    """
-    Feature add-ons to `nomenklatura.store.base.View`
-    """
+    """Feature add-ons to `nomenklatura.store.base.View`."""
 
     def query(self, query: Query | None = None) -> StatementEntities:
-        """
-        Get the entities of a store, optionally filtered by a
-        [`Query`][ftmq.Query] object.
+        """Get the entities of the view, optionally filtered by a [`Query`][ftmq.Query].
 
         Args:
             query: The Query filter object

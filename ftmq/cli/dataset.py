@@ -44,7 +44,7 @@ def cli_dataset_generate(
     stats: Annotated[bool, typer.Option("--stats", help="Calculate stats")] = False,
 ) -> None:
     """
-    Convert dataset YAML specification into json and optionally calculate statistics
+    Convert a dataset YAML specification into json, optionally with statistics.
     """
     with ErrorHandler():
         dataset = Dataset._from_uri(input_uri)
@@ -82,7 +82,7 @@ def cli_catalog_generate(
     ] = False,
 ) -> None:
     """
-    Convert catalog YAML specification into json and fetch dataset metadata
+    Convert a catalog YAML specification into json, fetching dataset metadata.
     """
     with ErrorHandler():
         catalog = Catalog._from_uri(input_uri)

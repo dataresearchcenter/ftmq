@@ -7,36 +7,16 @@ from pydantic_settings import SettingsConfigDict
 from ftmq import __version__
 
 DEFAULT_DESCRIPTION = """
-This api exposes a [followthemoney](https://followthemoney.tech) statement
-store as a read-only endpoint that allows granular data fetching, aggregation
-and searching.
+Read-only api over a [followthemoney](https://followthemoney.tech/explorer/)
+statement store: fetch, filter, aggregate and search entities.
 
-* [Available datasets in this api instance](/catalog)
-* [More about the FollowTheMoney model](https://followthemoney.tech/explorer/)
-
-This api works for all store implementations found in
-[`ftmq.store`](https://docs.investigraph.dev/lib/ftmq/reference/store/)
-
-The main api endpoints:
-
-* Retrieve a single entity based on its id, optionally with inlined adjacent
-  entities: `/entities/{entity_id}`
-* Retrieve a list of entities based on filter criteria and sorting, with
-  pagination: `/entities?{params}`
-* Aggregate property values on the same query (Aleph-style): add
-  `metric:sum=properties.amountEur&facet=year`, set `limit=0` for aggregations only
-* Search for entities via full-text search: `/entities?q=<search term>`
-* Autocomplete names: `/autocomplete?q=<term>`
-
-Filtering uses the Aleph / OpenAleph filter grammar, e.g.
-`filter:schema=Payment`, `filter:gte:properties.date=2023`,
-`exclude:properties.jurisdiction=eu`, sorting via `sort=properties.name:desc` and
-pagination via `limit` / `offset`.
-
-Two more endpoints for catalog / dataset metadata:
-
-* Catalog overview: [`/catalog`](/catalog)
-* Dataset metadata: `/catalog/{dataset}`
+* [`/catalog`](/catalog): the available datasets
+* `/catalog/{dataset}`: metadata of one dataset
+* `/entities?{params}`: filter, sort, paginate and aggregate entities with the
+  Aleph / OpenAleph grammar, e.g. `filter:schema=Payment&sort=properties.date:desc`;
+  `q=<term>` runs a full-text search
+* `/entities/{entity_id}`: a single entity, optionally with adjacent entities
+* `/autocomplete?q=<term>`: autocomplete names
 """
 
 
@@ -54,12 +34,9 @@ class ApiInfo(BaseModel):
 
 class Settings(BaseSettings):
     """
-    `anystore` settings management using
-    [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)
+    Api settings, read from `FTMQ_API_` prefixed environment variables.
 
-    Note:
-        All settings can be set via environment variables in uppercase,
-        prepending `FTMQ_API_` (except for those with a given prefix)
+    Nested fields join with `_`, e.g. `FTMQ_API_INFO_TITLE`.
     """
 
     model_config = SettingsConfigDict(
@@ -76,11 +53,11 @@ class Settings(BaseSettings):
     """ftmq store uri"""
 
     resolver_uri: str | None = None
-    """nomenklatura resolver uri: a sql database holding a `resolver` table, or
-    a json lines edge dump. Defaults to the store uri."""
+    """Resolver uri (a sql database with a `resolver` table, or a json lines edge
+    dump); defaults to the store uri"""
 
     build_api_key: str | None = None
-    """Backend api key to use for build process (higher limit)"""
+    """Api key that lifts the public limits (e.g. for build processes)"""
 
     min_search_length: int = 3
     """Minimum search query length"""
@@ -94,16 +71,16 @@ class Settings(BaseSettings):
     """Api cache (via anystore)"""
 
     allowed_origin: list[str] = ["http://localhost:3000"]
-    """Allowed origins"""
+    """Allowed CORS origins"""
 
     default_limit: int = 100
-    """Default public pagination limit"""
+    """Default and public maximum page size"""
 
     max_facet_size: int = 50
     """Public cap on the buckets per facet"""
 
     info: ApiInfo = ApiInfo()
-    """Rendered information on redoc page"""
+    """ReDoc page information"""
 
 
 settings = Settings()
