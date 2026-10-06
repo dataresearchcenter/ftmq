@@ -15,6 +15,7 @@ from ftmq.query.aggregations import (
     FacetOrder,
     aggregations_from_dict,
     aggregations_to_dict,
+    groupers,
     make_facet_order,
 )
 from ftmq.query.aleph import (
@@ -149,9 +150,9 @@ class Query:
                 "aggregation of the query"
             )
         self.facet_sort = facet_sort
-        groupers = {g for agg in self.aggregations for g in agg.groups}
+        facets = groupers(self.aggregations)
         for ref, size in (facet_sizes or {}).items():
-            if ref not in groupers:
+            if ref not in facets:
                 raise QueryError(
                     f"Invalid facet size: `{ref.wire}` - not a facet of the query"
                 )

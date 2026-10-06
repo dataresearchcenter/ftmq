@@ -29,7 +29,7 @@ from sqlalchemy import (
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.sql.functions import FunctionElement
 
-from ftmq.query.aggregations import Agg
+from ftmq.query.aggregations import Agg, groupers
 from ftmq.query.exceptions import QueryError
 from ftmq.query.leaves import (
     GroupLeaf,
@@ -729,6 +729,15 @@ class Sql:
             func.max(self.table.c.value),
         ).where(self.table.c.prop_type == "date", self.clause)
 
+    @property
+    def _specs(self) -> list[Agg]:
+        return sorted(self.q.aggregations, key=lambda a: (a.func, a.key))
+
+    @staticmethod
+    def _tags(agg: Agg) -> tuple[Any, Any]:
+        """The `(field, func)` literals naming a spec's rows in a union."""
+        return text(f"'{agg.key}'"), text(f"'{agg.func}'")
+
     def _aggregator(self, agg: Agg) -> Any:
         """The aggregate expression for one spec, over its ref's value."""
         value = self.lookup(agg.ref).value
@@ -745,15 +754,12 @@ class Sql:
 
     @cached_property
     def aggregations(self) -> Select:
-        qs = []
-        for agg in sorted(self.q.aggregations, key=lambda a: (a.func, a.key)):
-            qs.append(
-                select(
-                    text(f"'{agg.key}'"),
-                    text(f"'{agg.func}'"),
-                    self._aggregator(agg),
-                ).where(*self.lookup(agg.ref).clauses, self.clause)
+        qs = [
+            select(*self._tags(agg), self._aggregator(agg)).where(
+                *self.lookup(agg.ref).clauses, self.clause
             )
+            for agg in self._specs
+        ]
         return union_all(*qs)
 
     def grouped_aggregations(self, grouper: Ref, limit: int | None = None) -> Select:
@@ -784,17 +790,11 @@ class Sql:
             pairs = pairs.where(g.value.in_(select(top.c[0])))
         sub = pairs.subquery()
         qs = []
-        for agg in sorted(self.q.aggregations, key=lambda a: (a.func, a.key)):
-            if grouper not in agg.groups:
-                continue
-            grouped = self._grouped_value(agg, sub)
-            qs.append(
-                grouped.with_only_columns(
-                    text(f"'{agg.key}'"),
-                    text(f"'{agg.func}'"),
-                    *grouped.selected_columns,
-                )
-            )
+        for agg in self._specs:
+            if grouper in agg.groups:
+                grouped = self._grouped_value(agg, sub)
+                columns = grouped.selected_columns
+                qs.append(grouped.with_only_columns(*self._tags(agg), *columns))
         return union_all(*qs)
 
     def _top_groups(self, grouper: Ref, pairs: Any, limit: int) -> Any:
@@ -832,7 +832,4 @@ class Sql:
 
     @cached_property
     def group_props(self) -> set[Ref]:
-        refs: set[Ref] = set()
-        for agg in self.q.aggregations:
-            refs.update(agg.groups)
-        return refs
+        return groupers(self.q.aggregations)

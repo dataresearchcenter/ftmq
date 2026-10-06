@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from ftmq.model import DatasetStats, EntityModel
 from ftmq.query import Query, QueryError
-from ftmq.query.aggregations import AggregatorResult, make_agg
+from ftmq.query.aggregations import AggregatorResult, groupers, make_agg
 from ftmq.query.refs import IdRef
 from ftmq.search.model import AutocompleteResult
 from ftmq.types import Entities, Entity
@@ -38,7 +38,7 @@ def with_bucket_counts(query: Query) -> Query:
     Returns:
         The query to compute the aggregations with.
     """
-    groups = {g for agg in query.aggregations for g in agg.groups}
+    groups = groupers(query.aggregations)
     if not groups:
         return query
     totals = {make_agg("count", g) for g in groups}

@@ -68,6 +68,13 @@ BUCKET_PAGE = "page"  # abstract schema
 BUCKET_DOCUMENT = "document"
 BUCKET_INTERVAL = "interval"
 BUCKET_THING = "thing"
+ALL_BUCKETS = [
+    BUCKET_THING,
+    BUCKET_INTERVAL,
+    BUCKET_MENTION,
+    BUCKET_DOCUMENT,
+    BUCKET_PAGE,
+]
 _STATS_BLOOM = ColumnProperties(
     bloom_filter_properties=BloomFilterProperties(
         set_bloom_filter_enabled=True, fpp=0.01
@@ -625,7 +632,6 @@ class LakeWriter(nk.Writer):
 
     def flush(self) -> None:
         if not self.batch:
-            self.batch = {}
             return
         log.info(
             f"Write {len(self.batch)} statements to deltalake ...",
@@ -688,30 +694,13 @@ class LakeWriter(nk.Writer):
             base_filters.append(("origin", "=", origin))
 
         with self.store._lock:
-            if bucket is not None:
-                filters = list(base_filters) + [("bucket", "=", bucket)]
+            for b in [bucket] if bucket is not None else ALL_BUCKETS:
                 self.store.deltatable.optimize.z_order(
                     Z_ORDER,
-                    writer_properties=writer_for_bucket(bucket),
+                    writer_properties=writer_for_bucket(b),
                     target_size=TARGET_SIZE,
-                    partition_filters=filters or None,
+                    partition_filters=[*base_filters, ("bucket", "=", b)],
                 )
-            else:
-                all_buckets = [
-                    BUCKET_THING,
-                    BUCKET_INTERVAL,
-                    BUCKET_MENTION,
-                    BUCKET_DOCUMENT,
-                    BUCKET_PAGE,
-                ]
-                for b in all_buckets:
-                    filters = list(base_filters) + [("bucket", "=", b)]
-                    self.store.deltatable.optimize.z_order(
-                        Z_ORDER,
-                        writer_properties=writer_for_bucket(b),
-                        target_size=TARGET_SIZE,
-                        partition_filters=filters,
-                    )
             if vacuum:
                 self.store.deltatable.vacuum(
                     retention_hours=vacuum_keep_hours,

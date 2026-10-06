@@ -134,6 +134,11 @@ def make_facet_order(func: str, ref: Ref, ascending: bool = False) -> FacetOrder
     return FacetOrder(func=agg.func, ref=agg.ref, ascending=ascending)
 
 
+def groupers(aggs: Iterable[Agg]) -> set[Ref]:
+    """The fields the given specs group by (the facets of a query)."""
+    return {g for agg in aggs for g in agg.groups}
+
+
 def _ensure_ref(ref: Ref) -> Ref:
     """Aggregations address fields by reference, not by name: the family a
     bare string belongs to is exactly what the `M` / `P` / `G` / `C` markers
@@ -217,7 +222,7 @@ class Aggregator:
         self.aggs: list[Agg] = list(aggs)
         self.sizes: dict[Ref, int] = dict(sizes or {})
         self.order = order
-        self._groupers: set[Ref] = {g for agg in self.aggs for g in agg.groups}
+        self._groupers = groupers(self.aggs)
         self._values: dict[Agg, Values] = defaultdict(list)
         self._grouped: dict[Agg, dict[Ref, dict[str, Values]]] = defaultdict(
             lambda: defaultdict(lambda: defaultdict(list))
