@@ -295,14 +295,14 @@ trio = ["trio (>=0.32.0)"]
 
 [[package]]
 name = "anystore"
-version = "1.5.2"
+version = "1.5.3"
 description = "Store and cache things anywhere"
 optional = false
 python-versions = "<3.15,>=3.11"
 groups = ["main", "dev"]
 files = [
-    {file = "anystore-1.5.2-py3-none-any.whl", hash = "sha256:7b37972805a6a9bf4670bbcfb35f7b6dba987070eb531a8098afad37ffd67a5b"},
-    {file = "anystore-1.5.2.tar.gz", hash = "sha256:380b01cf745d06f3c06f9ed73d00dd3d196cc33d7eafec0fd0d28579fe6f22f3"},
+    {file = "anystore-1.5.3-py3-none-any.whl", hash = "sha256:2b27218c619156e5334e9b7ca59e4714c48e4f8bd1a8286d7317aa9b1efa69f1"},
+    {file = "anystore-1.5.3.tar.gz", hash = "sha256:d2e7262c05597cf239cd37266f06259588e790e282e31f42a2694031a41d039f"},
 ]
 
 [package.dependencies]
@@ -333,7 +333,7 @@ lz4 = ["lz4 (>=4.4.0,<5.0.0)"]
 putfs = ["putfs (>=0.6.0,<0.7.0)"]
 redis = ["fakeredis (>=2.37.1,<3.0.0)", "redis (>=8.1.0)"]
 s3 = ["s3fs (>2023.10,<2027)"]
-sql = ["sqlalchemy (>=2.1.1,<3.0.0)"]
+sql = ["sqlalchemy (>=2.1.3,<3.0.0)"]
 
 [[package]]
 name = "arro3-core"
@@ -6278,4 +6278,4 @@ sql = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.15"
-content-hash = "276bb8b85675d96901fb3cb3ce1bfb4ba3e966a010cba2e11c4c18945df46a17"
+content-hash = "73ec894ffa6b92fe945bb1261c55d810ff4d073d72cc940cd22b083cae466dff"
