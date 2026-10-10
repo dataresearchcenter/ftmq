@@ -18,6 +18,7 @@ nav:
     - ftmq.store: reference/store.md
     - ftmq.search: reference/search.md
     - ftmq.statements: reference/statements.md
+    - ftmq.aggregate: reference/aggregate.md
     - ftmq.api: reference/api.md
     - ftmq.util: reference/util.md
 theme:
