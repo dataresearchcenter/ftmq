@@ -6,6 +6,7 @@ import pytest
 from followthemoney import EntityProxy
 
 from ftmq.store.fragments import get_fragments
+from ftmq.store.fragments.dataset import IdRange
 
 
 def test_fragment_store_settings(monkeypatch):
@@ -95,6 +96,15 @@ def test_fragment_store_postgres():
     assert len(list(dataset.iterate_batched(batch_size=2))) == 3
     assert next(dataset.get_sorted_id_batches()) == ["key1", "key2", "key3"]
 
+    ranges = list(dataset.get_id_ranges(batch_size=2))
+    assert ranges == [IdRange(None, "key2"), IdRange("key2", "key3")]
+    ids = [f["id"] for r in ranges for f in dataset.fragments(id_range=r)]
+    assert ids == ["key1", "key1", "key2", "key3"]
+    assert len(list(dataset.get_id_ranges(batch_size=1))) == 3
+    assert list(dataset.get_id_ranges(batch_size=3)) == [IdRange(None, "key3")]
+    # filters decide where a range ends, it holds every id up to there
+    assert list(dataset.get_id_ranges(origin="test_o")) == [IdRange(None, "key3")]
+
     entity = dataset.get("key3")
     assert entity.context.get("origin") == "test_o"
     assert entity.to_dict()["origin"] == "test_o"
@@ -148,6 +158,15 @@ def test_fragment_store_sqlite():
 
     assert len(list(dataset.iterate_batched(batch_size=2))) == 3
     assert next(dataset.get_sorted_id_batches()) == ["key1", "key2", "key3"]
+
+    ranges = list(dataset.get_id_ranges(batch_size=2))
+    assert ranges == [IdRange(None, "key2"), IdRange("key2", "key3")]
+    ids = [f["id"] for r in ranges for f in dataset.fragments(id_range=r)]
+    assert ids == ["key1", "key1", "key2", "key3"]
+    assert len(list(dataset.get_id_ranges(batch_size=1))) == 3
+    assert list(dataset.get_id_ranges(batch_size=3)) == [IdRange(None, "key3")]
+    # filters decide where a range ends, it holds every id up to there
+    assert list(dataset.get_id_ranges(origin="test_o")) == [IdRange(None, "key3")]
 
     entity = dataset.get("key3")
     assert entity.context.get("origin") == "test_o"
