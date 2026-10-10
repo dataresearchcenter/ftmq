@@ -384,17 +384,15 @@ class EntityPayload:
         first = self._first
         if first is not None:  # a single fragment: its properties as is
             self._merge_context(first)
-            single: dict[str, Any] = {k: list(v) for k, v in self._context.items()}
-            single["id"] = self.id
-            single["schema"] = first["schema"]
+            single: dict[str, Any] = {"id": self.id, "schema": first["schema"]}
+            single.update((k, list(v)) for k, v in self._context.items())
             single["properties"] = first.get("properties") or {}
             return cast(EntityDict, single)
 
         if not self.statements:
             schema = merge_schema(*self._schemata)
-            data: dict[str, Any] = {k: list(v) for k, v in self._context.items()}
-            data["id"] = self.id
-            data["schema"] = schema.name
+            data: dict[str, Any] = {"id": self.id, "schema": schema.name}
+            data.update((k, list(v)) for k, v in self._context.items())
             data["properties"] = {k: list(v) for k, v in self._properties.items()}
             return cast(EntityDict, data)
 
@@ -407,11 +405,13 @@ class EntityPayload:
             if values:
                 caption = min(values)
                 break
+        data = {
+            "id": self.id,
+            "caption": caption or schema.label,
+            "schema": schema.name,
+        }
         # sorted: the statements of an entity come in no fixed order
-        data = {k: sorted(v) for k, v in self._context.items()}
-        data["id"] = self.id
-        data["caption"] = caption or schema.label
-        data["schema"] = schema.name
+        data.update((k, sorted(v)) for k, v in self._context.items())
         data["properties"] = {k: sorted(v) for k, v in sorted(properties.items())}
         if self._first_seen is not None:
             data["first_seen"] = self._first_seen

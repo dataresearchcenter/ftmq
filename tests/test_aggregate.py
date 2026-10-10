@@ -124,6 +124,7 @@ def test_aggregate_statements_unsafe(proxies):
         statements = [Statement.from_dict(r) for r in group]
         entity = StatementEntity.from_statements(dataset, statements)
         expected = _sorted_lists(entity.to_dict())
+        assert list(data)[:3] == ["id", "caption", "schema"]
         data = _sorted_lists(data)
         # the caption is the first value of the same caption property, not the
         # one `StatementEntity` picks
@@ -314,6 +315,7 @@ def test_aggregate_fragments_unsafe(tmp_path, eu_authorities):
     assert len(result) == len(eu_authorities)
     assert result == expected
     assert {d["schema"] for d in result} == {"PublicBody"}
+    assert all(list(d)[:2] == ["id", "schema"] for d in result)
     assert all(d["origin"] == ["o"] for d in result if "origin" in d)
 
 
