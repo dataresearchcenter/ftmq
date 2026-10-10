@@ -420,13 +420,17 @@ SELECT_SYMBOLS = "__symbols__"
 SELECT_ANNOTATED = "__annotated__"
 
 
-def get_name_symbols(schema: Schema, *names: str) -> set[Symbol]:
+def get_name_symbols(
+    schema: Schema, *names: str, consolidate: bool = False, phonetics: bool = False
+) -> set[Symbol]:
     """Get the rigour name symbols for the given schema and names."""
     type_tag = schema_type_tag(schema)
     if type_tag in (NameTypeTag.UNK, NameTypeTag.OBJ):
         return set()
     symbols: set[Symbol] = set()
-    for name in analyze_names(type_tag, list(names)):
+    for name in analyze_names(
+        type_tag, list(names), consolidate=consolidate, phonetics=phonetics
+    ):
         symbols.update(name.symbols)
     return symbols
 
