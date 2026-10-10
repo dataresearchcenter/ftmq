@@ -1,7 +1,7 @@
 import logging
 from contextlib import contextmanager
 from datetime import datetime
-from typing import Generator, Iterable, TypeAlias
+from typing import Generator, Iterable, NamedTuple, TypeAlias
 
 from banal import ensure_list
 from followthemoney import EntityProxy, StatementEntity
@@ -43,6 +43,13 @@ except ImportError:
 
 
 EntityFragments: TypeAlias = Generator[EntityProxy, None, None]
+
+
+class IdRange(NamedTuple):
+    """Entity ids `> after` and `<= last` in store order, `None` is unbounded."""
+
+    after: str | None = None
+    last: str | None = None
 
 
 @contextmanager
@@ -157,6 +164,7 @@ class Fragments(object):
         origin=None,
         sort=True,
         include_fragment=False,
+        id_range: IdRange | None = None,
     ):
         stmt = self.table.select()
         entity_ids = ensure_list(entity_ids)
@@ -164,6 +172,11 @@ class Fragments(object):
             stmt = stmt.where(self.table.c.id == entity_ids[0])
         if len(entity_ids) > 1:
             stmt = stmt.where(self.table.c.id.in_(entity_ids))
+        if id_range is not None:
+            if id_range.after is not None:
+                stmt = stmt.where(self.table.c.id > id_range.after)
+            if id_range.last is not None:
+                stmt = stmt.where(self.table.c.id <= id_range.last)
         if fragment is not None:
             stmt = stmt.where(self.table.c.fragment == fragment)
         if origin is not None:
@@ -305,32 +318,35 @@ class Fragments(object):
                 origin=origin,
             )
 
+    def _sorted_ids(self, after=None, schema=None, since=None, until=None, origin=None):
+        stmt = select(self.table.c.id).distinct()
+        if origin is not None:
+            stmt = stmt.where(self.table.c.origin == origin)
+        if after is not None:
+            stmt = stmt.where(self.table.c.id > after)
+        if schema is not None:
+            if self.store.is_postgres:
+                stmt = stmt.where(self.table.c.entity["schema"].astext == schema)
+            else:
+                stmt = stmt.where(
+                    func.json_extract(self.table.c.entity, "$.schema") == schema
+                )
+        if since is not None:
+            stmt = stmt.where(self.table.c.timestamp >= since)
+        if until is not None:
+            stmt = stmt.where(self.table.c.timestamp <= until)
+        return stmt.order_by(self.table.c.id)
+
     def get_sorted_id_batches(
         self, batch_size=10_000, schema=None, since=None, until=None, origin=None
     ) -> Generator[list[str], None, None]:
         """Yield sorted id batches, for batched or parallel iteration."""
         last_id = None
         while True:
-            stmt = select(self.table.c.id).distinct()
-            if origin is not None:
-                stmt = stmt.where(self.table.c.origin == origin)
-            if last_id is not None:
-                stmt = stmt.where(self.table.c.id > last_id)
-            if schema is not None:
-                if self.store.is_postgres:
-                    stmt = stmt.where(self.table.c.entity["schema"].astext == schema)
-                else:
-                    stmt = stmt.where(
-                        func.json_extract(self.table.c.entity, "$.schema") == schema
-                    )
-            if since is not None:
-                stmt = stmt.where(self.table.c.timestamp >= since)
-            if until is not None:
-                stmt = stmt.where(self.table.c.timestamp <= until)
-            stmt = stmt.order_by(self.table.c.id).limit(batch_size)
+            stmt = self._sorted_ids(last_id, schema, since, until, origin)
             try:
                 with self.store.engine.connect() as conn:
-                    res = conn.execute(stmt)
+                    res = conn.execute(stmt.limit(batch_size))
                     entity_ids = [r.id for r in res.fetchall()]
             except Exception:
                 self.reset()
@@ -339,6 +355,29 @@ class Fragments(object):
                 return
             yield entity_ids
             last_id = entity_ids[-1]
+
+    def get_id_ranges(
+        self, batch_size=10_000, schema=None, since=None, until=None, origin=None
+    ) -> Generator[IdRange, None, None]:
+        """Yield the ranges of `get_sorted_id_batches` without fetching the ids,
+        e.g. as small parallel job payloads for `fragments(id_range=...)`. The
+        filters decide where ranges end; a range holds every id between."""
+        after = None
+        while True:
+            stmt = self._sorted_ids(after, schema, since, until, origin)
+            try:
+                with self.store.engine.connect() as conn:
+                    last = conn.execute(stmt.offset(batch_size - 1).limit(1)).scalar()
+                    if last is None:  # a last, shorter batch
+                        rest = stmt.subquery()
+                        last = conn.execute(select(func.max(rest.c.id))).scalar()
+            except Exception:
+                self.reset()
+                raise
+            if last is None:
+                return
+            yield IdRange(after, last)
+            after = last
 
     def get_sorted_ids(
         self, batch_size=10_000, schema=None, since=None, until=None, origin=None
