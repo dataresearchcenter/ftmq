@@ -3914,14 +3914,14 @@ files = [
 
 [[package]]
 name = "pre-commit"
-version = "4.6.2"
+version = "4.7.0"
 description = "A framework for managing and maintaining multi-language pre-commit hooks."
 optional = false
-python-versions = ">=3.10"
+python-versions = ">=3.11"
 groups = ["dev"]
 files = [
-    {file = "pre_commit-4.6.2-py2.py3-none-any.whl", hash = "sha256:e2dde9a75d3bce11bd3831c26d134df00a2803c1d818be6a0383c3dcda25dc4e"},
-    {file = "pre_commit-4.6.2.tar.gz", hash = "sha256:8f5d7bfb021ecdbcd9d49d89847082dd24172ccde534390081a679ad046e2441"},
+    {file = "pre_commit-4.7.0-py2.py3-none-any.whl", hash = "sha256:2e229038ad3656081b70c27913157e4b636ef306f643f024a8a8e3f0f7b2f877"},
+    {file = "pre_commit-4.7.0.tar.gz", hash = "sha256:1f3deee12b914c8fa184bd2b5953391c2e4f36763e403d4a23dc9983fa7c6e86"},
 ]
 
 [package.dependencies]
@@ -6269,7 +6269,6 @@ files = [
     {file = "zensical-0.0.69-cp311-abi3-macosx_10_12_x86_64.whl", hash = "sha256:2a1858b34e8b97e95d30409d602c8e4b67abd042317afaddadbaf594ee201f12"},
     {file = "zensical-0.0.69-cp311-abi3-macosx_11_0_arm64.whl", hash = "sha256:72e5956b565b6cc81b766e3a2efefbe730ce8d115186dd0531a927ba3ff8dffc"},
     {file = "zensical-0.0.69-cp311-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:40c8aa708c5d39c8cea9fec38d2fe4c6e08acf80585c00309f298c33c6da8a01"},
-    {file = "zensical-0.0.69-cp311-abi3-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:d930b2ca0ef611446a566040c72469e59c87907029fbfb3dc5eed88738ea63b0"},
     {file = "zensical-0.0.69-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:a335af5e74e0b6f488ab57e137f86e48cef44df98ac200342e8235e45cda34bd"},
     {file = "zensical-0.0.69-cp311-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:68f0e5a4d2228c213a9bd208b89fb52c39c766235a99a7a773c052521fa2053c"},
     {file = "zensical-0.0.69-cp311-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:3c516e050f645849dc5c9e09574ebfa295ad42f5baad1f8419210c51b83e3bc4"},
@@ -6301,4 +6300,4 @@ sql = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.15"
-content-hash = "080ff2e7f54d7f8e94d67fce35468d164afa59bb6286870f00a550a40e5d83ea"
+content-hash = "08e64efcfd6011a6d74eaccf098b3cce7ae135c0ec1fc76999bf2c21589185ca"
