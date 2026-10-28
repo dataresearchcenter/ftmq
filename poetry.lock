@@ -1424,20 +1424,21 @@ pyflakes = ">=4.0.0,<4.1.0"
 
 [[package]]
 name = "followthemoney"
-version = "4.11.0"
+version = "4.11.2"
 description = "A data model for anti corruption data modeling and analysis."
 optional = false
 python-versions = ">=3.11"
 groups = ["main"]
 files = [
-    {file = "followthemoney-4.11.0-py3-none-any.whl", hash = "sha256:9bd561e3ce1fce7eb325c5ae7f14a19eeaf7054537ea88b699065f2830af4259"},
-    {file = "followthemoney-4.11.0.tar.gz", hash = "sha256:6a1f7e01fad3037a8c04c7973a42bd5b0591441caf9d9fe5b0b76dd9000e78f0"},
+    {file = "followthemoney-4.11.2-py3-none-any.whl", hash = "sha256:3cc259e9d9caf13e60f932d4d8c69b26d1d79beb6984513915b7eb7d025a7e46"},
+    {file = "followthemoney-4.11.2.tar.gz", hash = "sha256:cc86fdf8caf5265693a7dc0d8597a5da7ce2a0877fe8c751bef767a1ff0885e6"},
 ]
 
 [package.dependencies]
 babel = ">=2.14.0,<3.0.0"
 banal = ">=1.0.0,<1.2.0"
 click = ">=8.0,<9.0.0"
+idna = ">=3.0,<4.0"
 networkx = ">=2.5,<3.7"
 normality = ">=3.1.0,<4.0.0"
 openpyxl = ">=3.0.5,<4.0.0"
@@ -1449,7 +1450,7 @@ pyyaml = ">=5.0.0,<7.0.0"
 rdflib = ">=6.2.0,<7.7.0"
 requests = ">=2.21.0,<3.0.0"
 rich = ">=13.0.0,<16.0.0"
-rigour = ">=2.4.0,<3.0.0"
+rigour = ">=2.6.0,<3.0.0"
 sqlalchemy = {version = ">=2.0.0,<3.0.0", extras = ["mypy"]}
 
 [package.extras]
@@ -6300,4 +6301,4 @@ sql = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.15"
-content-hash = "d2a4807ca97358374faa396c9b3027a5a269caa8225f91d4cba39ad73bc30e0a"
+content-hash = "927eeb0d0c250be37094ad13b96710d16edf78fe49b61f7aee5de19f621073c2"
