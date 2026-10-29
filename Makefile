@@ -33,4 +33,4 @@ clean:
 
 documentation:
 	zensical build
-	putfs sync --overwrite ./site putfs://static.darc.zone/docs.investigraph.dev/lib/ftmq
+	putfs sync --delete ./site putfs://static.darc.zone/docs.investigraph.dev/lib/ftmq
