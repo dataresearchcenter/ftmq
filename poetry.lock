@@ -4618,14 +4618,14 @@ testing = ["process-tests", "pytest-xdist", "virtualenv"]
 
 [[package]]
 name = "pytest-env"
-version = "1.8.3"
+version = "1.8.4"
 description = "Set environment variables for pytest sessions."
 optional = false
 python-versions = ">=3.11"
 groups = ["dev"]
 files = [
-    {file = "pytest_env-1.8.3-py3-none-any.whl", hash = "sha256:b3f26d04140b0ffaca3b7dc7765386291ba03dced58f2a58221a0597bc59824c"},
-    {file = "pytest_env-1.8.3.tar.gz", hash = "sha256:50fbdd23c64406bdc51ddd0cd17977b8f642b497b1ce0cd5a9ae39dd3cdbe16f"},
+    {file = "pytest_env-1.8.4-py3-none-any.whl", hash = "sha256:5b2d0685f3075ce7edce79d45a3cfa1117f01ec2098d209d1de15765fe3e8105"},
+    {file = "pytest_env-1.8.4.tar.gz", hash = "sha256:1054caabdbcc6d6ef1b06b010413f8bd482f7ea19487b27cd61e3385f5262bc1"},
 ]
 
 [package.dependencies]
