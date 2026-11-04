@@ -295,14 +295,14 @@ trio = ["trio (>=0.32.0)"]
 
 [[package]]
 name = "anystore"
-version = "1.5.6"
+version = "1.5.7"
 description = "Store and cache things anywhere"
 optional = false
 python-versions = "<3.16,>=3.11"
 groups = ["main", "dev"]
 files = [
-    {file = "anystore-1.5.6-py3-none-any.whl", hash = "sha256:4e57c5837de78bf2e68bc7b20a7c7a6a574002b02832a44abcb9a6790d2ed2b5"},
-    {file = "anystore-1.5.6.tar.gz", hash = "sha256:c0b787325937c78480391498eef1c4a418b5fb75bbe43fe009800ca3dc8de42e"},
+    {file = "anystore-1.5.7-py3-none-any.whl", hash = "sha256:7c05e1494856c1c1594b7567cdd61aec1ef58837246d777632a25cdba6d295aa"},
+    {file = "anystore-1.5.7.tar.gz", hash = "sha256:7354e45cae3c9f165bb70ac33ea6e35a7e89ced38599653a7cc4306759fac079"},
 ]
 
 [package.dependencies]
@@ -317,20 +317,19 @@ fsspec = [
 imohash = ">=1.1.0,<2.0.0"
 orjson = ">=3.12.0,<4.0.0"
 pyaml = ">=26.7.0,<27.0.0"
-pydantic = ">=2.14.1,<3.0.0"
+pydantic = ">=2.14.2,<3.0.0"
 pydantic-settings = ">=2.16.1,<3.0.0"
 rich = ">=10.0.0,<16.0.0"
 rigour = ">=2.6.1,<3.0.0"
 s3fs = {version = ">2023.10,<2027", optional = true, markers = "extra == \"s3\""}
 structlog = ">=22.0.0"
-tqdm = ">=4.70.0,<5.0.0"
 typer = ">=0.27.0"
 uuid7 = ">=0.1.0,<0.2.0"
 
 [package.extras]
 http = ["fsspec[http] (>2023.10,<2027)"]
 lz4 = ["lz4 (>=4.4.0,<5.0.0)"]
-putfs = ["putfs (>=0.6.2,<0.7.0) ; python_version < \"3.15\""]
+putfs = ["putfs (>=0.6.3,<0.7.0)"]
 redis = ["fakeredis (>=2.37.1,<3.0.0)", "redis (>=8.1.0)"]
 s3 = ["s3fs (>2023.10,<2027)"]
 sql = ["sqlalchemy (>=2.1.6,<3.0.0)"]
@@ -1146,14 +1145,14 @@ files = [
 
 [[package]]
 name = "dateparser"
-version = "1.4.3"
+version = "1.5.0"
 description = "Date parsing library designed to parse dates from HTML pages"
 optional = false
 python-versions = ">=3.10"
 groups = ["main", "dev"]
 files = [
-    {file = "dateparser-1.4.3-py3-none-any.whl", hash = "sha256:cbce86c64e0cea5c54c84c015d34c903d46c51bfad50632bf2f05a6141d10c05"},
-    {file = "dateparser-1.4.3.tar.gz", hash = "sha256:bab8c43a746266e68142f4926e69438ce551441aa88e54e78bb6410bf3ee7000"},
+    {file = "dateparser-1.5.0-py3-none-any.whl", hash = "sha256:7c4e088f25458f57db391510035af0878439a6df71d159318dcdb0a7553932e3"},
+    {file = "dateparser-1.5.0.tar.gz", hash = "sha256:08d62f2c00d3a1e806fc59d40c79e7554e31d84d3b8c6145820af051c92e7292"},
 ]
 
 [package.dependencies]
@@ -5723,27 +5722,6 @@ files = [
 ]
 
 [[package]]
-name = "tqdm"
-version = "4.70.1"
-description = "Fast, Extensible Progress Meter"
-optional = false
-python-versions = ">=3.8"
-groups = ["main", "dev"]
-files = [
-    {file = "tqdm-4.70.1-py3-none-any.whl", hash = "sha256:c293e525e6fef9c20e8728fd4612df02a0aa31bb5fe91ecd93e123b1b7bffa73"},
-    {file = "tqdm-4.70.1.tar.gz", hash = "sha256:cefd0eca11b2a37a3aee776544d4f4ae913f02688135b5556b8788dfa474afc4"},
-]
-
-[package.dependencies]
-colorama = {version = "*", markers = "platform_system == \"Windows\""}
-
-[package.extras]
-discord = ["envwrap", "requests"]
-notebook = ["ipywidgets (>=6)"]
-slack = ["envwrap", "slack-sdk"]
-telegram = ["envwrap", "requests"]
-
-[[package]]
 name = "traitlets"
 version = "5.16.1"
 description = "Traitlets Python configuration system"
@@ -6323,4 +6301,4 @@ sql = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.15"
-content-hash = "e4ed1fa39427f6bb1beee08001d8928a88869172fec3f761750d9a3664f86edc"
+content-hash = "11ede482f1b27ed8bd50b03b47b9aa231c91cfb7b33b91652175957aa81bc775"
