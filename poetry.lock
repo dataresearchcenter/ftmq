@@ -5739,14 +5739,14 @@ test = ["argcomplete (>=3.0.3) ; python_version < \"3.12\"", "argcomplete (>=3.5
 
 [[package]]
 name = "typer"
-version = "0.27.3"
+version = "0.28.0"
 description = "Typer, build great CLIs. Easy to code. Based on Python type hints."
 optional = false
 python-versions = ">=3.10"
 groups = ["main", "dev"]
 files = [
-    {file = "typer-0.27.3-py3-none-any.whl", hash = "sha256:e50022f28b82a86313e54501317a1db64bf8f8d036ff8cfe5ca7e47675454aff"},
-    {file = "typer-0.27.3.tar.gz", hash = "sha256:d0396f770a560ab1b0a8504e13b5f254b728cedb05c61cf0359e944e50ce8901"},
+    {file = "typer-0.28.0-py3-none-any.whl", hash = "sha256:afd18929180b706c5e9a239f53c3c8136903553c0c2d460598bbaa924191d4ab"},
+    {file = "typer-0.28.0.tar.gz", hash = "sha256:69ab84ef79fd601cff071bbd2566d855ecadfd93adbc4b3360b9924359bdd857"},
 ]
 
 [package.dependencies]
@@ -6301,4 +6301,4 @@ sql = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.15"
-content-hash = "11ede482f1b27ed8bd50b03b47b9aa231c91cfb7b33b91652175957aa81bc775"
+content-hash = "03644a5b24581b67d90a3446b5fd93899719980a71afbec662f9912b43f154d5"
