@@ -1,5 +1,5 @@
 # wheels for everything, built with the compilers the runtime images drop
-FROM python:3.14-slim AS build
+FROM python:3.15-slim AS build
 
 RUN apt-get -qq update \
     && apt-get install -qq -y --no-install-recommends \
@@ -18,7 +18,7 @@ FROM build AS build-full
 RUN pip wheel --no-cache-dir -q --wheel-dir /wheels \
     ".[level,sql,postgres,duckdb,lake,search,api]" redis
 
-FROM python:3.14-slim AS ftmq
+FROM python:3.15-slim AS ftmq
 
 RUN apt-get -qq update \
     && apt-get -qq -y upgrade \
