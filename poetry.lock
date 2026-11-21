@@ -3372,13 +3372,13 @@ completion = ["shtab (>=1.11)"]
 
 [[package]]
 name = "nomenklatura"
-version = "4.17.5"
+version = "4.18.0"
 description = "Make record linkages in followthemoney data."
 optional = false
 python-versions = ">=3.11"
 groups = ["main"]
 files = [
-    {file = "nomenklatura-4.17.5-py3-none-any.whl", hash = "sha256:a7d19521731a658305cda9f4b22845555fb1238a25cb013ffacc09e56e476902"},
+    {file = "nomenklatura-4.18.0-py3-none-any.whl", hash = "sha256:8e72e57084a0125d499c896b6f08fd0d4a813f516303a48596bfeda45612f55a"},
 ]
 
 [package.dependencies]
@@ -3397,7 +3397,7 @@ textual = ">=3.0.0,<9.0.0"
 urllib3 = ">=2.0.0,<3.0.0"
 
 [package.extras]
-dev = ["build", "bump2version", "coverage (>=4.1)", "flake8 (>=2.6.0)", "lxml-stubs", "mypy", "plyvel (<2.0.0)", "prek", "psycopg[binary] (>=3.0,<4.0)", "pytest", "pytest-asyncio", "pytest-cov", "requests-mock", "twine", "types-pyyaml", "types-requests", "types-setuptools", "wheel (>=0.29.0)"]
+dev = ["build", "bump-my-version", "coverage (>=4.1)", "flake8 (>=2.6.0)", "lxml-stubs", "mypy", "plyvel (<2.0.0)", "prek", "psycopg[binary] (>=3.0,<4.0)", "pytest", "pytest-asyncio", "pytest-cov", "requests-mock", "twine", "types-pyyaml", "types-requests", "types-setuptools", "wheel (>=0.29.0)"]
 docs = ["mkdocs", "mkdocs-material", "mkdocstrings[python]"]
 leveldb = ["plyvel (<2.0.0)"]
 
@@ -6285,4 +6285,4 @@ sql = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.15"
-content-hash = "4a1f27e396f98784c04fe28f80a35a7b2ea9ece44f3c38a894bf99088051142b"
+content-hash = "22766f022109e7d0f1239e5a401b1b499e64e300decf5bb651f7af90040e468d"
