@@ -572,7 +572,13 @@ class LakeWriter(nk.Writer):
         for row in self.store._execute(q):
             statements.append(LakeStatement.from_db_row(row))
 
-        self.store.deltatable.delete(f"canonical_id = '{entity_id}'")
+        # without writer properties, `delete` rewrites files as snappy.
+        dt = self.store.deltatable
+        for bucket in ALL_BUCKETS:
+            dt.delete(
+                f"canonical_id = '{entity_id}' AND bucket = '{bucket}'",
+                writer_properties=writer_for_bucket(bucket),
+            )
         return statements
 
     def optimize(

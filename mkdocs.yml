@@ -1,5 +1,5 @@
 site_name: ftmq
-site_url: https://docs.investigraph.dev/lib/ftmq
+site_url: https://darc.li/docs/ftmq
 repo_url: https://github.com/dataresearchcenter/ftmq
 nav:
   - Intro: index.md
@@ -23,8 +23,8 @@ nav:
     - ftmq.util: reference/util.md
 theme:
   name: material
-  logo: https://cdn.investigativedata.org/style/logos/darc/svg/DARC-Logo-RGB-Horizontal-Neg.svg
-  favicon: https://cdn.investigativedata.org/style/logos/darc/favicon.ico
+  logo: https://darcdn.et/style/logos/darc/svg/DARC-Logo-RGB-Horizontal-Neg.svg
+  favicon: https://darcdn.et/style/logos/darc/favicon.ico
   custom_dir: docs/overrides
   palette:
     - media: "(prefers-color-scheme)"
@@ -50,9 +50,9 @@ theme:
     - toc.follow
     - content.code.copy
 extra_css:
-  - https://dataresearchcenter.github.io/zensical-theme-darc/stylesheets/darc-zensical.css
+  - https://darcdn.et/style/darc-zensical.css
 extra:
-  logo_light: https://cdn.investigativedata.org/style/logos/darc/svg/DARC-Logo-RGB-Horizontal-Pos.svg
+  logo_light: https://darcdn.et/style/logos/darc/svg/DARC-Logo-RGB-Horizontal-Pos.svg
   social:
     - icon: lucide/mail
       link: mailto:hi@dataresearchcenter.org

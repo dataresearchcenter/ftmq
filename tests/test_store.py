@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import duckdb
+import pyarrow.parquet as pq
 import pytest
 from followthemoney import EntityProxy, Statement, StatementEntity
 from nomenklatura.db import Session, get_engine
@@ -740,6 +741,70 @@ def test_store_lake_fragment(tmp_path):
     # dedupe_key is `id\torigin\tfragment`
     assert {k.split("\t")[1] for k in keys} == {"ingest"}
     assert {k.split("\t")[2] for k in keys} == {"", "row-1", "row-2"}
+
+
+def test_store_lake_pop_writer_properties(tmp_path):
+    # `pop` rewrites the affected files with the writer properties of their bucket
+    def make(id_: str, schema: str, **properties: list[str]) -> StatementEntity:
+        data = {"id": id_, "schema": schema, "properties": properties}
+        return make_entity(data, StatementEntity, "test")
+
+    def layout(uri: str) -> dict[str, tuple[str, bool, bool]]:
+        row_group = pq.ParquetFile(uri).metadata.row_group(0)
+        columns = [row_group.column(i) for i in range(row_group.num_columns)]
+        return {
+            c.path_in_schema: (
+                c.compression,
+                c.bloom_filter_offset is not None,
+                c.has_dictionary_page,
+            )
+            for c in columns
+        }
+
+    def layouts() -> dict[str, tuple[str, dict[str, tuple[str, bool, bool]]]]:
+        buckets = {}
+        for uri in lake.deltatable.file_uris():
+            bucket = uri.split("bucket=")[1].split("/")[0]
+            assert bucket not in buckets
+            buckets[bucket] = (uri, layout(uri))
+        return buckets
+
+    lake = LakeStore(uri=tmp_path, dataset="test")
+    with lake.writer() as bulk:
+        for i in range(2):
+            bulk.add_entity(make(f"p{i}", "Person", name=[f"Jane {i}"]))
+            bulk.add_entity(make(f"d{i}", "Document", bodyText=[f"Text {i}"]))
+    written = layouts()
+    assert set(written) == {"thing", "document"}
+    # the buckets differ in the first place
+    assert written["thing"][1]["value"] != written["document"][1]["value"]
+
+    assert lake.writer().pop("p0")
+    assert lake.writer().pop("d0")
+    rewritten = layouts()
+    assert set(rewritten) == set(written)
+    for bucket, (uri, columns) in rewritten.items():
+        assert uri != written[bucket][0]
+        assert columns == written[bucket][1]
+    assert {e.id for e in lake.iterate()} == {"p1", "d1"}
+
+
+def test_store_lake_pop_hidden(tmp_path):
+    # rows a view filter hides from the returned statements are deleted as well
+    from ftmq.store.lake import TABLE
+
+    entity = make_entity(
+        {"id": "j", "schema": "Person", "properties": {"name": ["Jane"]}},
+        StatementEntity,
+        "test",
+    )
+    with LakeStore(uri=tmp_path, dataset="test").writer() as bulk:
+        bulk.add_entity(entity)
+    lake = LakeStore(
+        uri=tmp_path, dataset="test", view_filter=TABLE.c.schema == "Payment"
+    )
+    assert lake.writer().pop("j") == []
+    assert list(LakeStore(uri=tmp_path, dataset="test").iterate()) == []
 
 
 def test_store_lake_origins(tmp_path):
